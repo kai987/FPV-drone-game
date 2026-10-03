@@ -4,23 +4,21 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DEFAULT_DRONE_ID, getDroneSpec } from './drone-catalog.ts';
 import type { DroneId } from './drone-catalog.ts';
 
-/** Fictional FPV aircraft. Local -Z is the nose; visual scale suits the game camera. */
+/** Fictional FPV aircraft: FALCON's nose is local +Y; the other five point -Z. */
 export function createDrone(id: DroneId = DEFAULT_DRONE_ID) {
   const spec = getDroneSpec(id);
+  if (spec.id === 'falcon') return createFalconDrone();
   const shape = {
     cinewhoop: { motorX: 0.54, motorZ: 0.53, radius: 0.38, motor: 0.8, arm: 0.095, width: 0.43, length: 0.76, battery: [0.26, 0.18, 0.43], tilt: 0.28, blades: 4 },
     freestyle: { motorX: 0.76, motorZ: 0.73, radius: 0.505, motor: 1, arm: 0.12, width: 0.48, length: 0.96, battery: [0.34, 0.22, 0.61], tilt: 0.42, blades: 3 },
     racer: { motorX: 0.64, motorZ: 0.88, radius: 0.505, motor: 0.91, arm: 0.08, width: 0.34, length: 0.94, battery: [0.26, 0.17, 0.55], tilt: 0.54, blades: 2 },
     explorer: { motorX: 1.04, motorZ: 1.03, radius: 0.66, motor: 1.16, arm: 0.14, width: 0.53, length: 1.16, battery: [0.41, 0.27, 0.88], tilt: 0.32, blades: 2 },
     vector: { motorX: 0.82, motorZ: 0.82, radius: 0.55, motor: 1.06, arm: 0.11, width: 0.43, length: 1.04, battery: [0.33, 0.18, 0.68], tilt: 0.48, blades: 2 },
-    falcon: { motorX: 0.77, motorZ: 1.03, radius: 0.57, motor: 1.16, arm: 0.115, width: 0.43, length: 1.8, battery: [0.34, 0.18, 0.9], tilt: 0.44, blades: 2 },
   }[spec.id];
   const cine = spec.id === 'cinewhoop';
   const race = spec.id === 'racer';
   const range = spec.id === 'explorer';
   const vector = spec.id === 'vector';
-  const falcon = spec.id === 'falcon';
-  const enclosed = vector || falcon;
   const model = new THREE.Group();
   model.name = `AEROFLOW ${spec.name}`;
   model.userData.droneId = spec.id;
@@ -65,7 +63,7 @@ export function createDrone(id: DroneId = DEFAULT_DRONE_ID) {
   const pcb = ownMaterial(new THREE.MeshStandardMaterial({ color: '#25413c', roughness: 0.63, metalness: 0.12 }));
   const wireRed = ownMaterial(new THREE.MeshStandardMaterial({ color: '#9b3e32', roughness: 0.62 }));
   const glass = ownMaterial(new THREE.MeshStandardMaterial({ color: '#182c39', metalness: 0.68, roughness: 0.12 }));
-  const fairing = ownMaterial(new THREE.MeshStandardMaterial({ color: spec.color, metalness: falcon ? 0.53 : 0.18, roughness: 0.4 }));
+  const fairing = ownMaterial(new THREE.MeshStandardMaterial({ color: spec.color, metalness: 0.18, roughness: 0.4 }));
   const propMaterial = ownMaterial(new THREE.MeshStandardMaterial({ color: new THREE.Color(spec.color).multiplyScalar(cine ? 0.44 : 0.93), roughness: 0.35, metalness: 0.04, side: THREE.DoubleSide }));
   propMaterial.name = 'FPV propeller polymer';
   const frontLight = ownMaterial(new THREE.MeshStandardMaterial({ color: '#d8e3e8', emissive: '#b8dce7', emissiveIntensity: 0.9, roughness: 0.4 }));
@@ -119,7 +117,7 @@ export function createDrone(id: DroneId = DEFAULT_DRONE_ID) {
   };
 
   mesh(plate(shape.width, shape.length, 0.043), carbon, frame).position.y = -0.016;
-  mesh(plate(shape.width * 0.91, shape.length * (enclosed ? 0.72 : 0.85), 0.024), carbon, frame).position.y = 0.163;
+  mesh(plate(shape.width * 0.91, shape.length * (vector ? 0.72 : 0.85), 0.024), carbon, frame).position.y = 0.163;
   for (const x of [-shape.width * 0.35, shape.width * 0.35]) for (const z of [-shape.length * 0.29, shape.length * 0.28]) {
     post(frame, anodized, [x, 0.09, z], 0.018, 0.15);
     const bolt = mesh(screw, aluminium, frame); bolt.position.set(x, 0.196, z);
@@ -134,7 +132,7 @@ export function createDrone(id: DroneId = DEFAULT_DRONE_ID) {
   for (let fin = 0; fin < 5; fin++) box(electronics, edge, [-0.095 + fin * 0.047, 0.15, shape.length * 0.29], [0.011, 0.019, 0.115]);
 
   const [batteryWidth, batteryHeight, batteryLength] = shape.battery;
-  const batteryY = enclosed ? (falcon ? 0.095 : -0.065) : 0.198 + batteryHeight / 2;
+  const batteryY = vector ? -0.065 : 0.198 + batteryHeight / 2;
   box(battery, rubber, [0, batteryY - batteryHeight / 2 - 0.008, 0.05], [batteryWidth + 0.016, 0.018, batteryLength], true);
   box(battery, pack, [0, batteryY, 0.05], [batteryWidth, batteryHeight, batteryLength], true);
   for (const end of [-1, 1]) box(battery, accent, [0, batteryY, 0.05 + end * batteryLength * 0.488], [batteryWidth * 0.9, batteryHeight * 0.82, 0.018], true);
@@ -150,7 +148,7 @@ export function createDrone(id: DroneId = DEFAULT_DRONE_ID) {
   }
   box(battery, accent, [batteryWidth / 2 + 0.062, batteryY - 0.072, batteryLength * 0.21], [0.055, 0.05, 0.065], true);
 
-  const cameraZ = -shape.length * (falcon ? 0.46 : 0.38);
+  const cameraZ = -shape.length * 0.38;
   cameraMount.position.z = cameraZ;
   const bracketOutline = new THREE.Shape();
   bracketOutline.moveTo(-0.18, 0.025); bracketOutline.lineTo(0.14, 0.025); bracketOutline.lineTo(0.09, 0.205); bracketOutline.lineTo(-0.13, 0.23); bracketOutline.closePath();
@@ -188,23 +186,14 @@ export function createDrone(id: DroneId = DEFAULT_DRONE_ID) {
     tube(aerials, accent, [endpoint.clone().add(new THREE.Vector3(0, 0, -0.06)), endpoint.clone().add(new THREE.Vector3(0, 0, 0.06))], 0.01);
   }
 
-  if (enclosed) {
-    const sections: Array<[number, number, number]> = vector
-      ? [[-0.51, 0.01, 0.018], [-0.34, 0.13, 0.06], [-0.02, 0.215, 0.09], [0.36, 0.18, 0.075], [0.57, 0.012, 0.016]]
-      : [[-1.02, 0.012, 0.015], [-0.72, 0.145, 0.085], [-0.3, 0.223, 0.155], [0.35, 0.215, 0.15], [0.79, 0.105, 0.084], [1.02, 0.009, 0.012]];
-    const shell = mesh(loft(sections, vector ? 10 : 16), fairing, body, vector ? 'VECTOR low racing canopy' : 'FALCON streamlined fuselage');
-    shell.position.y = vector ? 0.147 : 0.17;
+  if (vector) {
+    const sections: Array<[number, number, number]> = [[-0.51, 0.01, 0.018], [-0.34, 0.13, 0.06], [-0.02, 0.215, 0.09], [0.36, 0.18, 0.075], [0.57, 0.012, 0.016]];
+    const shell = mesh(loft(sections, 10), fairing, body, 'VECTOR low racing canopy');
+    shell.position.y = 0.147;
     // Access seam and cooling slits replace a decorative aircraft windshield.
     for (const side of [-1, 1]) {
-      box(body, carbon, [side * (vector ? 0.2 : 0.211), vector ? 0.155 : 0.188, 0.06], [0.006, 0.025, vector ? 0.36 : 0.6]);
-      for (let vent = 0; vent < 4; vent++) box(body, edge, [side * (vector ? 0.191 : 0.203), vector ? 0.207 : 0.24, 0.09 + vent * 0.072], [0.009, 0.019, 0.039]);
-    }
-    if (falcon) {
-      const finShape = new THREE.Shape(); finShape.moveTo(0.57, 0); finShape.lineTo(0.83, 0.24); finShape.lineTo(1.05, 0.055); finShape.lineTo(1.05, 0); finShape.closePath();
-      const finGeometry = ownGeometry(new THREE.ExtrudeGeometry(finShape, { depth: 0.014, bevelEnabled: false })); finGeometry.rotateY(-Math.PI / 2);
-      for (const side of [-1, 1]) {
-        const fin = mesh(finGeometry, anodized, body, 'FALCON tail fin'); fin.position.set(side * 0.115, 0.22, 0); fin.rotation.z = side * -0.2;
-      }
+      box(body, carbon, [side * 0.2, 0.155, 0.06], [0.006, 0.025, 0.36]);
+      for (let vent = 0; vent < 4; vent++) box(body, edge, [side * 0.191, 0.207, 0.09 + vent * 0.072], [0.009, 0.019, 0.039]);
     }
   }
 
@@ -239,7 +228,6 @@ export function createDrone(id: DroneId = DEFAULT_DRONE_ID) {
   const motorRing = ring(0.116, 0.08, 0.05);
   const disc = ownGeometry(new THREE.CircleGeometry(shape.radius, 32)); disc.rotateX(-Math.PI / 2);
   const duct = cine ? ring(shape.radius + 0.05, shape.radius + 0.016, 0.252) : undefined;
-  const pod = falcon ? loft([[-0.3, 0.01, 0.008], [-0.13, 0.105, 0.066], [0.06, 0.135, 0.079], [0.26, 0.05, 0.04], [0.34, 0.008, 0.006]]) : undefined;
   const rotors: THREE.Group[] = [], blurs: THREE.Mesh[] = [], directions: number[] = [];
   for (const x of [-shape.motorX, shape.motorX]) for (const z of [-shape.motorZ, shape.motorZ]) {
     const arm = box(frame, carbon, [x / 2, 0.009, z / 2], [shape.arm, race ? 0.035 : 0.047, Math.hypot(x, z)], false);
@@ -254,7 +242,6 @@ export function createDrone(id: DroneId = DEFAULT_DRONE_ID) {
       const coil = box(frame, copper, [x + Math.cos(a) * 0.076 * shape.motor, 0.081, z + Math.sin(a) * 0.076 * shape.motor], [0.027 * shape.motor, 0.045, 0.031 * shape.motor], true);
       coil.rotation.y = -a;
     }
-    if (pod) { const cover = mesh(pod, fairing, body, 'FALCON motor pod'); cover.position.set(x, 0.002, z); }
     if (duct) {
       const guard = mesh(duct, accent, body, 'Protective propeller duct'); guard.position.set(x, -0.027, z); guard.userData.ductInnerRadius = shape.radius + 0.016;
       // Keep guard meshes separate for actual clearance inspection.
@@ -332,6 +319,135 @@ export function createDrone(id: DroneId = DEFAULT_DRONE_ID) {
       for (const geometry of geometries) geometry.dispose();
       for (const material of materials) material.dispose();
       for (const texture of textures) texture.dispose();
+      model.clear(); model.removeFromParent();
+    },
+  };
+}
+
+/** Axial speed airframe: +Y is the nose/thrust axis, upright when hovering.
+ * The five parallel fairings follow the Peregreen photographs and CAD shown at
+ * https://airshaper.com/cases/peregreen-v4-fastest-drone. Dimensions and finish
+ * are a game interpretation; this is not a construction model of the aircraft.
+ */
+function createFalconDrone() {
+  const spec = getDroneSpec('falcon');
+  const model = new THREE.Group();
+  model.name = `AEROFLOW ${spec.name}`;
+  model.userData.droneId = spec.id;
+  model.userData.frame = spec.frame;
+  model.userData.longitudinalAxis = '+Y';
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  const ownGeometry = <T extends THREE.BufferGeometry>(value: T): T => { geometries.add(value); return value; };
+  const ownMaterial = <T extends THREE.Material>(value: T): T => { materials.add(value); return value; };
+  const graphite = ownMaterial(new THREE.MeshStandardMaterial({ color: '#20252a', roughness: 0.58, metalness: 0.12 }));
+  const carbon = ownMaterial(new THREE.MeshStandardMaterial({ color: '#101519', roughness: 0.45, metalness: 0.22 }));
+  const gold = ownMaterial(new THREE.MeshStandardMaterial({ color: spec.color, roughness: 0.38, metalness: 0.46 }));
+  const metal = ownMaterial(new THREE.MeshStandardMaterial({ color: '#777f85', roughness: 0.3, metalness: 0.82 }));
+  const lens = ownMaterial(new THREE.MeshStandardMaterial({ color: '#183d52', roughness: 0.09, metalness: 0.65 }));
+  const propMaterial = ownMaterial(new THREE.MeshStandardMaterial({ color: '#22282c', roughness: 0.43, metalness: 0.1, side: THREE.DoubleSide }));
+  propMaterial.name = 'FPV propeller polymer';
+  const blurMaterial = ownMaterial(new THREE.MeshBasicMaterial({ color: '#bec7cb', opacity: 0.08, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  const rearLight = ownMaterial(new THREE.MeshStandardMaterial({ color: '#9b3928', emissive: '#ee3720', emissiveIntensity: 0.65, roughness: 0.4 }));
+  const cube = ownGeometry(new THREE.BoxGeometry(1, 1, 1));
+  const cylinder = ownGeometry(new THREE.CylinderGeometry(1, 1, 1, 16));
+  const mesh = (geometry: THREE.BufferGeometry, material: THREE.Material, parent: THREE.Object3D = model, name = '') => {
+    const part = new THREE.Mesh(geometry, material); part.name = name;
+    part.castShadow = part.receiveShadow = true; parent.add(part); return part;
+  };
+  const box = (position: [number, number, number], size: [number, number, number], material: THREE.Material, name = '') => {
+    const part = mesh(cube, material, model, name); part.position.set(...position); part.scale.set(...size); return part;
+  };
+  const lathe = (profile: Array<[number, number]>, segments = 24) =>
+    ownGeometry(new THREE.LatheGeometry(profile.map(([radius, y]) => new THREE.Vector2(radius, y)), segments));
+
+  // A long battery/electronics capsule, parallel to all four motor axes.
+  const centralProfile: Array<[number, number]> = [
+    [0.012, -1.50], [0.055, -1.36], [0.116, -1.14], [0.195, -0.85],
+    [0.25, -0.42], [0.268, 0.08], [0.26, 0.55], [0.229, 0.90],
+    [0.165, 1.17], [0.088, 1.38], [0.044, 1.48],
+  ];
+  const fuselage = mesh(lathe(centralProfile, 32), gold, model, 'FALCON axial fuselage');
+  fuselage.userData.axis = '+Y';
+  mesh(lathe([[0.253, -0.41], [0.271, 0.08], [0.266, 0.32]], 32), graphite, model, 'FALCON central equipment band');
+  mesh(lathe([[0.015, -1.50], [0.058, -1.36], [0.10, -1.22]], 24), graphite, model, 'FALCON tapered tail');
+  // Small body seams make the shell readable without adding a cockpit or wings.
+  for (const [radius, y] of [[0.253, -0.43], [0.264, 0.56]] as const) {
+    const seam = mesh(ownGeometry(new THREE.TorusGeometry(radius, 0.004, 4, 32)), carbon);
+    seam.rotation.x = Math.PI / 2; seam.position.y = y;
+  }
+  const camera = new THREE.Group(); camera.name = 'Axial FPV camera'; camera.position.y = 1.479; camera.rotation.x = Math.PI / 2; model.add(camera);
+  const bezel = mesh(cylinder, graphite, camera); bezel.rotation.x = Math.PI / 2; bezel.scale.set(0.047, 0.025, 0.047);
+  const glass = mesh(ownGeometry(new THREE.CircleGeometry(0.034, 20)), lens, camera);
+  glass.position.z = -0.015; glass.rotation.y = Math.PI;
+
+  const motorOffset = 0.82;
+  const propRadius = 0.57;
+  const podGeometry = lathe([
+    [0.097, -0.535], [0.135, -0.37], [0.15, -0.10], [0.139, 0.27],
+    [0.105, 0.57], [0.053, 0.79], [0.011, 0.91],
+  ], 24);
+  const podNose = lathe([[0.108, 0.568], [0.056, 0.79], [0.013, 0.91]], 24);
+  const motorGeometry = ownGeometry(new THREE.CylinderGeometry(0.094, 0.094, 0.087, 20));
+  const spinnerGeometry = lathe([[0.006, -0.405], [0.026, -0.32], [0.06, -0.19], [0.087, -0.048], [0.087, -0.018]], 20);
+  // Slim, pitched two-blade rotors stay perpendicular to the capsule axis.
+  const bladePositions: number[] = [], bladeIndices: number[] = [];
+  const spans = 10, chords = 4;
+  for (const side of [-1, 1]) for (let span = 0; span <= spans; span++) for (let chord = 0; chord <= chords; chord++) {
+    const t = span / spans, u = chord / chords - 0.5;
+    const width = (0.12 + Math.sin(t * Math.PI) * 0.06) * (1 - t * 0.76);
+    const pitch = 0.42 - t * 0.25;
+    bladePositions.push((0.14 + t * 0.84) * propRadius, (Math.sin(pitch) * u * width + Math.cos(u * Math.PI) * 0.007 + side * 0.0025) * propRadius,
+      (-0.035 * Math.sin(t * Math.PI * 0.6) + Math.cos(pitch) * u * width) * propRadius);
+  }
+  const layer = (spans + 1) * (chords + 1);
+  for (let side = 0; side < 2; side++) for (let span = 0; span < spans; span++) for (let chord = 0; chord < chords; chord++) {
+    const a = side * layer + span * (chords + 1) + chord, b = a + 1, c = a + chords + 1, d = c + 1;
+    if (side === 1) bladeIndices.push(a, b, c, b, d, c); else bladeIndices.push(a, c, b, b, c, d);
+  }
+  for (let span = 0; span < spans; span++) for (const chord of [0, chords]) {
+    const a = span * (chords + 1) + chord, b = a + chords + 1; bladeIndices.push(a, a + layer, b, b, a + layer, b + layer);
+  }
+  for (const span of [0, spans]) for (let chord = 0; chord < chords; chord++) {
+    const a = span * (chords + 1) + chord, b = a + 1; bladeIndices.push(a, b, a + layer, b, b + layer, a + layer);
+  }
+  const bladeGeometry = ownGeometry(new THREE.BufferGeometry());
+  bladeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(bladePositions, 3)); bladeGeometry.setIndex(bladeIndices); bladeGeometry.computeVertexNormals();
+  const discGeometry = ownGeometry(new THREE.CircleGeometry(propRadius, 48)); discGeometry.rotateX(-Math.PI / 2);
+  const rotors: THREE.Group[] = [], blurs: THREE.Mesh[] = [], directions: number[] = [];
+  for (const x of [-motorOffset, motorOffset]) for (const z of [-motorOffset, motorOffset]) {
+    const length = Math.hypot(x, z);
+    const arm = box([x * 0.5, -0.12, z * 0.5], [0.095, 0.14, length], carbon, 'FALCON narrow X strut'); arm.rotation.y = Math.atan2(x, z);
+    const marking = box([x * 0.69, -0.044, z * 0.69], [0.1, 0.006, 0.12], gold); marking.rotation.y = arm.rotation.y;
+    const pod = mesh(podGeometry, graphite, model, 'FALCON axial motor pod'); pod.position.set(x, 0, z); pod.userData.axis = '+Y';
+    const nose = mesh(podNose, gold, model, 'FALCON motor nose'); nose.position.set(x, 0, z);
+    const motor = mesh(motorGeometry, metal); motor.position.set(x, -0.552, z);
+    const rotor = new THREE.Group(); rotor.name = 'Brushless motor and twisted propeller'; rotor.position.set(x, -0.615, z); model.add(rotor);
+    const blades = new THREE.Group(); blades.name = 'Thin swept propeller blades'; rotor.add(blades);
+    for (let index = 0; index < 2; index++) mesh(bladeGeometry, propMaterial, blades).rotation.y = index * Math.PI;
+    const hub = mesh(cylinder, metal, rotor); hub.scale.set(0.085, 0.036, 0.085);
+    mesh(spinnerGeometry, gold, rotor, 'FALCON axial propeller spinner');
+    const blur = mesh(discGeometry, blurMaterial); blur.position.set(x, -0.613, z); blur.castShadow = blur.receiveShadow = false; blur.visible = false;
+    rotors.push(rotor); blurs.push(blur); directions.push(Math.sign(x * z));
+  }
+  // A rear status light is a small LED, not an exhaust flame.
+  const status = mesh(ownGeometry(new THREE.SphereGeometry(0.014, 8, 6)), rearLight); status.position.set(0, -1.17, -0.108);
+  let previousTime: number | undefined;
+  let disposed = false;
+  return {
+    model,
+    update(time: number, flying: boolean, speed: number) {
+      if (disposed) return;
+      const dt = previousTime === undefined ? 0 : THREE.MathUtils.clamp(time - previousTime, 0, 0.08); previousTime = time;
+      const angularSpeed = flying ? 64 + THREE.MathUtils.clamp(speed, 0, 100) * 0.75 : 0;
+      rotors.forEach((rotor, index) => { rotor.rotation.y = (rotor.rotation.y + angularSpeed * dt * directions[index]) % (Math.PI * 2); blurs[index].visible = flying; });
+      blurMaterial.opacity = flying ? 0.06 + Math.min(Math.max(speed, 0), 100) * 0.00035 : 0;
+      rearLight.emissiveIntensity = flying ? 1.0 + Math.sin(time * 3.3) * 0.09 : 0.65;
+    },
+    dispose() {
+      if (disposed) return; disposed = true;
+      for (const geometry of geometries) geometry.dispose();
+      for (const material of materials) material.dispose();
       model.clear(); model.removeFromParent();
     },
   };

@@ -80,6 +80,7 @@ export function stepFlight(
   mode: FlightMode = 'assisted',
   groundHeight: (x: number, z: number) => number = () => 0,
   profile: Readonly<DroneProfile> = getDroneSpec(DEFAULT_DRONE_ID).flight,
+  wind: Vec3 = { x: 0, y: 0, z: 0 },
 ): FlightState {
   if (!Number.isFinite(dt) || dt <= 0) return state;
   const time = Math.min(dt, MAX_STEP);
@@ -115,6 +116,20 @@ export function stepFlight(
     target.z *= scale;
   }
 
+  // Controls request air-relative velocity. This game approximation adds wind
+  // after the airspeed ceiling: position-hold assistance cancels most drift,
+  // while sport leaves more of the airflow's effect on ground speed intact.
+  const windX = Number.isFinite(wind.x) ? clamp(wind.x, -50, 50) : 0;
+  const windY = Number.isFinite(wind.y) ? clamp(wind.y, -50, 50) : 0;
+  const windZ = Number.isFinite(wind.z) ? clamp(wind.z, -50, 50) : 0;
+  const hasWind = windX !== 0 || windY !== 0 || windZ !== 0;
+  if (hasWind) {
+    const windInfluence = mode === 'assisted' ? 0.35 : 0.85;
+    target.x += windX * windInfluence;
+    target.y += windY * windInfluence;
+    target.z += windZ * windInfluence;
+  }
+
   const activeThrust = Math.abs(forward) + Math.abs(strafe) + Math.abs(climb) > 0.001;
   const response = activeThrust ? config.response : config.brake;
   const decay = Math.exp(-response * time);
@@ -127,7 +142,8 @@ export function stepFlight(
     state.velocity[component] = target[component] + (oldVelocity - target[component]) * decay;
   }
 
-  const targetRoll = clamp((-strafe * 0.8 + yawInput * 0.6) * config.bank, -0.45, 0.45);
+  let targetRoll = clamp((-strafe * 0.8 + yawInput * 0.6) * config.bank, -0.45, 0.45);
+  if (hasWind) targetRoll = clamp(targetRoll + (windX * cosYaw - windZ * sinYaw) * 0.008, -0.45, 0.45);
   state.roll += (targetRoll - state.roll) * (1 - Math.exp(-7 * time));
 
   const terrain = groundHeight(state.position.x, state.position.z);

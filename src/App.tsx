@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Camera, ChevronDown, Drone, Maximize, Minimize, Moon, Pause, Play, RotateCcw, Sun, Volume2, VolumeX, Trophy, Wind } from 'lucide-react';
 import { FlightEngine } from './game/engine';
 import { CHECKPOINTS } from './game/world';
@@ -10,23 +10,14 @@ import Minimap from './components/Minimap';
 import TouchControls from './components/TouchControls';
 import WeaponPanel from './components/WeaponPanel';
 import DroneHangar from './components/DroneHangar';
-import { DEFAULT_DRONE_ID, DRONES, getDroneSpec } from './game/drone-catalog';
+import { DEFAULT_DRONE_ID, getDroneSpec } from './game/drone-catalog';
 import type { DroneId } from './game/drone-catalog';
 
-type PersonalBests = Record<DroneId, Record<FlightMode, number | null>>;
-function readBest(): PersonalBests {
-  const result = Object.fromEntries(DRONES.map(drone => [drone.id, { assisted: null, sport: null }])) as PersonalBests;
-  try { for (const drone of DRONES) for (const mode of ['assisted', 'sport'] as const) {
-    const stored = localStorage.getItem(`aeroflow:v2:best:${drone.id}:${mode}`);
-    let value = stored === null ? NaN : Number(stored);
-    if ((!Number.isFinite(value) || value <= 0) && drone.id === DEFAULT_DRONE_ID) {
-      const legacy = localStorage.getItem(`aeroflow:v1:best:${mode}`);
-      value = legacy === null ? NaN : Number(legacy);
-    }
-    if (Number.isFinite(value) && value > 0) result[drone.id][mode] = value;
-  } } catch { /* Flight remains available when storage is blocked. */ }
-  return result;
-}
+import { DEFAULT_WIND_SETTINGS } from './game/wind';
+import type { WindSettings } from './game/wind';
+import { bestTimeKey, readBestTime } from './game/records';
+import WindPanel, { WindSettingsDialog } from './components/WindPanel';
+
 export default function App() {
   const host = useRef<HTMLDivElement>(null);
   const engine = useRef<FlightEngine | null>(null);
@@ -43,14 +34,21 @@ export default function App() {
   const [fullscreen, setFullscreen] = useState(false);
   const [guide, setGuide] = useState(false);
   const [hangar, setHangar] = useState(false);
+  const [weatherOpen, setWeatherOpen] = useState(false);
+  const [windSettings, setWindSettings] = useState<WindSettings>({ ...DEFAULT_WIND_SETTINGS });
   const [droneId, setDroneId] = useState<DroneId>(DEFAULT_DRONE_ID);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
-  const [best, setBest] = useState(readBest);
+  const [best, setBest] = useState<Record<string, number>>({});
+  const [finishedRecordKey, setFinishedRecordKey] = useState<string | null>(null);
   const settingsLocked = status === 'flying' || status === 'paused';
   const selectedDrone = getDroneSpec(droneId);
-  const personalBest = best[droneId][flightMode];
+  const personalBest = useMemo(() => {
+    const cached = best[bestTimeKey(droneId, flightMode, windSettings)];
+    if (cached !== undefined) return cached;
+    try { return readBestTime(localStorage, droneId, flightMode, windSettings); } catch { return null; }
+  }, [best, droneId, flightMode, windSettings]);
   const notify = (message: string) => {
     setNotice(message); clearTimeout(noticeTimeout.current);
     noticeTimeout.current = setTimeout(() => setNotice(''), 3600);
@@ -60,13 +58,20 @@ export default function App() {
       const game = new FlightEngine(host.current!, {
         telemetry: setTelemetry, status: setStatus, notice: notify, cameraMode: setCameraMode,
         finish: seconds => {
-          const currentMode = engine.current?.flightMode ?? 'assisted';
-          const currentDrone = engine.current?.droneId ?? DEFAULT_DRONE_ID;
+          const game = engine.current;
+          if (!game) return;
+          const currentMode = game.flightMode;
+          const currentDrone = game.droneId;
+          const weather = game.windSettings;
+          const key = bestTimeKey(currentDrone, currentMode, weather);
+          setFinishedRecordKey(key);
+          if (!game.recordEligible) return;
           setBest(current => {
-            const previousBest = current[currentDrone][currentMode];
+            let previousBest: number | null = Object.hasOwn(current, key) ? current[key] : null;
+            try { previousBest ??= readBestTime(localStorage, currentDrone, currentMode, weather); } catch { /* Optional storage. */ }
             if (previousBest !== null && previousBest <= seconds) return current;
-            try { localStorage.setItem(`aeroflow:v2:best:${currentDrone}:${currentMode}`, String(seconds)); } catch { /* Optional personal record. */ }
-            return { ...current, [currentDrone]: { ...current[currentDrone], [currentMode]: seconds } };
+            try { localStorage.setItem(key, String(seconds)); } catch { /* Optional personal record. */ }
+            return { ...current, [key]: seconds };
           });
         },
       });
@@ -94,6 +99,11 @@ export default function App() {
   const openHangar = () => {
     hangarTrigger.current?.focus({ preventScroll: true });
     engine.current?.pause(); setHangar(true);
+  };
+  const openWeather = () => { engine.current?.pause(); setWeatherOpen(true); };
+  const applyWind = (settings: WindSettings) => {
+    engine.current?.setWind(settings); setWindSettings(settings); setWeatherOpen(false);
+    notify(settingsLocked ? '风况已更新 · 继续飞行体验风偏' : '风况已更新 · 准备起飞');
   };
   const applyDrone = (id: DroneId, returnToStart: boolean) => {
     const game = engine.current;
@@ -131,7 +141,7 @@ export default function App() {
           <div className="segment-control" role="group" aria-label="飞行模式"><button disabled={settingsLocked} aria-pressed={flightMode === 'assisted'} className={flightMode === 'assisted' ? 'active' : ''} onClick={() => { setFlightMode('assisted'); engine.current?.reset(); }}>辅助</button><button disabled={settingsLocked} aria-pressed={flightMode === 'sport'} className={flightMode === 'sport' ? 'active' : ''} onClick={() => { setFlightMode('sport'); engine.current?.reset(); }}>运动</button></div>
           <button className="primary-button launch-button" onClick={action} disabled={!loaded || Boolean(error)}>{status === 'flying' ? '暂停飞行' : status === 'paused' ? '继续飞行' : status === 'finished' ? '再飞一次' : '开始飞行'}{status === 'flying' ? <Pause size={19} /> : <ArrowRight size={21} />}</button>
           {status === 'ready' ? <p className="launch-note">无需下载，即刻起飞</p> : <button className="text-button reset-button" onClick={() => engine.current?.reset()}><RotateCcw size={13} /> 返回起点</button>}
-          {personalBest ? <div className="personal-best" title={`${selectedDrone.name} · ${flightMode === 'assisted' ? '辅助' : '运动'}模式`}><Trophy size={14} /><span>本机个人最佳</span><strong>{formatTime(personalBest)}</strong></div> : null}
+          {personalBest ? <div className="personal-best" title={`${selectedDrone.name} · ${flightMode === 'assisted' ? '辅助' : '运动'}模式`}><Trophy size={14} /><span>本机 · 同风况最佳</span><strong>{formatTime(personalBest)}</strong></div> : null}
         </section>
         <CompactControls />
       </aside>
@@ -145,8 +155,9 @@ export default function App() {
           {!loaded && !error ? <div className="scene-loading"><Wind size={28} /><span>正在准备山谷…</span></div> : null}
           {error ? <div className="state-overlay"><div className="state-panel"><h2>画面暂不可用</h2><p>{error}</p><button className="primary-button" onClick={() => location.reload()}>重新加载</button></div></div> : null}
           {status === 'paused' ? <div className="state-overlay"><div className="state-panel pause-panel"><Pause className="state-icon" size={30} /><h2>让风等你一下。</h2><p>飞行已暂停，按 P 或点击下方继续。</p><button className="primary-button" onClick={action}><Play size={17} />继续飞行</button><button className="text-button" onClick={() => engine.current?.reset()}>返回起点</button></div></div> : null}
-          {status === 'finished' ? <div className="state-overlay"><div className="state-panel finish-panel"><Trophy className="state-icon" size={32} /><h2>漂亮的一次飞行。</h2><p>8 个检查点全部完成</p><strong className="finish-time">{formatTime(telemetry.elapsed)}</strong><div className="finish-best">本机个人最佳 · {formatTime(personalBest ?? telemetry.elapsed)}</div><button className="primary-button" onClick={() => engine.current?.start()}>再飞一次<ArrowRight size={19} /></button><button className="text-button" onClick={() => { setMode('free'); if (engine.current) { engine.current.mode = 'free'; engine.current.start(); } }}>在山谷里自由探索</button></div></div> : null}
+          {status === 'finished' ? <div className="state-overlay"><div className="state-panel finish-panel"><Trophy className="state-icon" size={32} /><h2>漂亮的一次飞行。</h2><p>8 个检查点全部完成</p><strong className="finish-time">{formatTime(telemetry.elapsed)}</strong><div className="finish-best">{!telemetry.recordEligible ? '本轮调整过风况，不计入个人最佳' : finishedRecordKey === bestTimeKey(droneId, flightMode, windSettings) ? `同风况最佳 · ${formatTime(personalBest ?? telemetry.elapsed)}` : '本轮已完成 · 新风况用于下次起飞'}</div><button className="primary-button" onClick={() => engine.current?.start()}>再飞一次<ArrowRight size={19} /></button><button className="text-button" onClick={() => { setMode('free'); if (engine.current) { engine.current.mode = 'free'; engine.current.start(); } }}>在山谷里自由探索</button></div></div> : null}
           <div className={`flight-notice ${notice ? 'visible' : ''}`} role="status">{notice}</div>
+          <WindPanel wind={telemetry.wind} airSpeed={telemetry.airSpeed} onOpen={openWeather} />
           <Minimap telemetry={telemetry} mode={mode} />
           <WeaponPanel ammo={telemetry.weapons.ammo} reloadRemaining={telemetry.weapons.reloadRemaining} score={telemetry.weapons.score} hits={telemetry.weapons.hitTargetIds.length} status={status} onDrop={() => engine.current?.dropBomb()} />
           {status === 'flying' ? <TouchControls onAxis={(axis, value) => engine.current?.setTouch(axis, value)} /> : null}
@@ -155,6 +166,7 @@ export default function App() {
         <TelemetryBar telemetry={telemetry} mode={mode} />
       </section>
     </main>
+    {weatherOpen ? <WindSettingsDialog settings={windSettings} activeFlight={settingsLocked} onApply={applyWind} onClose={() => setWeatherOpen(false)} /> : null}
     {guide ? <ControlsGuide onClose={() => setGuide(false)} /> : null}
     {hangar ? <DroneHangar droneId={droneId} flightMode={flightMode} status={status} available={loaded && !error} onApply={applyDrone} onClose={() => setHangar(false)} /> : null}
   </div>;

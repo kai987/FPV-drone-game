@@ -145,9 +145,13 @@ test('six rendered airframes have distinct silhouettes and only cinewhoop has fo
     drone.model.traverse(part => { styledParts.push(part.name, ...(part.userData.partNames ?? [])); });
     if (spec.id === 'vector') assert.ok(styledParts.includes('VECTOR low racing canopy'));
     if (spec.id === 'falcon') {
-      assert.ok(styledParts.includes('FALCON motor pod'));
-      assert.ok(styledParts.includes('FALCON tail fin'));
-      assert.ok(styledParts.includes('FALCON streamlined fuselage'));
+      assert.equal(styledParts.filter(name => name === 'FALCON axial motor pod').length, 4);
+      assert.equal(styledParts.filter(name => name === 'FALCON axial propeller spinner').length, 4);
+      assert.ok(styledParts.includes('FALCON axial fuselage'));
+      assert.ok(!styledParts.includes('FALCON tail fin'));
+      assert.equal(drone.model.userData.longitudinalAxis, '+Y');
+      const fuselage = new THREE.Box3().setFromObject(drone.model.getObjectByName('FALCON axial fuselage')!).getSize(new THREE.Vector3());
+      assert.ok(fuselage.y > fuselage.x * 5 && fuselage.y > fuselage.z * 5, 'FALCON has a long axial capsule instead of a flat top canopy');
     }
     sizes.set(spec.id, new THREE.Box3().setFromObject(drone.model).getSize(new THREE.Vector3()));
     drone.dispose();
@@ -162,7 +166,8 @@ test('six rendered airframes have distinct silhouettes and only cinewhoop has fo
   assert.ok(race.z / race.x > standard.z / standard.x);
   assert.ok(explorer.x > standard.x && explorer.z > standard.z && explorer.y > standard.y);
   assert.ok(Math.abs(vector.x / vector.z - 1) < 0.05, 'VECTOR uses a symmetric speed X frame');
-  assert.ok(falcon.z / falcon.x > vector.z / vector.x, 'FALCON has a longer streamlined silhouette');
+  assert.ok(falcon.y > falcon.x && falcon.y > falcon.z, 'FALCON stands along its +Y thrust axis at rest');
+  assert.ok(falcon.y < 3.2, 'FALCON stays within the flight camera and ground clearance budget');
 });
 
 test('assembled aircraft have finite geometry, tilted FPV cameras and clear swept rotor discs', () => {
@@ -187,10 +192,11 @@ test('assembled aircraft have finite geometry, tilted FPV cameras and clear swep
     });
     assert.equal(rotors.length, 4, 'each quadcopter has four independent motor/propeller assemblies');
     assert.ok(meshes < 65 && triangles < 40_000, `${spec.id} must keep the detailed model within its render budget`);
-    const fpvCamera = drone.model.getObjectByName('Tilted FPV camera')!;
-    assert.ok(fpvCamera, 'an actual side-mounted FPV camera is present');
+    const fpvCamera = drone.model.getObjectByName(spec.id === 'falcon' ? 'Axial FPV camera' : 'Tilted FPV camera')!;
+    assert.ok(fpvCamera, 'an actual FPV camera is present');
     const lensDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(fpvCamera.getWorldQuaternion(new THREE.Quaternion()));
-    assert.ok(lensDirection.y > 0.1 && lensDirection.z < -0.7, 'FPV lens points forward with a plausible upward tilt');
+    if (spec.id === 'falcon') assert.ok(lensDirection.y > 0.99 && Math.abs(lensDirection.z) < 0.01, 'the axial camera follows FALCON’s +Y nose');
+    else assert.ok(lensDirection.y > 0.1 && lensDirection.z < -0.7, 'FPV lens points forward with a plausible upward tilt');
     const radii = rotors.map(rotor => {
       let radius = 0;
       const inverse = rotor.matrixWorld.clone().invert();

@@ -347,6 +347,12 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
   .hangar-model > span { font-size: 9px; }
   .hangar-model small { margin-top: 4px; }
 }
+
+@media (min-width: 451px) and (max-width: 650px) {
+  .topbar .nav-link:first-child { display: none; }
+  .topbar .nav-link { white-space: nowrap; }
+  .topbar nav { padding-left: 8px; }
+}
 @media (max-width: 450px) {
   .topbar .brand span { display: none; }
   .topbar .brand { padding-right: 6px; }

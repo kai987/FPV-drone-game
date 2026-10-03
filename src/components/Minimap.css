@@ -9,10 +9,61 @@
   letter-spacing: 0;
 }
 
+.geographic-minimap .map-heading > span {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .geographic-minimap .minimap-modes {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+.geographic-minimap .minimap-heading-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.geographic-minimap .minimap-follow {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0 2px;
+  border: 1px solid #c2d2ac35;
+  border-radius: 3px;
+  background: #e1ead009;
+  color: #dce6cb;
+  font-size: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+
+.geographic-minimap .minimap-follow[aria-pressed='true'] { color: #dff781; background: #dff78120; }
+.geographic-minimap .minimap-follow:hover { background: #dff78130; filter: none; }
+.geographic-minimap .minimap-follow-short { display: none; }
+
+.geographic-minimap .minimap-pan-surface {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.geographic-minimap .minimap-pan-surface.can-pan { cursor: grab; }
+.geographic-minimap .minimap-pan-surface.is-dragging { cursor: grabbing; }
+.geographic-minimap .minimap-pan-surface:focus-visible { outline: 1px solid #dff781; outline-offset: -2px; border-radius: 3px; }
+
+.geographic-minimap .minimap-pan-help {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .geographic-minimap .minimap-modes button {
@@ -41,6 +92,7 @@
 }
 
 .geographic-minimap .minimap-modes button:focus-visible,
+.geographic-minimap .minimap-follow:focus-visible,
 .geographic-minimap .minimap-zoom button:focus-visible {
   outline: 1px solid #dff781;
   outline-offset: 2px;
@@ -97,6 +149,11 @@
   .geographic-minimap .map-distance {
     font-size: 8px;
   }
+
+  .geographic-minimap .minimap-follow-full { display: none; }
+  .geographic-minimap .minimap-follow-short { display: inline; }
+
+  .geographic-minimap .minimap-heading-controls { gap: 2px; }
 
   .geographic-minimap .minimap-zoom {
     margin-bottom: 5px;

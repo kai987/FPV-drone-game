@@ -1,17 +1,27 @@
-import { useEffect, useId, useMemo, useState } from 'react';
-import type { SyntheticEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent, PointerEvent, SyntheticEvent } from 'react';
 import type { RaceMode, Telemetry } from '../game/types';
 import { CHECKPOINTS } from '../game/world';
 import { TARGETS } from '../game/weapons';
 import { LAKES, RIVER_SAMPLES, WORLD_BOUNDS, lakeBoundary } from '../game/landscape';
 import { BRIDGES, CABINS, FISH_SCHOOLS } from '../game/rural-layout';
-import { clamp, createProjection, formatMapSpan, getMapBounds, isOutsideBounds, ZOOM_LEVELS } from './minimap-view.ts';
-import type { MapPoint, MapView } from './minimap-view.ts';
+import { beginMapDrag, centerMapBounds, clamp, createProjection, formatMapSpan, getMapBounds, getMapCenter, isOutsideBounds, panMapBounds, ZOOM_LEVELS } from './minimap-view.ts';
+import type { MapBounds, MapPoint, MapPosition, MapView, MapViewportSize } from './minimap-view.ts';
 import './Minimap.css';
 
 interface MinimapProps {
   telemetry: Telemetry;
   mode: RaceMode;
+}
+type MapCameraMode = 'overview' | 'follow' | 'manual';
+interface MapDrag {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  bounds: MapBounds;
+  viewport: MapViewportSize;
+  element: SVGSVGElement;
+  moved: boolean;
 }
 
 // Water boundaries and fish centers never change. Calculate them once rather
@@ -45,15 +55,102 @@ function stopMapInteraction(event: SyntheticEvent) {
 export default function Minimap({ telemetry, mode }: MinimapProps) {
   const [mapView, setMapView] = useState<MapView>(mode === 'race' ? 'route' : 'world');
   const [zoomIndex, setZoomIndex] = useState(0);
+  const [cameraMode, setCameraMode] = useState<MapCameraMode>('overview');
+  const [manualCenter, setManualCenter] = useState<MapPosition | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<MapDrag | null>(null);
   const instanceId = useId();
   const clipId = `${instanceId}-map-clip`;
   const gridId = `${instanceId}-map-grid`;
-  useEffect(() => { setMapView(mode === 'race' ? 'route' : 'world'); setZoomIndex(0); }, [mode]);
+  const panHelpId = `${instanceId}-map-pan-help`;
+  const releaseDrag = (pointerId?: number) => {
+    const gesture = drag.current;
+    if (!gesture || (pointerId !== undefined && gesture.pointerId !== pointerId)) return;
+    drag.current = null; setDragging(false);
+    if (gesture.element.hasPointerCapture(gesture.pointerId)) {
+      try { gesture.element.releasePointerCapture(gesture.pointerId); } catch { /* Already released by the browser. */ }
+    }
+  };
+  useEffect(() => {
+    releaseDrag(); setMapView(mode === 'race' ? 'route' : 'world'); setZoomIndex(0);
+    setCameraMode('overview'); setManualCenter(null);
+  }, [mode]);
+  useEffect(() => () => {
+    const gesture = drag.current; drag.current = null;
+    if (gesture?.element.hasPointerCapture(gesture.pointerId)) {
+      try { gesture.element.releasePointerCapture(gesture.pointerId); } catch { /* Element may already be detached. */ }
+    }
+  }, []);
 
   const zoom = ZOOM_LEVELS[zoomIndex];
-  const selectView = (view: MapView) => { setMapView(view); setZoomIndex(0); };
+  const selectView = (view: MapView) => {
+    releaseDrag(); setMapView(view); setZoomIndex(0); setManualCenter(null); setCameraMode('overview');
+  };
+  const followDrone = () => { releaseDrag(); setManualCenter(null); setCameraMode('follow'); };
 
-  const bounds = getMapBounds(mapView, zoom, telemetry.position, WORLD_BOUNDS);
+  const bounds = getMapBounds(mapView, zoom, telemetry.position, WORLD_BOUNDS, {
+    center: cameraMode === 'manual' ? manualCenter ?? undefined : undefined,
+    follow: cameraMode === 'follow',
+  });
+  const center = getMapCenter(bounds);
+  const canPan = bounds.maxX - bounds.minX < WORLD_BOUNDS.maxX - WORLD_BOUNDS.minX
+    || bounds.maxZ - bounds.minZ < WORLD_BOUNDS.maxZ - WORLD_BOUNDS.minZ;
+  const changeZoom = (direction: number) => {
+    const nextIndex = clamp(zoomIndex + direction, 0, ZOOM_LEVELS.length - 1);
+    if (nextIndex === zoomIndex) return;
+    releaseDrag();
+    if (cameraMode === 'manual') {
+      const nextBounds = getMapBounds(mapView, ZOOM_LEVELS[nextIndex], telemetry.position, WORLD_BOUNDS, { center, follow: false });
+      setManualCenter(getMapCenter(nextBounds));
+    } else setCameraMode('follow');
+    setZoomIndex(nextIndex);
+  };
+  const startPan = (event: PointerEvent<SVGSVGElement>) => {
+    event.stopPropagation();
+    if (!canPan || !event.isPrimary || event.button !== 0 || drag.current) return;
+    const element = event.currentTarget; const rectangle = element.getBoundingClientRect();
+    if (rectangle.width <= 0 || rectangle.height <= 0) return;
+    try { element.setPointerCapture(event.pointerId); } catch { return; }
+    event.preventDefault(); element.focus({ preventScroll: true });
+    drag.current = {
+      pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+      bounds, viewport: { width: rectangle.width, height: rectangle.height }, element, moved: false,
+    };
+  };
+  const movePan = (event: PointerEvent<SVGSVGElement>) => {
+    const gesture = drag.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    event.stopPropagation();
+    if (event.pointerType === 'mouse' && event.buttons === 0) { releaseDrag(event.pointerId); return; }
+    if (!gesture.moved) {
+      const beginning = beginMapDrag(bounds, { x: gesture.startX, y: gesture.startY }, { x: event.clientX, y: event.clientY });
+      if (!beginning) return;
+      gesture.bounds = beginning.bounds;
+      gesture.startX = beginning.start.x; gesture.startY = beginning.start.y;
+    }
+    const dx = event.clientX - gesture.startX; const dy = event.clientY - gesture.startY;
+    gesture.moved = true; event.preventDefault(); setDragging(true);
+    const nextBounds = panMapBounds(gesture.bounds, dx, dy, gesture.viewport, WORLD_BOUNDS);
+    setManualCenter(getMapCenter(nextBounds)); setCameraMode('manual');
+  };
+  const finishPan = (event: PointerEvent<SVGSVGElement>) => { event.stopPropagation(); releaseDrag(event.pointerId); };
+  const keyboardPan = (event: KeyboardEvent<SVGSVGElement>) => {
+    event.stopPropagation();
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const step = event.shiftKey ? 0.25 : 0.12;
+    const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+    const dz = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+    if (dx || dz) {
+      event.preventDefault();
+      if (!canPan) return;
+      releaseDrag();
+      const next = centerMapBounds(bounds, { x: center.x + dx * (bounds.maxX - bounds.minX), z: center.z + dz * (bounds.maxZ - bounds.minZ) }, WORLD_BOUNDS);
+      setManualCenter(getMapCenter(next)); setCameraMode('manual');
+    } else if (event.key === 'Home') { event.preventDefault(); followDrone(); }
+    else if (event.key === '+' || event.key === '=') { event.preventDefault(); changeZoom(1); }
+    else if (event.key === '-') { event.preventDefault(); changeZoom(-1); }
+    else if (event.key === ' ') event.preventDefault();
+  };
   const geography = useMemo(() => {
     const projection = createProjection(bounds);
     const riverLabel = RIVER_SAMPLES[Math.floor(RIVER_SAMPLES.length / 2)];
@@ -73,11 +170,8 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
 
   const points = CHECKPOINTS.map(({ position }) => geography.project(position.x, position.z));
   const start = geography.project(0, 55);
-  const outsideRoute = mapView === 'route' && zoom === 1 && isOutsideBounds(telemetry.position, bounds);
-  const drone = geography.project(
-    clamp(telemetry.position.x, bounds.minX, bounds.maxX),
-    clamp(telemetry.position.z, bounds.minZ, bounds.maxZ),
-  );
+  const outsideView = isOutsideBounds(telemetry.position, bounds);
+  const drone = geography.project(telemetry.position.x, telemetry.position.z);
   const target = CHECKPOINTS[telemetry.checkpoint];
   const distance = target ? Math.round(Math.hypot(
     target.position.x - telemetry.position.x,
@@ -87,18 +181,29 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
   const course = [start, ...points].map(({ x, y }) => `${x},${y}`).join(' ');
   const isWorld = mapView === 'world';
   const compactSymbols = isWorld && zoom <= 2;
+  const followLabel = cameraMode === 'manual' || outsideView ? '回到无人机' : cameraMode === 'follow' ? '跟随中' : '跟随';
 
   return (
-    <div className={`minimap geographic-minimap${isWorld ? ' minimap-world' : ''}`} aria-label="小地图，河流、湖泊、小屋、小桥、鱼群、当前位置、检查点与投弹靶标"
+    <div className={`minimap geographic-minimap${isWorld ? ' minimap-world' : ''}`} aria-label="小地图，河流、湖泊、小屋、小桥、鱼群、当前位置、检查点与投弹靶标" data-map-mode={cameraMode}
       onClick={stopMapInteraction} onDoubleClick={stopMapInteraction} onPointerDown={stopMapInteraction} onKeyDown={stopMapInteraction}>
       <div className="map-heading">
-        <div className="minimap-modes" role="group" aria-label="地图范围">
-          <button type="button" aria-pressed={isWorld} onClick={() => selectView('world')} title="恢复全域地图，1 倍">全域</button>
-          <button type="button" aria-pressed={!isWorld} onClick={() => selectView('route')} title="恢复航线地图，1 倍">航线</button>
+        <div className="minimap-heading-controls">
+          <div className="minimap-modes" role="group" aria-label="地图范围">
+            <button type="button" aria-pressed={isWorld} onClick={() => selectView('world')} title="恢复全域总览，1 倍">全域</button>
+            <button type="button" aria-pressed={!isWorld} onClick={() => selectView('route')} title="恢复航线总览，1 倍">航线</button>
+          </div>
+          <button className="minimap-follow" type="button" aria-pressed={cameraMode === 'follow'}
+            onClick={followDrone} aria-label="回到无人机并自动跟随" title={cameraMode === 'follow' ? '正在跟随无人机；拖动可自由浏览' : '回到无人机并自动跟随'}>
+            <span className="minimap-follow-full">{followLabel}</span><span className="minimap-follow-short">跟随</span>
+          </button>
         </div>
         <span>N ↑</span>
       </div>
-      <svg viewBox="0 0 180 150" role="img" aria-label={`${isWorld ? '全域地图' : '航线地图'}，${zoom} 倍${zoom > 1 ? '，跟随无人机' : ''}，蓝色为河流湖泊，浅蓝鱼形标记为鱼群，米色为小屋和桥，橙色为未命中靶标${outsideRoute ? '；当前位置超出航线图范围，可切换全域或放大跟随查看' : ''}`}>
+      <svg className={`minimap-pan-surface${canPan ? ' can-pan' : ''}${dragging ? ' is-dragging' : ''}`} viewBox="0 0 180 150" role="img" tabIndex={0}
+        aria-describedby={panHelpId} aria-label={`${isWorld ? '全域地图' : '航线地图'}，${zoom} 倍，${cameraMode === 'follow' ? '跟随无人机' : cameraMode === 'manual' ? '自由浏览' : '预设总览'}，蓝色为河流湖泊，浅蓝鱼形标记为鱼群，米色为小屋和桥，橙色为未命中靶标${outsideView ? '；无人机在当前视窗外，点击回到无人机查看' : ''}`}
+        data-map-center-x={center.x} data-map-center-z={center.z}
+        onPointerDown={startPan} onPointerMove={movePan} onPointerUp={finishPan} onPointerCancel={finishPan} onLostPointerCapture={finishPan} onKeyDown={keyboardPan}>
+        <title>{canPan ? '拖动或使用方向键浏览；Home 回到无人机' : '全域已完整显示，放大后可拖动浏览'}</title>
         <defs>
           <pattern id={gridId} width="30" height="25" patternUnits="userSpaceOnUse">
             <path d="M 30 0 L 0 0 0 25" fill="none" stroke="currentColor" strokeOpacity="0.09" strokeWidth="0.6" />
@@ -163,25 +268,27 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
             </g>;
           })}
         </g>
-        <g transform={`translate(${drone.x} ${drone.y}) rotate(${-telemetry.yaw * 180 / Math.PI})`}>
-          <title>{outsideRoute ? '当前位置超出航线图范围，切换全域地图查看' : '无人机当前位置'}</title>
+        {!outsideView && <g transform={`translate(${drone.x} ${drone.y}) rotate(${-telemetry.yaw * 180 / Math.PI})`}>
+          <title>无人机当前位置</title>
           <circle r="9" fill="#c8ff5f" fillOpacity="0.12" />
-          <path d="M 0 -7 L 5 5 L 0 3 L -5 5 Z" fill={outsideRoute ? '#17221b' : '#c8ff5f'} stroke={outsideRoute ? '#c8ff5f' : '#17221b'} strokeWidth="1" />
-        </g>
+          <path d="M 0 -7 L 5 5 L 0 3 L -5 5 Z" fill="#c8ff5f" stroke="#17221b" strokeWidth="1" />
+        </g>}
+        {outsideView && <text x="90" y="147" textAnchor="middle" fontSize="7" fill="#e5dcae">无人机在视窗外</text>}
       </svg>
+      <span id={panHelpId} className="minimap-pan-help">{canPan ? '拖动地图或使用方向键平移；拖动后暂停跟随，Home 或跟随按钮回到无人机。' : '全域已完整显示，点击加号放大后可拖动。'}加减键缩放，点击倍率或预设恢复总览。</span>
       <div className="minimap-zoom" role="group" aria-label="地图缩放">
-        <button type="button" disabled={zoomIndex === 0} onClick={() => setZoomIndex(index => Math.max(0, index - 1))}
+        <button type="button" disabled={zoomIndex === 0} onClick={() => changeZoom(-1)}
           aria-label="缩小地图" title="缩小地图">−</button>
-        <button type="button" className="minimap-zoom-factor" onClick={() => setZoomIndex(0)}
-          aria-label={`当前 ${zoom} 倍，点击恢复 1 倍视图`} title="恢复 1× 视图">
+        <button type="button" className="minimap-zoom-factor" onClick={() => selectView(mapView)}
+          aria-label={`当前 ${zoom} 倍，点击恢复 1 倍总览`} title="恢复 1× 总览">
           <span aria-live="polite" aria-atomic="true">{zoom}×</span>
         </button>
-        <button type="button" disabled={zoomIndex === ZOOM_LEVELS.length - 1} onClick={() => setZoomIndex(index => Math.min(ZOOM_LEVELS.length - 1, index + 1))}
+        <button type="button" disabled={zoomIndex === ZOOM_LEVELS.length - 1} onClick={() => changeZoom(1)}
           aria-label="放大地图" title="放大地图">+</button>
       </div>
       <div className="map-distance">
-        <span>{outsideRoute ? '范围外' : mode === 'free' ? zoom > 1 ? '跟随范围' : '探索范围' : target ? '下个检查点' : '航线完成'}</span>
-        <strong>{outsideRoute ? '切换全域' : mode === 'race' && target ? `${distance} m` : mode === 'race' ? '8 / 8' : formatMapSpan(bounds)}</strong>
+        <span>{outsideView ? '视窗外' : mode === 'free' ? cameraMode === 'manual' ? '浏览范围' : zoom > 1 ? '跟随范围' : '探索范围' : target ? '下个检查点' : '航线完成'}</span>
+        <strong>{mode === 'race' && target ? `${distance} m` : mode === 'race' ? '8 / 8' : formatMapSpan(bounds)}</strong>
       </div>
       <div className="map-discovery" aria-label="浅蓝鱼形标记是鱼群，沿河飞到木桥下游，低空悬停，按 V 或手机视角按钮切换俯视观察">
         <svg viewBox="-8 -4 15 8" aria-hidden="true"><path d="M -4 0 C -1 -4 3 -4 6 0 C 3 4 -1 4 -4 0 L -7 -3 L -7 3 Z" fill="currentColor" /></svg>

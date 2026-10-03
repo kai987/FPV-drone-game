@@ -91,8 +91,8 @@ export const DRONES: readonly DroneSpec[] = Object.freeze([
     },
   },
   {
-    id: 'falcon', name: 'FALCON 游隼', tagline: '流线长躯，极速巡航', category: '流线速度原型',
-    description: '受到 Peregreen V4 原型启发的虚构游戏改编。流线机身、电机舱与尾翼形成独特轮廓，运动模式可达 360 km/h；惯性更强，转弯时适合先减速。',
+    id: 'falcon', name: 'FALCON 游隼', tagline: '轴向长舱，极速巡航', category: '轴向速度原型',
+    description: '受到 Peregreen V4 原型启发的虚构游戏改编。细长中央舱与四个平行电机舱组成火箭般的轴向轮廓；悬停时直立，前进时向航向倾转。运动模式可达 360 km/h，转弯前需要提早减速。',
     color: '#cfa14c', frame: 'streamlined', wheelbaseMm: 305, propellerInches: 7, weightGrams: 1180,
     battery: '8S · 2200 mAh', motors: '2808 · 1550 KV', lens: '巡航广角 152°', videoLink: '数字图传 · 1080p', enduranceMinutes: 4,
     flight: Object.freeze({ speed: 360 / 122.4, climb: 1.18, response: 0.9, brake: 0.85, yaw: 0.95, bank: 0.96 }),

@@ -12,6 +12,8 @@ import type { DroneId } from './drone-catalog';
 import { createWeaponState, dropBomb, stepWeapons, TARGETS } from './weapons';
 import { createWeaponVisuals } from './weapon-visuals';
 import type { RaceMode, FlightMode, CameraMode, Status, Telemetry } from './types';
+import { DEFAULT_WIND_SETTINGS, sampleWind, describeWind } from './wind';
+import type { WindSettings } from './wind';
 
 export interface EngineEvents {
   telemetry: (value: Telemetry) => void;
@@ -46,6 +48,9 @@ export class FlightEngine {
   private lastTime = 0;
   private lastEmit = 0;
   private elapsed = 0;
+  private windClock = 0;
+  private currentWind: WindSettings = { ...DEFAULT_WIND_SETTINGS };
+  private unchangedWind = true;
   private checkpoint = 0;
   private collisionCooldown = 0;
   private resizeObserver: ResizeObserver;
@@ -54,6 +59,8 @@ export class FlightEngine {
   flightMode: FlightMode = 'assisted';
   cameraMode: CameraMode = 'chase';
   get droneId(): DroneId { return this.selectedDroneId; }
+  get windSettings(): Readonly<WindSettings> { return this.currentWind; }
+  get recordEligible(): boolean { return this.unchangedWind; }
 
   constructor(private host: HTMLDivElement, private events: EngineEvents) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -140,6 +147,15 @@ export class FlightEngine {
     this.headlight.intensity = enabled ? 950 : 0;
     this.renderer.toneMappingExposure = enabled ? 1.05 : 1.2;
   }
+  setWind(settings: WindSettings) {
+    if (this.disposed) return;
+    const direction = Number.isFinite(settings.direction) ? ((settings.direction % 360) + 360) % 360 : 315;
+    const strength = ['calm', 'breeze', 'windy', 'strong'].includes(settings.strength) ? settings.strength : 'breeze';
+    const changed = strength !== this.currentWind.strength || (strength !== 'calm' && direction !== this.currentWind.direction);
+    if (changed && (this.status === 'flying' || this.status === 'paused')) this.unchangedWind = false;
+    this.currentWind = { strength, direction };
+    this.emit();
+  }
   /** A model can be changed only outside an active or paused flight. */
   setDrone(id: DroneId): boolean {
     if (this.disposed || (this.status !== 'ready' && this.status !== 'finished') || !DRONES.some(spec => spec.id === id)) return false;
@@ -169,6 +185,7 @@ export class FlightEngine {
   private setStatus(status: Status) { this.status = status; this.events.status(status); }
   start() {
     this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
+    this.windClock = 0; this.unchangedWind = true;
     this.weapons = createWeaponState();
     this.snapCamera = true;
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
@@ -183,6 +200,7 @@ export class FlightEngine {
   togglePause() { if (this.status === 'flying') this.pause(); else if (this.status === 'paused') this.setStatus('flying'); }
   reset() {
     this.setStatus('ready'); this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
+    this.windClock = 0; this.unchangedWind = true;
     this.weapons = createWeaponState();
     this.snapCamera = true; this.events.notice('');
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
@@ -200,7 +218,9 @@ export class FlightEngine {
         climb: pressed('Space') - Math.max(pressed('ShiftLeft'), pressed('ShiftRight')) + this.touch.climb,
         yaw: pressed('KeyQ') + pressed('ArrowLeft') - pressed('KeyE') - pressed('ArrowRight') + this.touch.yaw,
         lookPitch: pressed('ArrowUp') - pressed('ArrowDown'),
-      }, dt, this.flightMode, (x, z) => flightSurfaceHeight(x, z, previous.y), getDroneSpec(this.selectedDroneId).flight);
+      }, dt, this.flightMode, (x, z) => flightSurfaceHeight(x, z, previous.y), getDroneSpec(this.selectedDroneId).flight,
+      sampleWind(this.currentWind, this.windClock + dt * 0.5, previous));
+      this.windClock += dt;
       this.elapsed += elapsedDelta; this.collisionCooldown -= dt;
       const p = this.state.position;
       const x = THREE.MathUtils.clamp(p.x, WORLD_BOUNDS.minX, WORLD_BOUNDS.maxX);
@@ -249,7 +269,14 @@ export class FlightEngine {
     this.headlight.position.set(position.x - Math.sin(yaw) * 0.75, position.y - 0.1, position.z - Math.cos(yaw) * 0.75);
     this.headlightTarget.position.set(position.x - Math.sin(yaw) * 17, position.y - 5, position.z - Math.cos(yaw) * 17);
     const forwardVelocity = -Math.sin(yaw) * velocity.x - Math.cos(yaw) * velocity.z;
-    this.drone.model.rotation.set(pitch - forwardVelocity * 0.004, yaw, roll);
+    if (this.selectedDroneId === 'falcon') {
+      // The speed prototype's five streamlined pods share the +Y thrust axis:
+      // upright in a hover, tipping toward the flight path as speed increases.
+      const sideVelocity = Math.cos(yaw) * velocity.x - Math.sin(yaw) * velocity.z;
+      this.drone.model.rotation.set(
+        THREE.MathUtils.clamp(pitch * 0.15 - Math.atan2(forwardVelocity, 22), -1.37, 1.37), yaw,
+        THREE.MathUtils.clamp(roll * 0.3 - Math.atan2(sideVelocity, 22), -1.2, 1.2));
+    } else this.drone.model.rotation.set(pitch - forwardVelocity * 0.004, yaw, roll);
     this.drone.model.visible = this.cameraMode !== 'fpv';
     this.drone.update(time / 1000, this.status === 'flying', speed);
     if (this.cameraMode === 'fpv') {
@@ -283,10 +310,14 @@ export class FlightEngine {
     this.frame = requestAnimationFrame(this.tick);
   };
   private emit() {
+    const wind = sampleWind(this.currentWind, this.windClock, this.state.position);
     this.events.telemetry({
       speed: Math.hypot(this.state.velocity.x, this.state.velocity.y, this.state.velocity.z) * 3.6,
       altitude: this.state.position.y, elapsed: this.elapsed, checkpoint: this.checkpoint,
       position: { ...this.state.position }, yaw: this.state.yaw, pitch: this.state.pitch, roll: this.state.roll,
+      wind: { ...describeWind(wind, this.state.yaw), vector: wind },
+      airSpeed: Math.hypot(this.state.velocity.x - wind.x, this.state.velocity.y - wind.y, this.state.velocity.z - wind.z) * 3.6,
+      recordEligible: this.unchangedWind,
       weapons: { ammo: this.weapons.ammo, reloadRemaining: this.weapons.reloadRemaining,
         score: this.weapons.score, hitTargetIds: [...this.weapons.hitTargetIds] },
     });

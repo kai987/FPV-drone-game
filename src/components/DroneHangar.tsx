@@ -111,7 +111,7 @@ export default function DroneHangar({ droneId, flightMode, status, available, on
         </table>
       </div>
       <p className="hangar-reference-note">{DRONE_CATALOG_NOTE}续航目前不模拟耗电；镜头、图传不改变实际画面配置。</p>
-      <p className="hangar-reference-note">速度为直飞限速；加速和制动按指数响应，响应时间表示达到目标变化量约 63% 的时间。</p>
+      <p className="hangar-reference-note">速度为无风直飞参考；迎风、顺风与侧风会改变实际地速和航迹。加速和制动按指数响应，响应时间表示达到目标变化量约 63% 的时间。</p>
     </div>
     <div className="hangar-footer">
       <p>{canSwitch ? unchanged ? '当前已选用这款机型。' : '应用后从起点准备起飞。' : '飞行已暂停；切换机型需返回起点，会重置本轮进度、弹药与得分。'}</p>

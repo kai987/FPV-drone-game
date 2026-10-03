@@ -2,15 +2,16 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 export const DRONE_PREVIEW_DIRECTION = new THREE.Vector3(1.08, 0.78, -1.28).normalize();
+const AXIAL_PREVIEW_DIRECTION = new THREE.Vector3(1.5, 1.1, -0.6).normalize();
 
 /** Fit all eight corners, including long antennas and swept propeller tips. */
-export function fitDroneCamera(camera: THREE.PerspectiveCamera, model: THREE.Object3D, direction = DRONE_PREVIEW_DIRECTION) {
+export function fitDroneCamera(camera: THREE.PerspectiveCamera, model: THREE.Object3D, direction?: THREE.Vector3) {
   model.updateMatrixWorld(true);
   const bounds = new THREE.Box3().setFromObject(model);
   const center = bounds.getCenter(new THREE.Vector3());
   const size = bounds.getSize(new THREE.Vector3());
   const radius = Math.max(0.1, size.length() / 2);
-  const back = direction.clone().normalize();
+  const back = (direction ?? (model.userData.droneId === 'falcon' ? AXIAL_PREVIEW_DIRECTION : DRONE_PREVIEW_DIRECTION)).clone().normalize();
   const right = new THREE.Vector3().crossVectors(camera.up, back).normalize();
   const up = new THREE.Vector3().crossVectors(back, right).normalize();
   const tanVertical = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
