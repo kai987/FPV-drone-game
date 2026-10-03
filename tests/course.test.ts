@@ -3,20 +3,23 @@ import test from 'node:test';
 import { createFlightState, crossesCheckpoint, stepFlight } from '../src/game/flight.ts';
 import type { Checkpoint, FlightInput, FlightMode, FlightState } from '../src/game/flight.ts';
 import { CHECKPOINTS, groundHeight } from '../src/game/world.ts';
-import { DRONES } from '../src/game/drone-catalog.ts';
+import { DRONES, getFlightConfig } from '../src/game/drone-catalog.ts';
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const straightForward: FlightInput = { forward: 1, strafe: 0, climb: 0, yaw: 0 };
 
 /** Steer with the same bounded control axes as a player, never moving state directly. */
-function steerTowardGate(state: FlightState, checkpoint: Checkpoint): FlightInput {
+function steerTowardGate(state: FlightState, checkpoint: Checkpoint, maxSpeed: number): FlightInput {
   // Aim beyond the ring so slowing near its centre still crosses its plane.
   const dx = checkpoint.position.x - Math.sin(checkpoint.yaw) * 5 - state.position.x;
   const dz = checkpoint.position.z - Math.cos(checkpoint.yaw) * 5 - state.position.z;
   const desiredYaw = Math.atan2(-dx, -dz);
   const yawError = Math.atan2(Math.sin(desiredYaw - state.yaw), Math.cos(desiredYaw - state.yaw));
+  // A player can release some throttle before turns. Keep the original four
+  // aircraft's controls, but request the same approach speed from faster models.
+  const throttleScale = Math.min(maxSpeed, 45.9) / maxSpeed;
   return {
-    forward: clamp(Math.hypot(dx, dz) / 22, 0.35, 1) * Math.max(0, Math.cos(yawError)),
+    forward: clamp(Math.hypot(dx, dz) / 22, 0.35, 1) * Math.max(0, Math.cos(yawError)) * throttleScale,
     strafe: 0,
     climb: clamp((checkpoint.position.y - state.position.y - state.velocity.y * 0.4) / 8, -1, 1),
     yaw: clamp(yawError * 3, -1, 1),
@@ -30,12 +33,13 @@ for (const drone of DRONES) for (const mode of ['assisted', 'sport'] as const sa
     const crossed: number[] = [];
     let nextCheckpoint = 0;
     let groundContacts = 0;
+    const maxSpeed = getFlightConfig(drone.id, mode).speed;
 
     for (let frame = 0; frame < 120 * 60 && nextCheckpoint < CHECKPOINTS.length; frame++) {
       const checkpoint = CHECKPOINTS[nextCheckpoint];
       const previous = { ...state.position };
       // The beginner approach should work by holding only W at spawn altitude.
-      const input = nextCheckpoint < 2 ? straightForward : steerTowardGate(state, checkpoint);
+      const input = nextCheckpoint < 2 ? straightForward : steerTowardGate(state, checkpoint, maxSpeed);
       stepFlight(state, input, 1 / 60, mode, groundHeight, drone.flight);
       if (state.collision) groundContacts++;
       assert.ok(state.position.y >= groundHeight(state.position.x, state.position.z) + 1.8 - 1e-9);

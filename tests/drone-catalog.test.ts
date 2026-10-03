@@ -18,17 +18,38 @@ function simulate(id: DroneId, mode: DroneFlightMode, input: FlightInput, second
   return state;
 }
 
-test('four fictional catalogue entries have distinct frames and retain freestyle as the default', () => {
-  assert.deepEqual(DRONES.map(drone => drone.id), ['cinewhoop', 'freestyle', 'racer', 'explorer']);
-  assert.equal(new Set(DRONES.map(drone => drone.frame)).size, 4);
+test('six fictional catalogue entries have distinct frames and retain freestyle as the default', () => {
+  assert.deepEqual(DRONES.map(drone => drone.id), ['cinewhoop', 'freestyle', 'racer', 'explorer', 'vector', 'falcon']);
+  assert.equal(new Set(DRONES.map(drone => drone.frame)).size, 6);
   assert.equal(DEFAULT_DRONE_ID, 'freestyle');
   assert.equal(getDroneSpec('unknown').id, DEFAULT_DRONE_ID);
   assert.match(DRONE_CATALOG_NOTE, /虚构游戏机型/);
-  assert.match(DRONE_CATALOG_NOTE, /不代表真实产品实测/);
+  assert.match(DRONE_CATALOG_NOTE, /硬件与续航是虚构游戏设定/);
+  assert.match(DRONE_CATALOG_NOTE, /不代表.*真实产品实测/);
   for (const spec of DRONES) {
     assert.ok(spec.wheelbaseMm > 0 && spec.propellerInches > 0 && spec.weightGrams > 0 && spec.enduranceMinutes > 0);
     for (const label of [spec.name, spec.description, spec.battery, spec.motors, spec.lens, spec.videoLink]) assert.ok(label.length > 0);
     assert.ok(Object.values(spec.flight).every(value => Number.isFinite(value) && value > 0));
+  }
+});
+
+test('prototype references stay separate from exact simulated 260 and 360 km/h sport speeds', () => {
+  for (const [id, expectedSpeed, referenceSpeed, source] of [
+    ['vector', 260, 263.1, 'Guinness World Records'],
+    ['falcon', 360, 657, 'AirShaper 项目案例'],
+  ] as const) {
+    const spec = getDroneSpec(id);
+    const config = getFlightConfig(id, 'sport');
+    assert.ok(Math.abs(config.speed * 3.6 - expectedSpeed) < 1e-10);
+    const cruising = simulate(id, 'sport', forward, 15);
+    assert.ok(Math.abs(-cruising.velocity.z * 3.6 - expectedSpeed) < 1e-8);
+    assert.equal(spec.reference?.speedKmh, referenceSpeed);
+    assert.equal(spec.reference?.source, source);
+    assert.ok(spec.reference?.url.startsWith('https://'));
+    assert.match(spec.description, /虚构游戏改编/);
+    const racer = getDroneSpec('racer');
+    assert.ok(spec.weightGrams > racer.weightGrams);
+    assert.ok(spec.flight.response < racer.flight.response && spec.flight.yaw < racer.flight.yaw);
   }
 });
 
@@ -105,7 +126,7 @@ test('selected profiles change normalized acceleration, braking, yaw and bank', 
   }
 });
 
-test('four rendered airframes have distinct silhouettes and only cinewhoop has four hollow ducts', () => {
+test('six rendered airframes have distinct silhouettes and only cinewhoop has four hollow ducts', () => {
   const sizes = new Map<DroneId, THREE.Vector3>();
   for (const spec of DRONES) {
     const drone = createDrone(spec.id);
@@ -119,6 +140,14 @@ test('four rendered airframes have distinct silhouettes and only cinewhoop has f
       const shape = geometry.parameters.shapes as THREE.Shape;
       assert.equal(shape.holes.length, 1);
     }
+    const styledParts: THREE.Object3D[] = [];
+    drone.model.traverse(part => { if (part.name.startsWith('VECTOR ') || part.name.startsWith('FALCON ')) styledParts.push(part); });
+    if (spec.id === 'vector') assert.deepEqual(styledParts.map(part => part.name), ['VECTOR low racing canopy']);
+    if (spec.id === 'falcon') {
+      assert.equal(styledParts.filter(part => part.name === 'FALCON motor pod').length, 4);
+      assert.equal(styledParts.filter(part => part.name === 'FALCON tail fin').length, 2);
+      assert.ok(styledParts.some(part => part.name === 'FALCON streamlined fuselage'));
+    }
     sizes.set(spec.id, new THREE.Box3().setFromObject(drone.model).getSize(new THREE.Vector3()));
     drone.dispose();
   }
@@ -126,9 +155,13 @@ test('four rendered airframes have distinct silhouettes and only cinewhoop has f
   const standard = sizes.get('freestyle')!;
   const race = sizes.get('racer')!;
   const explorer = sizes.get('explorer')!;
+  const vector = sizes.get('vector')!;
+  const falcon = sizes.get('falcon')!;
   assert.ok(cine.x < standard.x && cine.z < standard.z);
   assert.ok(race.z / race.x > standard.z / standard.x);
   assert.ok(explorer.x > standard.x && explorer.z > standard.z && explorer.y > standard.y);
+  assert.ok(Math.abs(vector.x / vector.z - 1) < 0.05, 'VECTOR uses a symmetric speed X frame');
+  assert.ok(falcon.z / falcon.x > vector.z / vector.x, 'FALCON has a longer streamlined silhouette');
 });
 
 test('switching models can release every shared part once without disposing another model', () => {

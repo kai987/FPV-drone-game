@@ -1,5 +1,5 @@
-export type DroneId = 'cinewhoop' | 'freestyle' | 'racer' | 'explorer';
-export type DroneFrame = 'ducted' | 'x' | 'stretch-x' | 'long-range';
+export type DroneId = 'cinewhoop' | 'freestyle' | 'racer' | 'explorer' | 'vector' | 'falcon';
+export type DroneFrame = 'ducted' | 'x' | 'stretch-x' | 'long-range' | 'speed-x' | 'streamlined';
 export type DroneFlightMode = 'assisted' | 'sport';
 
 /** Multipliers applied to the shared arcade flight simulation, not hardware measurements. */
@@ -29,10 +29,18 @@ export interface DroneSpec {
   videoLink: string;
   enduranceMinutes: number;
   flight: Readonly<DroneProfile>;
+  reference?: {
+    name: string;
+    speedKmh: number;
+    speedLabel: string;
+    summary: string;
+    url: string;
+    source: string;
+  };
 }
 
 export const DEFAULT_DRONE_ID: DroneId = 'freestyle';
-export const DRONE_CATALOG_NOTE = '四款均为虚构游戏机型。硬件与续航为参考设定，飞行性能来自游戏模拟，不代表真实产品实测。';
+export const DRONE_CATALOG_NOTE = '全部均为虚构游戏机型，硬件与续航是虚构游戏设定。高速机型受到真实原型启发，外形经过游戏改编；游戏飞行性能不代表真实世界纪录或真实产品实测。';
 export const FLIGHT_BOOST_MULTIPLIER = 1.45;
 
 export const BASE_FLIGHT_SETTINGS = Object.freeze({
@@ -68,6 +76,31 @@ export const DRONES: readonly DroneSpec[] = Object.freeze([
     color: '#83b8c1', frame: 'long-range', wheelbaseMm: 315, propellerInches: 7, weightGrams: 980,
     battery: '6S · 3000 mAh', motors: '2806 · 1300 KV', lens: '巡航广角 145°', videoLink: '数字图传 · 1080p', enduranceMinutes: 16,
     flight: Object.freeze({ speed: 0.9, climb: 0.85, response: 0.72, brake: 0.7, yaw: 0.72, bank: 0.8 }),
+  },
+  {
+    id: 'vector', name: 'VECTOR 矢量', tagline: '低伏加速，直线追风', category: '高速对称 X 架',
+    description: '受到 DRL RacerX 速度纪录启发的虚构游戏改编。低矮整流罩与对称 X 架，运动模式可达 260 km/h；转向比轻型竞速机更沉稳，需要提早收油。',
+    color: '#75cee1', frame: 'speed-x', wheelbaseMm: 250, propellerInches: 6, weightGrams: 840,
+    battery: '6S · 1800 mAh', motors: '2308 · 1950 KV', lens: '速度广角 158°', videoLink: '低延迟图传 · 1080p', enduranceMinutes: 5,
+    flight: Object.freeze({ speed: 260 / 122.4, climb: 1.25, response: 0.98, brake: 0.92, yaw: 1.04, bank: 1.04 }),
+    reference: {
+      name: 'DRL RacerX', speedKmh: 263.1, speedLabel: '2017 年纪录速度',
+      summary: '100 米往返纪录，163.5 mph，约 263 km/h。',
+      url: 'https://www.guinnessworldrecords.com/news/commercial/2017/7/the-drone-racing-league-builds-the-worlds-fastest-racing-drone-482701',
+      source: 'Guinness World Records',
+    },
+  },
+  {
+    id: 'falcon', name: 'FALCON 游隼', tagline: '流线长躯，极速巡航', category: '流线速度原型',
+    description: '受到 Peregreen V4 原型启发的虚构游戏改编。流线机身、电机舱与尾翼形成独特轮廓，运动模式可达 360 km/h；惯性更强，转弯时适合先减速。',
+    color: '#d8a65e', frame: 'streamlined', wheelbaseMm: 305, propellerInches: 7, weightGrams: 1180,
+    battery: '8S · 2200 mAh', motors: '2808 · 1550 KV', lens: '巡航广角 152°', videoLink: '数字图传 · 1080p', enduranceMinutes: 4,
+    flight: Object.freeze({ speed: 360 / 122.4, climb: 1.18, response: 0.9, brake: 0.85, yaw: 0.95, bank: 0.96 }),
+    reference: {
+      name: 'Peregreen V4', speedKmh: 657, speedLabel: '原型纪录速度',
+      summary: '项目合作方记载的平均纪录速度约 657 km/h。',
+      url: 'https://airshaper.com/cases/peregreen-v4-fastest-drone', source: 'AirShaper 项目案例',
+    },
   },
 ]);
 

@@ -25,7 +25,7 @@ export default function ControlsGuide({ onClose }: { onClose: () => void }) {
     onKeyUp={event => event.stopPropagation()} onClick={e => { if (e.target === ref.current) onClose(); }}>
     <div className="dialog-heading"><div><span className="section-index">FLIGHT MANUAL</span><h2>从第一步，到自由飞行。</h2></div><button ref={closeButton} className="icon-button" aria-label="关闭操作指南" onClick={onClose}><X size={20} /></button></div>
     <p>先试试辅助模式。机身会自动悬停，松开按键就能减速。</p>
-    <div className="guide-note"><strong>在机库里挑选飞行伙伴</strong><p>点击页头当前机型名称，查看四款机架和完整参数对比。CINE 轻影适合低速近景，FLOW 自由式均衡灵活，RACE 疾风追求速度，RANGE 远行者适合平稳巡航。辅助与运动的性能按钮仅用于预览，不会修改当前飞行模式。</p><p>飞行中打开机库会暂停，关闭后仍可决定何时继续；切换须明确点击「返回起点并应用」，本轮进度和弹药会重置。个人最佳按机型与飞行模式分别记录。四款均为虚构游戏机型；电池、镜头、图传和续航为参考设定，当前不模拟耗电。</p></div>
+    <div className="guide-note"><strong>在机库里挑选飞行伙伴</strong><p>点击页头当前机型名称，查看六款机架和完整参数对比。CINE 轻影适合低速近景，FLOW 自由式均衡灵活，RACE 疾风追求速度，RANGE 远行者适合平稳巡航；VECTOR 矢量与 FALCON 游隼在运动模式下可达 260 / 360 km/h，适合开阔地带高速飞行。辅助与运动的性能按钮仅用于预览，不会修改当前飞行模式。</p><p>飞行中打开机库会暂停，关闭后仍可决定何时继续；切换须明确点击「返回起点并应用」，本轮进度和弹药会重置。个人最佳按机型与飞行模式分别记录。机型均为游戏改编或虚构配置，高速机的真实原型及纪录来源可在机库查看；电池、镜头、图传和续航为参考设定，当前不模拟耗电。</p></div>
     <div className="guide-section"><h3><Keyboard size={18} /> 键盘操作</h3><dl>
       <div><dt><Key>W</Key><Key>S</Key></dt><dd>向前 / 向后飞行</dd></div>
       <div><dt><Key>A</Key><Key>D</Key></dt><dd>向左 / 向右平移</dd></div>
@@ -40,7 +40,7 @@ export default function ControlsGuide({ onClose }: { onClose: () => void }) {
     </dl></div>
     <div className="guide-section"><h3><MousePointer2 size={18} /> 鼠标与触屏</h3><p>飞行时点击画面可启用鼠标视角，Esc 释放鼠标并暂停。手机上使用画面两侧的方向按钮，可同时操作多个方向；点击左侧「投弹」按钮投放炸弹，点击右上角的视角按钮切换俯视瞄准。</p></div>
     <div className="guide-note"><strong>怎样完成挑战？</strong><p>按顺序，从正面穿过 8 个飞行环。当前目标会亮起，小地图会标出航线。碰到地形或树木会减速，并增加 3 秒计时；自由飞行没有计时惩罚。</p></div>
-    <div className="guide-note"><strong>沿河流，拜访乡间村落</strong><p>飞行区域为 3.6 × 3.6 公里，包含蜿蜒河道、翡翠湖与松影湖。沿河寻找小桥和乡间小屋，牧场里有牛羊，河湖浅水里有游动的鱼。小地图可切换「航线 / 全域」；自由飞行默认显示全域。升高后更容易看清湖岸和远山，最高可飞到 450 米。接触水面会自动稳住机身。</p><p><strong>怎样找到鱼群？</strong>选自由飞行，把小地图切到「航线」，沿河飞到木桥下游的浅蓝鱼形标记。减速悬停在水面上方约 2–8 米，按 V 切到「俯视瞄准」（手机点击右上角视角按钮），向下观察；白天更容易看清。湖里的鱼标可在「全域」查看。</p><p>点击右上角「日间 / 夜间」或按 N，可在飞行中切换昼夜；位置、计时和弹药都会保留。</p></div>
+    <div className="guide-note"><strong>沿河流，拜访乡间村落</strong><p>飞行区域为 3.6 × 3.6 公里，包含蜿蜒河道、翡翠湖与松影湖。沿河寻找小桥和乡间小屋，牧场里有牛羊，河湖浅水里有游动的鱼。小地图可切换「航线 / 全域」；自由飞行默认显示全域。用「− / +」在 1×、2×、4×、8× 之间缩放，点击倍率恢复 1×；放大后地图跟随无人机。升高后更容易看清湖岸和远山，最高可飞到 450 米。接触水面会自动稳住机身。</p><p><strong>怎样找到鱼群？</strong>选自由飞行，把小地图切到「航线」，沿河飞到木桥下游的浅蓝鱼形标记。减速悬停在水面上方约 2–8 米，按 V 切到「俯视瞄准」（手机点击右上角视角按钮），向下观察；白天更容易看清。湖里的鱼标可在「全域」查看。</p><p>点击右上角「日间 / 夜间」或按 N，可在飞行中切换昼夜；位置、计时和弹药都会保留。</p></div>
     <div className="guide-note"><strong>在山谷里练习投弹</strong><p>计时挑战和自由飞行都可投弹。按 V 切换俯视瞄准，从目标上方投放；炸弹会继承无人机的飞行速度，减速悬停更容易命中。每轮携带 6 枚，连续投弹间隔 0.45 秒，用完后自动装填 3 秒。场内有 5 个地面靶标，每个首次命中加 100 分，重新开始会重置靶标和得分。</p></div>
     <button className="primary-button" onClick={onClose}>准备好了</button>
   </dialog>;

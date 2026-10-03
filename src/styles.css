@@ -257,19 +257,19 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
 .drone-hangar-toggle { display: flex; align-items: center; gap: 7px; min-height: 35px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .drone-hangar-toggle:hover { background: #e9eee1; }
 .hangar-entry-label { color: var(--muted); font-size: 10px; padding-right: 7px; border-right: 1px solid var(--line); }
-.drone-hangar { width: min(880px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--paper); color: var(--ink); overflow: hidden; }
+.drone-hangar { width: min(1040px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--paper); color: var(--ink); overflow: hidden; }
 .drone-hangar[open] { display: flex; flex-direction: column; }
 .drone-hangar::backdrop { background: #14261770; backdrop-filter: blur(6px); }
 .hangar-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; gap: 16px; padding: 22px 26px 18px; border-bottom: 1px solid var(--line); }
 .hangar-heading h2 { font-size: 27px; margin: 8px 0 5px; font-weight: 700; letter-spacing: -.7px; }
 .hangar-heading p { margin: 0; color: var(--muted); font-size: 12px; }
 .hangar-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 26px; }
-.hangar-models { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.hangar-models { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
 .hangar-model { min-width: 0; padding: 7px 10px 12px; text-align: left; background: #eef1e7; border: 1px solid #dce2d2; border-radius: 11px; }
 .hangar-model.selected { background: #e6eddb; border-color: #879b5f; box-shadow: inset 0 0 0 1px #879b5f; }
 .hangar-drone-outline { display: block; width: 100%; height: 105px; }
 .hangar-model strong, .hangar-model > span { display: block; }
-.hangar-model strong { font-size: 13px; font-weight: 700; }
+.hangar-model strong { font-size: 12px; font-weight: 700; }
 .hangar-model > span { color: var(--muted); font-size: 10px; margin-top: 3px; }
 .hangar-model small { display: flex; align-items: center; gap: 3px; height: 15px; color: #687650; font-size: 9px; margin-top: 7px; }
 .hangar-selection { display: flex; align-items: flex-start; gap: 11px; margin: 18px 0 21px; }
@@ -294,7 +294,7 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
 }
 .hangar-table-scroll { overflow: auto; max-height: min(520px, 56dvh); border: 1px solid var(--line); border-radius: 9px; overscroll-behavior-x: contain; }
 .hangar-table-scroll:focus-visible { outline: 2px solid #91a854; outline-offset: 3px; }
-.hangar-table { width: 100%; min-width: 690px; border-collapse: collapse; font-size: 11px; text-align: left; }
+.hangar-table { width: 100%; min-width: 960px; border-collapse: collapse; font-size: 11px; text-align: left; }
 .hangar-table th, .hangar-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); line-height: 1.5; }
 .hangar-table thead th { position: sticky; top: 0; z-index: 2; background: #edf1e7; font-size: 12px; font-weight: 700; }
 .hangar-table th[scope="row"], .hangar-table thead th:first-child { position: sticky; left: 0; background: var(--paper); box-shadow: 1px 0 0 var(--line); }
@@ -331,7 +331,7 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
   .hangar-heading h2 { font-size: 23px; }
   .hangar-heading p { font-size: 10px; }
   .hangar-body { padding: 14px 18px; }
-  .hangar-models { gap: 7px; }
+  .hangar-models { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
   .hangar-drone-outline { height: 83px; }
   .hangar-model { padding: 5px 8px 9px; }
   .hangar-model strong { font-size: 11px; }
@@ -362,3 +362,13 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
   .hangar-actions { gap: 6px; }
   .hangar-apply, .hangar-reset-apply { padding-left: 9px; padding-right: 9px; font-size: 10px; }
 }
+
+.hangar-source { margin: -5px 0 18px; padding: 12px 15px; border: 1px solid var(--line); border-radius: 9px; background: #83a9bc0b; }
+.hangar-source > div { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; }
+.hangar-source-label { font-size: 11px; font-weight: 600; }
+.hangar-source a { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; text-underline-offset: 3px; }
+.hangar-source a:focus-visible { outline: 2px solid #91a854; outline-offset: 3px; }
+.hangar-source p { color: var(--muted); font-size: 10px; line-height: 1.7; margin: 7px 0 0; }
+.hangar-source strong { font-size: 21px; font-variant-numeric: tabular-nums; color: var(--ink); margin-right: 12px; }
+.hangar-source strong small { font-size: 11px; font-weight: 400; }
+.hangar-source p > span { white-space: nowrap; }
