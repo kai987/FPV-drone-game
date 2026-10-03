@@ -21,6 +21,7 @@ function simulate(id: DroneId, mode: DroneFlightMode, input: FlightInput, second
 test('six fictional catalogue entries have distinct frames and retain freestyle as the default', () => {
   assert.deepEqual(DRONES.map(drone => drone.id), ['cinewhoop', 'freestyle', 'racer', 'explorer', 'vector', 'falcon']);
   assert.equal(new Set(DRONES.map(drone => drone.frame)).size, 6);
+  assert.equal(new Set(DRONES.map(drone => drone.color)).size, 6);
   assert.equal(DEFAULT_DRONE_ID, 'freestyle');
   assert.equal(getDroneSpec('unknown').id, DEFAULT_DRONE_ID);
   assert.match(DRONE_CATALOG_NOTE, /虚构游戏机型/);
@@ -140,13 +141,13 @@ test('six rendered airframes have distinct silhouettes and only cinewhoop has fo
       const shape = geometry.parameters.shapes as THREE.Shape;
       assert.equal(shape.holes.length, 1);
     }
-    const styledParts: THREE.Object3D[] = [];
-    drone.model.traverse(part => { if (part.name.startsWith('VECTOR ') || part.name.startsWith('FALCON ')) styledParts.push(part); });
-    if (spec.id === 'vector') assert.deepEqual(styledParts.map(part => part.name), ['VECTOR low racing canopy']);
+    const styledParts: string[] = [];
+    drone.model.traverse(part => { styledParts.push(part.name, ...(part.userData.partNames ?? [])); });
+    if (spec.id === 'vector') assert.ok(styledParts.includes('VECTOR low racing canopy'));
     if (spec.id === 'falcon') {
-      assert.equal(styledParts.filter(part => part.name === 'FALCON motor pod').length, 4);
-      assert.equal(styledParts.filter(part => part.name === 'FALCON tail fin').length, 2);
-      assert.ok(styledParts.some(part => part.name === 'FALCON streamlined fuselage'));
+      assert.ok(styledParts.includes('FALCON motor pod'));
+      assert.ok(styledParts.includes('FALCON tail fin'));
+      assert.ok(styledParts.includes('FALCON streamlined fuselage'));
     }
     sizes.set(spec.id, new THREE.Box3().setFromObject(drone.model).getSize(new THREE.Vector3()));
     drone.dispose();
@@ -164,20 +165,76 @@ test('six rendered airframes have distinct silhouettes and only cinewhoop has fo
   assert.ok(falcon.z / falcon.x > vector.z / vector.x, 'FALCON has a longer streamlined silhouette');
 });
 
+test('assembled aircraft have finite geometry, tilted FPV cameras and clear swept rotor discs', () => {
+  for (const spec of DRONES) {
+    const drone = createDrone(spec.id);
+    drone.update(0, true, 20);
+    drone.update(0.05, true, 20);
+    drone.model.updateMatrixWorld(true);
+    const rotors: THREE.Group[] = [];
+    const guards: THREE.Mesh[] = [];
+    let triangles = 0;
+    let meshes = 0;
+    drone.model.traverse(part => {
+      if (part.name === 'Brushless motor and twisted propeller') rotors.push(part as THREE.Group);
+      if (part.name === 'Protective propeller duct') guards.push(part as THREE.Mesh);
+      if (!(part instanceof THREE.Mesh)) return;
+      meshes++;
+      triangles += (part.geometry.index?.count ?? part.geometry.getAttribute('position').count) / 3;
+      for (const attribute of Object.values(part.geometry.attributes)) {
+        assert.ok(Array.from(attribute.array).every(Number.isFinite), `${spec.id} has invalid geometry`);
+      }
+    });
+    assert.equal(rotors.length, 4, 'each quadcopter has four independent motor/propeller assemblies');
+    assert.ok(meshes < 65 && triangles < 40_000, `${spec.id} must keep the detailed model within its render budget`);
+    const fpvCamera = drone.model.getObjectByName('Tilted FPV camera')!;
+    assert.ok(fpvCamera, 'an actual side-mounted FPV camera is present');
+    const lensDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(fpvCamera.getWorldQuaternion(new THREE.Quaternion()));
+    assert.ok(lensDirection.y > 0.1 && lensDirection.z < -0.7, 'FPV lens points forward with a plausible upward tilt');
+    const radii = rotors.map(rotor => {
+      let radius = 0;
+      const inverse = rotor.matrixWorld.clone().invert();
+      rotor.traverse(part => {
+        if (!(part instanceof THREE.Mesh) || Array.isArray(part.material) || part.material.name !== 'FPV propeller polymer') return;
+        const transform = inverse.clone().multiply(part.matrixWorld);
+        const position = part.geometry.getAttribute('position');
+        for (let index = 0; index < position.count; index++) {
+          const vertex = new THREE.Vector3().fromBufferAttribute(position, index).applyMatrix4(transform);
+          radius = Math.max(radius, Math.hypot(vertex.x, vertex.z));
+        }
+      });
+      assert.ok(radius > 0.3, 'swept radius must come from the real propeller vertices');
+      return radius;
+    });
+    rotors.forEach((rotor, index) => {
+      for (let other = index + 1; other < rotors.length; other++) {
+        const separation = Math.hypot(rotor.position.x - rotors[other].position.x, rotor.position.z - rotors[other].position.z);
+        assert.ok(separation > radii[index] + radii[other] + 0.03, `${spec.id} rotating props overlap`);
+      }
+      const guard = guards.find(part => Math.hypot(part.position.x - rotor.position.x, part.position.z - rotor.position.z) < 1e-8);
+      if (guard) assert.ok(guard.userData.ductInnerRadius > radii[index] + 0.01, 'cinewhoop blades clear the inside of their guards');
+    });
+    drone.dispose();
+  }
+});
+
 test('switching models can release every shared part once without disposing another model', () => {
   const scene = new THREE.Scene();
   const models = DRONES.map(spec => createDrone(spec.id));
   const resourceSets = models.map(drone => {
     scene.add(drone.model);
-    const resources = new Set<THREE.BufferGeometry | THREE.Material>();
+    const resources = new Set<THREE.BufferGeometry | THREE.Material | THREE.Texture>();
     drone.model.traverse(part => {
       if (!(part instanceof THREE.Mesh)) return;
       resources.add(part.geometry);
-      for (const material of Array.isArray(part.material) ? part.material : [part.material]) resources.add(material);
+      for (const material of Array.isArray(part.material) ? part.material : [part.material]) {
+        resources.add(material);
+        for (const value of Object.values(material)) if (value instanceof THREE.Texture) resources.add(value);
+      }
     });
     return resources;
   });
-  const disposals = new Map<THREE.BufferGeometry | THREE.Material, number>();
+  const disposals = new Map<THREE.BufferGeometry | THREE.Material | THREE.Texture, number>();
   for (const resources of resourceSets) for (const resource of resources) {
     assert.equal(disposals.has(resource), false, 'independent models must own independent GPU resources');
     disposals.set(resource, 0);

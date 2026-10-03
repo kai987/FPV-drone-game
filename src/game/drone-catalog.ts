@@ -52,35 +52,35 @@ export const DRONES: readonly DroneSpec[] = Object.freeze([
   {
     id: 'cinewhoop', name: 'CINE 轻影', tagline: '低速从容，贴近风景', category: '涵道巡游',
     description: '紧凑涵道护圈和柔和转向，适合初次飞行与近景观察。速度较低，松开操纵后更快稳住。',
-    color: '#e99a58', frame: 'ducted', wheelbaseMm: 138, propellerInches: 3, weightGrams: 410,
+    color: '#ee8d39', frame: 'ducted', wheelbaseMm: 138, propellerInches: 3, weightGrams: 410,
     battery: '4S · 850 mAh', motors: '1404 · 3800 KV', lens: '广角 150°', videoLink: '数字图传 · 1080p', enduranceMinutes: 6,
     flight: Object.freeze({ speed: 0.72, climb: 0.8, response: 1.15, brake: 1.25, yaw: 0.8, bank: 0.72 }),
   },
   {
     id: 'freestyle', name: 'FLOW 自由式', tagline: '均衡灵活，山谷全能', category: '标准 X 架',
     description: '经典 X 架和均衡响应，沿用原来的飞行手感，适合穿环与自由探索。',
-    color: '#c9df55', frame: 'x', wheelbaseMm: 225, propellerInches: 5, weightGrams: 680,
+    color: '#b8d83b', frame: 'x', wheelbaseMm: 225, propellerInches: 5, weightGrams: 680,
     battery: '6S · 1300 mAh', motors: '2207 · 1750 KV', lens: '广角 155°', videoLink: '数字图传 · 1080p', enduranceMinutes: 8,
     flight: Object.freeze({ speed: 1, climb: 1, response: 1, brake: 1, yaw: 1, bank: 1 }),
   },
   {
     id: 'racer', name: 'RACE 疾风', tagline: '轻快凌厉，追逐计时', category: '竞速轻架',
     description: '窄机身与拉长的轻型机架，最高速度与转向更快，响应敏捷，需要更早规划路线。',
-    color: '#ec6d61', frame: 'stretch-x', wheelbaseMm: 210, propellerInches: 5, weightGrams: 510,
+    color: '#da4b43', frame: 'stretch-x', wheelbaseMm: 210, propellerInches: 5, weightGrams: 510,
     battery: '6S · 1050 mAh', motors: '2206 · 2000 KV', lens: '低延迟广角 165°', videoLink: '低延迟图传 · 720p', enduranceMinutes: 5,
     flight: Object.freeze({ speed: 1.35, climb: 1.25, response: 1.2, brake: 0.9, yaw: 1.35, bank: 1.18 }),
   },
   {
     id: 'explorer', name: 'RANGE 远行者', tagline: '稳健巡航，看得更远', category: '远航长机臂',
     description: '长机臂、大电池与高天线形成远航轮廓。惯性更强、转向更缓，适合沿河平稳巡航。',
-    color: '#83b8c1', frame: 'long-range', wheelbaseMm: 315, propellerInches: 7, weightGrams: 980,
+    color: '#4e9bd6', frame: 'long-range', wheelbaseMm: 315, propellerInches: 7, weightGrams: 980,
     battery: '6S · 3000 mAh', motors: '2806 · 1300 KV', lens: '巡航广角 145°', videoLink: '数字图传 · 1080p', enduranceMinutes: 16,
     flight: Object.freeze({ speed: 0.9, climb: 0.85, response: 0.72, brake: 0.7, yaw: 0.72, bank: 0.8 }),
   },
   {
     id: 'vector', name: 'VECTOR 矢量', tagline: '低伏加速，直线追风', category: '高速对称 X 架',
     description: '受到 DRL RacerX 速度纪录启发的虚构游戏改编。低矮整流罩与对称 X 架，运动模式可达 260 km/h；转向比轻型竞速机更沉稳，需要提早收油。',
-    color: '#75cee1', frame: 'speed-x', wheelbaseMm: 250, propellerInches: 6, weightGrams: 840,
+    color: '#49c8cd', frame: 'speed-x', wheelbaseMm: 250, propellerInches: 6, weightGrams: 840,
     battery: '6S · 1800 mAh', motors: '2308 · 1950 KV', lens: '速度广角 158°', videoLink: '低延迟图传 · 1080p', enduranceMinutes: 5,
     flight: Object.freeze({ speed: 260 / 122.4, climb: 1.25, response: 0.98, brake: 0.92, yaw: 1.04, bank: 1.04 }),
     reference: {
@@ -93,7 +93,7 @@ export const DRONES: readonly DroneSpec[] = Object.freeze([
   {
     id: 'falcon', name: 'FALCON 游隼', tagline: '流线长躯，极速巡航', category: '流线速度原型',
     description: '受到 Peregreen V4 原型启发的虚构游戏改编。流线机身、电机舱与尾翼形成独特轮廓，运动模式可达 360 km/h；惯性更强，转弯时适合先减速。',
-    color: '#d8a65e', frame: 'streamlined', wheelbaseMm: 305, propellerInches: 7, weightGrams: 1180,
+    color: '#cfa14c', frame: 'streamlined', wheelbaseMm: 305, propellerInches: 7, weightGrams: 1180,
     battery: '8S · 2200 mAh', motors: '2808 · 1550 KV', lens: '巡航广角 152°', videoLink: '数字图传 · 1080p', enduranceMinutes: 4,
     flight: Object.freeze({ speed: 360 / 122.4, climb: 1.18, response: 0.9, brake: 0.85, yaw: 0.95, bank: 0.96 }),
     reference: {

@@ -25,7 +25,7 @@ export default function ControlsGuide({ onClose }: { onClose: () => void }) {
     onKeyUp={event => event.stopPropagation()} onClick={e => { if (e.target === ref.current) onClose(); }}>
     <div className="dialog-heading"><div><span className="section-index">FLIGHT MANUAL</span><h2>从第一步，到自由飞行。</h2></div><button ref={closeButton} className="icon-button" aria-label="关闭操作指南" onClick={onClose}><X size={20} /></button></div>
     <p>先试试辅助模式。机身会自动悬停，松开按键就能减速。</p>
-    <div className="guide-note"><strong>在机库里挑选飞行伙伴</strong><p>点击页头当前机型名称，查看六款机架和完整参数对比。CINE 轻影适合低速近景，FLOW 自由式均衡灵活，RACE 疾风追求速度，RANGE 远行者适合平稳巡航；VECTOR 矢量与 FALCON 游隼在运动模式下可达 260 / 360 km/h，适合开阔地带高速飞行。辅助与运动的性能按钮仅用于预览，不会修改当前飞行模式。</p><p>飞行中打开机库会暂停，关闭后仍可决定何时继续；切换须明确点击「返回起点并应用」，本轮进度和弹药会重置。个人最佳按机型与飞行模式分别记录。机型均为游戏改编或虚构配置，高速机的真实原型及纪录来源可在机库查看；电池、镜头、图传和续航为参考设定，当前不模拟耗电。</p></div>
+    <div className="guide-note"><strong>在机库里挑选飞行伙伴</strong><p>点击页头当前机型名称，查看六款无人机的游戏同款 3D 缩略图和完整参数。选中机型后可拖动大图旋转，用滚轮或双指缩放，点击「复位」恢复完整视角。CINE 轻影适合低速近景，FLOW 自由式均衡灵活，RACE 疾风追求速度，RANGE 远行者适合平稳巡航；VECTOR 矢量与 FALCON 游隼在运动模式下可达 260 / 360 km/h，适合开阔地带高速飞行。辅助与运动的性能按钮仅用于预览，不会修改当前飞行模式。</p><p>飞行中打开机库会暂停，关闭后仍可决定何时继续；切换须明确点击「返回起点并应用」，本轮进度和弹药会重置。个人最佳按机型与飞行模式分别记录。机型均为游戏改编或虚构配置，高速机的真实原型及纪录来源可在机库查看；电池、镜头、图传和续航为参考设定，当前不模拟耗电。</p></div>
     <div className="guide-section"><h3><Keyboard size={18} /> 键盘操作</h3><dl>
       <div><dt><Key>W</Key><Key>S</Key></dt><dd>向前 / 向后飞行</dd></div>
       <div><dt><Key>A</Key><Key>D</Key></dt><dd>向左 / 向右平移</dd></div>

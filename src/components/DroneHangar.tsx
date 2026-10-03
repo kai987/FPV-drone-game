@@ -3,6 +3,8 @@ import { Check, ExternalLink, X } from 'lucide-react';
 import { DRONES, DRONE_CATALOG_NOTE, getDroneSpec, getFlightConfig } from '../game/drone-catalog';
 import type { DroneId, DroneSpec } from '../game/drone-catalog';
 import type { FlightMode, Status } from '../game/types';
+import { useDroneThumbnails } from './useDroneThumbnails';
+import { DroneModelPreview } from './DroneModelPreview';
 
 interface DroneHangarProps {
   droneId: DroneId;
@@ -13,37 +15,13 @@ interface DroneHangarProps {
   onClose: () => void;
 }
 
-function DroneOutline({ drone }: { drone: DroneSpec }) {
-  const ducted = drone.frame === 'ducted';
-  const longRange = drone.frame === 'long-range';
-  const streamlined = drone.frame === 'streamlined';
-  const speedX = drone.frame === 'speed-x';
-  const motorX = ducted ? 25 : streamlined ? 30 : longRange ? 39 : drone.frame === 'stretch-x' ? 29 : 35;
-  const motorY = ducted ? 26 : streamlined ? 41 : drone.frame === 'stretch-x' ? 40 : longRange ? 38 : 33;
-  const radius = ducted ? 21 : longRange ? 22 : 17;
-  return <svg className="hangar-drone-outline" viewBox="-72 -72 144 144" role="img" aria-label={`${drone.name}，${drone.category}机架轮廓`}>
-    <g transform="rotate(-12)">
-      <path d={`M ${-motorX} ${-motorY} L ${motorX} ${motorY} M ${motorX} ${-motorY} L ${-motorX} ${motorY}`} stroke="#71806b" strokeWidth={ducted ? 7 : 9} strokeLinecap="round" />
-      <path d={`M ${-motorX} ${-motorY} L ${motorX} ${motorY} M ${motorX} ${-motorY} L ${-motorX} ${motorY}`} stroke="#b2bea8" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
-      {[-1, 1].flatMap(x => [-1, 1].map(y => <g key={`${x}-${y}`} transform={`translate(${x * motorX} ${y * motorY})`}>
-        <circle r={radius} fill={drone.color} fillOpacity={ducted ? 0.12 : 0.07} stroke={drone.color} strokeWidth={ducted ? 4 : 0.9} strokeOpacity={ducted ? 0.8 : 0.45} />
-        {ducted ? <circle r={radius - 5} fill="none" stroke={drone.color} strokeOpacity="0.24" /> : null}
-        <path d={`M ${-radius + 5} -2 Q -2 -7 0 -2 Q 3 -6 ${radius - 5} 2 Q 2 7 0 2 Q -4 6 ${-radius + 5} -2 Z`} fill={drone.color} fillOpacity="0.58" transform={`rotate(${x * y * 28})`} />
-        {streamlined ? <path d="M -6 9 Q -11 -5 0 -19 Q 11 -5 6 9 Z" fill="#53606b" stroke={drone.color} strokeWidth="1.5" /> : null}
-        <circle r="4" fill="#54624e" stroke="#d8dfcf" strokeWidth="1" />
-      </g>))}
-      <rect x={longRange ? -13 : -10} y={ducted ? -21 : -27} width={longRange ? 26 : 20} height={ducted ? 43 : 54} rx="6" fill="#42513d" stroke="#a3af96" strokeWidth="1.2" />
-      <rect x="-7" y={ducted ? -13 : -20} width="14" height={ducted ? 25 : 36} rx="3" fill={drone.color} fillOpacity="0.85" />
-      {streamlined ? <path d="M 0 -48 Q 18 -21 11 24 L 22 43 L 4 37 L 0 48 L -4 37 L -22 43 L -11 24 Q -18 -21 0 -48 Z" fill={drone.color} stroke="#d4dfef" strokeWidth="1.1" /> : speedX ? <path d="M 0 -40 L 13 -13 L 9 26 L -9 26 L -13 -13 Z" fill={drone.color} stroke="#d4dfef" strokeWidth="1.1" /> : null}
-      <path d={`M -12 -6 L 12 -6 M -12 6 L 12 6`} stroke="#33412f" strokeWidth="4" />
-      <rect x="-7" y={ducted ? -28 : -33} width="14" height="10" rx="3" fill="#253329" stroke="#a6b19d" />
-      <circle cy={ducted ? -25 : -30} r="3" fill="#c4d9da" />
-      {longRange ? <path d="M 7 26 L 13 56 M 7 54 L 19 58" stroke={drone.color} strokeWidth="3" strokeLinecap="round" /> : <path d="M 0 26 L 0 38" stroke={drone.color} strokeWidth="2" />}
-    </g>
-  </svg>;
-}
+const FINISHES: Record<DroneId, string> = {
+  cinewhoop: '焰橙 · 碳黑', freestyle: '萤绿 · 碳黑', racer: '竞速红 · 碳黑',
+  explorer: '远空蓝 · 碳黑', vector: '冰川青 · 石墨', falcon: '琥珀金 · 石墨',
+};
 
 export default function DroneHangar({ droneId, flightMode, status, available, onApply, onClose }: DroneHangarProps) {
+  const { images, loading } = useDroneThumbnails();
   const dialog = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -88,17 +66,29 @@ export default function DroneHangar({ droneId, flightMode, status, available, on
     onKeyUp={event => event.stopPropagation()}
     onClick={event => { if (event.target === dialog.current) onClose(); }}>
     <div className="hangar-heading">
-      <div><span className="section-index">AEROFLOW / HANGAR</span><h2 id={titleId}>选一架，迎着风。</h2><p id={descriptionId}>{DRONES.length} 款机型，从悠闲巡游到极速飞行。</p></div>
+      <div><span className="section-index">AEROFLOW / HANGAR</span><h2 id={titleId}>选一架，迎着风。</h2><p id={descriptionId}>{DRONES.length} 款机型 · 游戏同款 3D 模型，可旋转查看细节。</p></div>
       <button ref={closeButton} className="icon-button" type="button" aria-label="关闭机库" onClick={onClose}><X size={21} /></button>
     </div>
     <div className="hangar-body">
       <div className="hangar-models" role="group" aria-label="查看机型">
-        {DRONES.map(drone => <button type="button" key={drone.id} className={`hangar-model${selectedId === drone.id ? ' selected' : ''}`} aria-pressed={selectedId === drone.id} onClick={() => setSelectedId(drone.id)}>
-          <DroneOutline drone={drone} /><strong>{drone.name}</strong><span>{drone.category}</span>
+        {DRONES.map(drone => <button type="button" key={drone.id} className={`hangar-model${selectedId === drone.id ? ' selected' : ''}`} aria-pressed={selectedId === drone.id} aria-label={`${drone.name}，${drone.category}${droneId === drone.id ? '，当前机型' : ''}`} onClick={() => setSelectedId(drone.id)}>
+          <span className="hangar-model-image">{images[drone.id]
+            ? <img src={images[drone.id]} alt={`${drone.name} 游戏同款三维模型`} width={420} height={280} draggable={false} />
+            : <span className="hangar-image-placeholder">{loading ? '正在渲染模型…' : '3D 预览暂不可用'}</span>}
+          </span><strong>{drone.name}</strong><span>{drone.category}</span>
           {droneId === drone.id ? <small><Check size={11} aria-hidden="true" /> 当前机型</small> : <small>{Math.round(getFlightConfig(drone.id, 'sport').speed * 3.6)} km/h · 运动</small>}
         </button>)}
       </div>
-      <div className="hangar-selection" aria-live="polite"><span className="hangar-model-color" style={{ backgroundColor: selected.color }} /><div><h3>{selected.name}<span>{selected.tagline}</span></h3><p>{selected.description}</p></div></div>
+      <div className="hangar-inspector">
+        <DroneModelPreview droneId={selectedId} />
+        <div className="hangar-selection" aria-live="polite">
+          <span className="hangar-model-color" style={{ backgroundColor: selected.color }} />
+          <div><span className="hangar-preview-label">3D 模型预览</span><h3>{selected.name}<span>{selected.tagline}</span></h3>
+            <p>{selected.description}</p><span className="hangar-finish"><i style={{ backgroundColor: selected.color }} />{FINISHES[selectedId]}</span>
+            <p className="hangar-model-note">缩略图、旋转预览与飞行场中的无人机使用同一模型。</p>
+          </div>
+        </div>
+      </div>
       {selected.reference ? <aside className="hangar-source" aria-label="真实原型资料">
         <div><span className="hangar-source-label">灵感来源 · {selected.reference.name}</span><a href={selected.reference.url} target="_blank" rel="noopener noreferrer">{selected.reference.source}<ExternalLink size={12} aria-hidden="true" /></a></div>
         <p><strong>{selected.reference.speedKmh.toLocaleString('zh-CN')} <small>km/h</small></strong><span>{selected.reference.speedLabel}</span></p>
