@@ -2,13 +2,15 @@ import * as THREE from 'three';
 import { createFlightState, stepFlight, crossesCheckpoint } from './flight';
 import { CHECKPOINTS, createWorld, groundHeight } from './world';
 import { FlightAudio } from './audio';
-import type { RaceMode, FlightMode, Status, Telemetry } from './types';
+import { createDrone } from './drone';
+import type { RaceMode, FlightMode, CameraMode, Status, Telemetry } from './types';
 
 export interface EngineEvents {
   telemetry: (value: Telemetry) => void;
   status: (value: Status) => void;
   notice: (value: string) => void;
   finish: (seconds: number) => void;
+  cameraMode: (value: CameraMode) => void;
 }
 
 export class FlightEngine {
@@ -16,6 +18,12 @@ export class FlightEngine {
   readonly audio = new FlightAudio();
   private world = createWorld();
   private camera = new THREE.PerspectiveCamera(68, 1, 0.2, 2100);
+  private drone = createDrone();
+  private cameraPosition = new THREE.Vector3();
+  private cameraTarget = new THREE.Vector3();
+  private desiredPosition = new THREE.Vector3();
+  private desiredTarget = new THREE.Vector3();
+  private snapCamera = true;
   private state = createFlightState();
   private status: Status = 'ready';
   private keys = new Set<string>();
@@ -29,6 +37,7 @@ export class FlightEngine {
   private touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
   mode: RaceMode = 'race';
   flightMode: FlightMode = 'assisted';
+  cameraMode: CameraMode = 'chase';
 
   constructor(private host: HTMLDivElement, private events: EngineEvents) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -42,6 +51,8 @@ export class FlightEngine {
     this.renderer.domElement.tabIndex = 0;
     host.appendChild(this.renderer.domElement);
     this.camera.rotation.order = 'YXZ';
+    this.drone.model.rotation.order = 'YXZ';
+    this.world.scene.add(this.drone.model);
     this.resizeObserver = new ResizeObserver(this.resize);
     this.resizeObserver.observe(host);
     window.addEventListener('keydown', this.keydown);
@@ -60,6 +71,9 @@ export class FlightEngine {
   };
   private keydown = (event: KeyboardEvent) => {
     if ((event.target as HTMLElement)?.matches('input, textarea, select') || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.code === 'KeyV') {
+      event.preventDefault(); if (!event.repeat) this.setCameraMode(this.cameraMode === 'chase' ? 'fpv' : 'chase'); return;
+    }
     if (event.code === 'Escape' || event.code === 'KeyP') {
       event.preventDefault(); if (!event.repeat) { if (event.code === 'Escape') this.pause(); else this.togglePause(); } return;
     }
@@ -84,9 +98,14 @@ export class FlightEngine {
     this.state.pitch = THREE.MathUtils.clamp(this.state.pitch - event.movementY * 0.0025, -0.7, 0.7);
   };
   setTouch(axis: keyof typeof this.touch, value: number) { this.touch[axis] = value; }
+  setCameraMode(mode: CameraMode) {
+    if (this.cameraMode === mode) return;
+    this.cameraMode = mode; this.snapCamera = true; this.events.cameraMode(mode);
+  }
   private setStatus(status: Status) { this.status = status; this.events.status(status); }
   start() {
     this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
+    this.snapCamera = true;
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
     this.collisionCooldown = 0; this.setStatus('flying'); this.emit();
     this.events.notice(this.mode === 'race' ? '起飞成功 · 依次穿过亮色飞行环' : '起飞成功 · 山谷属于你，自由探索吧');
@@ -99,6 +118,7 @@ export class FlightEngine {
   togglePause() { if (this.status === 'flying') this.pause(); else if (this.status === 'paused') this.setStatus('flying'); }
   reset() {
     this.setStatus('ready'); this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
+    this.snapCamera = true; this.events.notice('');
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
     if (document.pointerLockElement) document.exitPointerLock(); this.emit();
   }
@@ -149,11 +169,35 @@ export class FlightEngine {
         } else this.events.notice(`检查点 ${String(this.checkpoint).padStart(2, '0')} / 08 · 继续前往下一个飞行环`);
       }
     }
-    this.camera.position.set(this.state.position.x, this.state.position.y, this.state.position.z);
-    this.camera.rotation.set(this.state.pitch - (this.status === 'ready' ? 0.06 : 0), this.state.yaw, this.state.roll);
+    const { position, velocity, yaw, pitch, roll } = this.state;
+    const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
+    this.drone.model.position.set(position.x, position.y, position.z);
+    const forwardVelocity = -Math.sin(yaw) * velocity.x - Math.cos(yaw) * velocity.z;
+    this.drone.model.rotation.set(pitch - forwardVelocity * 0.004, yaw, roll);
+    this.drone.model.visible = this.cameraMode === 'chase';
+    this.drone.update(time / 1000, this.status === 'flying', speed);
+    if (this.cameraMode === 'fpv') {
+      this.camera.position.set(position.x, position.y, position.z);
+      this.camera.rotation.set(pitch - (this.status === 'ready' ? 0.06 : 0), yaw, roll);
+    } else {
+      // Follow yaw rather than bank/pitch so turns show the aircraft's attitude
+      // while keeping the horizon steady and the route ahead visible.
+      this.desiredPosition.set(position.x + Math.sin(yaw) * 8, position.y + 3.3, position.z + Math.cos(yaw) * 8);
+      this.desiredPosition.y = Math.max(this.desiredPosition.y, groundHeight(this.desiredPosition.x, this.desiredPosition.z) + 2);
+      this.desiredTarget.set(position.x - Math.sin(yaw) * 5, position.y + 0.8, position.z - Math.cos(yaw) * 5);
+      if (this.snapCamera) {
+        this.cameraPosition.copy(this.desiredPosition); this.cameraTarget.copy(this.desiredTarget);
+      } else {
+        const blend = 1 - Math.exp(-8 * dt);
+        this.cameraPosition.lerp(this.desiredPosition, blend); this.cameraTarget.lerp(this.desiredTarget, blend);
+      }
+      this.cameraPosition.y = Math.max(this.cameraPosition.y, groundHeight(this.cameraPosition.x, this.cameraPosition.z) + 1.5);
+      this.camera.position.copy(this.cameraPosition); this.camera.lookAt(this.cameraTarget);
+    }
+    this.snapCamera = false;
     this.world.update(time / 1000, this.mode === 'race' ? this.checkpoint : -1);
     this.renderer.render(this.world.scene, this.camera);
-    this.audio.update(Math.hypot(this.state.velocity.x, this.state.velocity.y, this.state.velocity.z), this.status === 'flying');
+    this.audio.update(speed, this.status === 'flying');
     if (time - this.lastEmit > 90) { this.lastEmit = time; this.emit(); }
     this.frame = requestAnimationFrame(this.tick);
   };
@@ -171,6 +215,6 @@ export class FlightEngine {
     document.removeEventListener('mousemove', this.mousemove); document.removeEventListener('pointerlockchange', this.pointerlockchange);
     this.renderer.domElement.removeEventListener('click', this.lockPointer);
     if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
-    this.audio.dispose(); this.world.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
+    this.audio.dispose(); this.drone.dispose(); this.world.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
   }
 }

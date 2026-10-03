@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Drone, Maximize, Minimize, Pause, Play, RotateCcw, Volume2, VolumeX, Trophy, Wind } from 'lucide-react';
+import { ArrowRight, Camera, Drone, Maximize, Minimize, Pause, Play, RotateCcw, Volume2, VolumeX, Trophy, Wind } from 'lucide-react';
 import { FlightEngine } from './game/engine';
 import { CHECKPOINTS } from './game/world';
 import { EMPTY_TELEMETRY, formatTime } from './game/types';
-import type { FlightMode, RaceMode, Status } from './game/types';
+import type { CameraMode, FlightMode, RaceMode, Status } from './game/types';
 import ControlsGuide, { CompactControls } from './components/ControlsGuide';
 import TelemetryBar from './components/TelemetryBar';
 import Minimap from './components/Minimap';
@@ -26,6 +26,7 @@ export default function App() {
   const [telemetry, setTelemetry] = useState(EMPTY_TELEMETRY);
   const [mode, setMode] = useState<RaceMode>('race');
   const [flightMode, setFlightMode] = useState<FlightMode>('assisted');
+  const [cameraMode, setCameraMode] = useState<CameraMode>('chase');
   const [sound, setSound] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [guide, setGuide] = useState(false);
@@ -41,7 +42,7 @@ export default function App() {
   useEffect(() => {
     try {
       const game = new FlightEngine(host.current!, {
-        telemetry: setTelemetry, status: setStatus, notice: notify,
+        telemetry: setTelemetry, status: setStatus, notice: notify, cameraMode: setCameraMode,
         finish: seconds => {
           const currentMode = engine.current?.flightMode ?? 'assisted';
           setBest(current => {
@@ -94,8 +95,8 @@ export default function App() {
         <div className="viewport" data-testid="viewport">
           <div className="canvas-host" ref={host} />
           <div className="scene-heading"><span className="scene-number">01</span><div><strong>松林山谷</strong><small>PINE VALLEY</small></div></div>
-          <div className="fpv-mark">FPV</div>
-          <div className="crosshair" aria-hidden="true" />
+          <button className="fpv-mark view-toggle" aria-label={cameraMode === 'chase' ? '切换到第一视角' : '切换到追尾视角'} title="按 V 切换视角" onClick={() => engine.current?.setCameraMode(cameraMode === 'chase' ? 'fpv' : 'chase')}><Camera size={15} /><span>{cameraMode === 'chase' ? '追尾视角' : '第一视角'}</span><span className="view-key">V</span></button>
+          <div className={`crosshair ${cameraMode === 'chase' ? 'chase-crosshair' : ''}`} aria-hidden="true" />
           {status === 'flying' && mode === 'race' ? <div className="target-indicator"><span className="target-dot" />下一检查点 {String(telemetry.checkpoint + 1).padStart(2, '0')}<span className="target-distance">{distance} m</span></div> : null}
           {!loaded && !error ? <div className="scene-loading"><Wind size={28} /><span>正在准备山谷…</span></div> : null}
           {error ? <div className="state-overlay"><div className="state-panel"><h2>画面暂不可用</h2><p>{error}</p><button className="primary-button" onClick={() => location.reload()}>重新加载</button></div></div> : null}

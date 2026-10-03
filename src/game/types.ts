@@ -1,6 +1,7 @@
 import type { Vec3 } from './flight';
 export type RaceMode = 'race' | 'free';
 export type FlightMode = 'assisted' | 'sport';
+export type CameraMode = 'chase' | 'fpv';
 export type Status = 'ready' | 'flying' | 'paused' | 'finished';
 export interface Telemetry {
   speed: number; altitude: number; elapsed: number; checkpoint: number;

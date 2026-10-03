@@ -74,6 +74,12 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
 .crosshair::before, .crosshair::after { content: ''; position: absolute; background: #fff; }
 .crosshair::before { width: 28px; height: 1px; top: 13px; left: 0; }
 .crosshair::after { width: 1px; height: 28px; left: 13px; top: 0; }
+.view-toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; background-color: #20352b45; cursor: pointer; }
+.view-toggle:hover { background-color: #20352b85; }
+.view-key { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1px solid #ffffff80; border-radius: 3px; font-size: 10px; margin-left: 2px; }
+.chase-crosshair { opacity: .5; width: 18px; height: 18px; }
+.chase-crosshair::before { width: 18px; top: 8px; }
+.chase-crosshair::after { height: 18px; left: 8px; }
 .target-indicator { position: absolute; top: 29px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; color: white; background: #1a2a2680; padding: 9px 12px; border: 1px solid #ffffff30; border-radius: 7px; font-size: 11px; white-space: nowrap; }
 .target-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--lime); }
 .target-distance { border-left: 1px solid #ffffff40; padding-left: 8px; font-variant-numeric: tabular-nums; }
@@ -163,6 +169,8 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
   .scene-heading strong { font-size: 14px; }
   .scene-heading small { font-size: 8px; }
   .fpv-mark { top: 20px; right: 20px; font-size: 12px; }
+  .view-toggle { font-size: 10px; gap: 6px; }
+  .view-key { display: none; }
   .minimap { width: 117px; padding: 8px; bottom: 17px; right: 17px; border-radius: 11px; }
   .map-heading, .map-distance { font-size: 7px; }
   .target-indicator { left: 18px; top: 78px; transform: none; font-size: 9px; padding: 7px 9px; }
