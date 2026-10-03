@@ -176,7 +176,7 @@ export function createWorld() {
   })));
   terrain.receiveShadow = true;
   scene.add(terrain);
-  const water = createWater();
+  const water = createWater(panorama);
   scene.add(water.group);
 
   const buildPath = (points: THREE.Vector3[], width: number) => {
