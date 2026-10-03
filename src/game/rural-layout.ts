@@ -133,11 +133,13 @@ function circleSchool(id: string, x: number, z: number, rx: number, rz: number, 
   });
   return { id, points, count, spread };
 }
+const riverStart = RIVER_SAMPLES.reduce((best, point) => Math.abs(point.z - 45) < Math.abs(best.z - 45) ? point : best);
 const riverNear = RIVER_SAMPLES.reduce((best, point) => Math.abs(point.z - 95) < Math.abs(best.z - 95) ? point : best);
 const riverUpper = RIVER_SAMPLES.reduce((best, point) => Math.abs(point.z + 320) < Math.abs(best.z + 320) ? point : best);
 export const FISH_SCHOOLS: readonly FishSchool[] = Object.freeze([
-  circleSchool('bridge-fish', riverNear.x, riverNear.z, 7, 10, 11, 1.5),
-  circleSchool('river-fish', riverUpper.x, riverUpper.z, 6, 9, 9, 1.4),
-  circleSchool('lake-fish', LAKES[0].x + 70, LAKES[0].z + 160, 23, 16, 14, 2.3),
-  circleSchool('upper-lake-fish', LAKES[1].x - 45, LAKES[1].z + 70, 17, 12, 10, 1.8),
+  circleSchool('start-fish', riverStart.x - 5, riverStart.z, 7, 8, 14, 2.0),
+  circleSchool('bridge-fish', riverNear.x, riverNear.z, 7, 10, 18, 2.5),
+  circleSchool('river-fish', riverUpper.x, riverUpper.z, 8, 11, 12, 2.0),
+  circleSchool('lake-fish', LAKES[0].x + 70, LAKES[0].z + 160, 23, 16, 22, 3.0),
+  circleSchool('upper-lake-fish', LAKES[1].x - 45, LAKES[1].z + 70, 17, 12, 16, 2.5),
 ]);

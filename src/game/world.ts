@@ -9,6 +9,7 @@ import { createWater } from './water.ts';
 import { createRockMaterial } from './rock-material.ts';
 import { createNightSky } from './night-sky.ts';
 import { createRural } from './rural.ts';
+import { createShrubs } from './shrubs.ts';
 import { clearance } from './rural-layout.ts';
 import { TARGETS } from './weapons.ts';
 
@@ -139,6 +140,11 @@ export function createWorld() {
   grassTexture.repeat.set(TERRAIN_SIZE / 13, TERRAIN_SIZE / 13);
   grassTexture.anisotropy = 8;
   textureResources.add(grassTexture);
+  const rockTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/weathered-rock.jpg`);
+  rockTexture.colorSpace = THREE.SRGBColorSpace;
+  rockTexture.wrapS = rockTexture.wrapT = THREE.RepeatWrapping;
+  rockTexture.anisotropy = 8;
+  textureResources.add(rockTexture);
   const subdivisions = 300;
   const terrainGeometry = ownGeometry(new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, subdivisions, subdivisions));
   terrainGeometry.rotateX(-Math.PI / 2);
@@ -181,9 +187,34 @@ export function createWorld() {
   }
   terrainGeometry.setAttribute('color', new THREE.BufferAttribute(terrainColors, 3));
   terrainGeometry.computeVertexNormals();
-  const terrain = new THREE.Mesh(terrainGeometry, ownMaterial(new THREE.MeshStandardMaterial({
+  const terrainMaterial = ownMaterial(new THREE.MeshStandardMaterial({
     map: grassTexture, vertexColors: true, roughness: 1, metalness: 0, flatShading: false,
-  })));
+  }));
+  terrainMaterial.onBeforeCompile = shader => {
+    shader.uniforms.riverBedMap = { value: rockTexture };
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', `
+      #include <common>
+      varying vec3 terrainPoint;
+    `).replace('#include <begin_vertex>', `
+      #include <begin_vertex>
+      terrainPoint = position;
+    `);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `
+      #include <common>
+      uniform sampler2D riverBedMap;
+      varying vec3 terrainPoint;
+    `).replace('#include <map_fragment>', `
+      #ifdef USE_MAP
+        vec4 grass = texture2D(map, vMapUv);
+        vec3 stone = texture2D(riverBedMap, terrainPoint.xz * 0.55).rgb;
+        vec3 sediment = mix(stone * vec3(0.46, 0.46, 0.35), vec3(0.085, 0.095, 0.070), 0.32);
+        float submerged = 1.0 - smoothstep(${(WATER_LEVEL - 0.55).toFixed(2)}, ${(WATER_LEVEL + 0.15).toFixed(2)}, terrainPoint.y);
+        diffuseColor *= vec4(mix(grass.rgb, sediment, submerged), grass.a);
+      #endif
+    `);
+  };
+  terrainMaterial.customProgramCacheKey = () => 'grass-and-stony-river-bed-v1';
+  const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
   terrain.receiveShadow = true;
   scene.add(terrain);
   const water = createWater(panorama);
@@ -310,11 +341,6 @@ export function createWorld() {
   rawRockGeometry.deleteAttribute('uv');
   const rockGeometry = ownGeometry(mergeVertices(rawRockGeometry));
   rockGeometry.computeVertexNormals();
-  const rockTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/weathered-rock.jpg`);
-  rockTexture.colorSpace = THREE.SRGBColorSpace;
-  rockTexture.wrapS = rockTexture.wrapT = THREE.RepeatWrapping;
-  rockTexture.anisotropy = 8;
-  textureResources.add(rockTexture);
   const rockMaterial = ownMaterial(createRockMaterial(rockTexture));
   const rockCount = 1150;
   const rocks = new THREE.InstancedMesh(rockGeometry, rockMaterial, rockCount);
@@ -391,35 +417,18 @@ export function createWorld() {
   bankStones.count = bankStoneIndex;
   scene.add(bankStones);
 
-  const shrubGeometry = ownGeometry(new THREE.IcosahedronGeometry(1, 1));
-  const shrubMaterial = ownMaterial(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1 }));
-  const shrubCount = 660;
-  const shrubs = new THREE.InstancedMesh(shrubGeometry, shrubMaterial, shrubCount * 3);
-  shrubs.castShadow = true;
-  shrubs.receiveShadow = true;
-  let shrubIndex = 0;
-  for (let attempt = 0; attempt < 6200 && shrubIndex < shrubCount; attempt++) {
+  const shrubCount = 420;
+  const shrubPlacements: Array<{ x: number; y: number; z: number; height: number; seed: number }> = [];
+  for (let attempt = 0; attempt < 6200 && shrubPlacements.length < shrubCount; attempt++) {
     const point = sampleBank(5 + random() * 21);
     const distance = waterDistance(point.x, point.z);
     if (!insideBounds(point.x, point.z, 20) || distance < 3 || distance > 38) continue;
     if (distanceFromCourse(point.x, point.z) < 12 || !clearTrainingGround(point.x, point.z, 5) || !clearance(point.x, point.z, 4)) continue;
     const height = 0.7 + random() * 1.9;
-    const y = groundHeight(point.x, point.z);
-    for (let leaf = 0; leaf < 3; leaf++) {
-      const angle = leaf * Math.PI * 2 / 3 + shrubIndex;
-      const width = height * (0.62 + random() * 0.32);
-      transform.position.set(point.x + Math.cos(angle) * height * 0.35, y + height * (0.37 + leaf * 0.09), point.z + Math.sin(angle) * height * 0.35);
-      transform.rotation.set(0, random() * Math.PI, random() * 0.1);
-      transform.scale.set(width, height * (0.49 + leaf * 0.08), width * 0.85);
-      transform.updateMatrix();
-      shrubs.setMatrixAt(shrubIndex * 3 + leaf, transform.matrix);
-      color.set('#536d40').lerp(new THREE.Color('#8b9460'), random() * 0.68);
-      shrubs.setColorAt(shrubIndex * 3 + leaf, color);
-    }
-    shrubIndex++;
+    shrubPlacements.push({ x: point.x, y: groundHeight(point.x, point.z), z: point.z, height, seed: shrubPlacements.length + 127 });
   }
-  shrubs.count = shrubIndex * 3;
-  scene.add(shrubs);
+  const shrubs = createShrubs(shrubPlacements);
+  scene.add(shrubs.group);
 
   const ringGeometry = ownGeometry(new THREE.TorusGeometry(7.5, 0.34, 10, 100));
   const accentGeometry = ownGeometry(new THREE.TorusGeometry(7.5, 0.354, 10, 7, 0.235));
@@ -520,6 +529,7 @@ export function createWorld() {
     update(time: number, nextCheckpoint: number, focus?: { x: number; y: number; z: number }) {
       water.update(time);
       rural.update(time);
+      shrubs.update(time);
       if (focus) {
         sun.position.set(focus.x - 180, focus.y + (nightMode ? 210 : 270), focus.z + (nightMode ? -330 : 180));
         sun.target.position.set(focus.x, focus.y - 12, focus.z);
@@ -535,6 +545,7 @@ export function createWorld() {
       disposed = true;
       water.dispose();
       rural.dispose();
+      shrubs.dispose();
       nightSky.dispose();
       scene.traverse(object => {
         if (object instanceof THREE.InstancedMesh) object.dispose();

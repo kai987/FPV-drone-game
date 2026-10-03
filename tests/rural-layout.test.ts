@@ -92,12 +92,15 @@ test('fish school paths and spread remain under water and safely above the bed',
 test('actual batched animal and fish animation stays inside its terrain and water clearances', () => {
   const rural = createRural();
   try {
-    const bodyMeshes = rural.group.children.filter((object): object is THREE.InstancedMesh => object instanceof THREE.InstancedMesh
-      && object.geometry.type === 'CapsuleGeometry');
-    const fishMeshes = rural.group.children.filter((object): object is THREE.InstancedMesh => object instanceof THREE.InstancedMesh
-      && object.geometry.type === 'LatheGeometry');
-    assert.equal(bodyMeshes.reduce((sum, mesh) => sum + mesh.count, 0), 13);
-    assert.equal(fishMeshes.reduce((sum, mesh) => sum + mesh.count, 0), 44);
+    const bodyMeshes: THREE.InstancedMesh[] = [];
+    const fishMeshes: THREE.InstancedMesh[] = [];
+    rural.group.traverse(object => {
+      if (!(object instanceof THREE.InstancedMesh)) return;
+      if (object.name === 'Cow bodies' || object.name === 'Sheep bodies') bodyMeshes.push(object);
+      if (object.name === 'Fish bodies') fishMeshes.push(object);
+    });
+    assert.equal(bodyMeshes.reduce((sum, mesh) => sum + mesh.count, 0), PASTURES.reduce((sum, pasture) => sum + pasture.count, 0));
+    assert.equal(fishMeshes.reduce((sum, mesh) => sum + mesh.count, 0), FISH_SCHOOLS.reduce((sum, school) => sum + school.count, 0));
     const matrix = new THREE.Matrix4(); const position = new THREE.Vector3();
     for (let frame = 0; frame < 96; frame++) {
       rural.update(frame * 2.0);
@@ -114,7 +117,25 @@ test('actual batched animal and fish animation stays inside its terrain and wate
           mesh.getMatrixAt(i, matrix); position.setFromMatrixPosition(matrix);
           assert.equal(isWater(position.x, position.z), true);
           assert.ok(position.y <= WATER_LEVEL - 0.2);
-          assert.ok(position.y - 0.14 > groundHeight(position.x, position.z));
+          assert.ok(position.y - 0.16 > groundHeight(position.x, position.z));
+        }
+      }
+    }
+    // Fish should be discoverable as a shoal, rather than lone fish distributed across a lake.
+    for (const time of [0, 10, 35, 75, 110]) {
+      rural.update(time);
+      let slot = 0;
+      const mesh = fishMeshes[0];
+      for (const school of FISH_SCHOOLS) {
+        const positions: THREE.Vector3[] = [];
+        for (let i = 0; i < school.count; i++, slot++) {
+          mesh.getMatrixAt(slot, matrix);
+          positions.push(new THREE.Vector3().setFromMatrixPosition(matrix));
+          if (i >= 6) assert.ok(positions[i].distanceTo(positions[i - 6]) > 1.5,
+            'Successive rows must have room for the full fish body and tail');
+        }
+        for (const a of positions) for (const b of positions) {
+          assert.ok(a.distanceTo(b) < 16, 'School members must stay close enough to see together');
         }
       }
     }

@@ -181,7 +181,7 @@ export function createWater(panorama: THREE.Texture) {
         float caustic = pow(max(0.0, 1.0 - abs(medium.b + fine.b * 0.35) * 3.5), 3.0);
         water += vec3(0.026, 0.042, 0.023) * (1.0 - night * 0.8) * caustic * exp(-waterDepth * 1.4) * mediumVisible;
         water *= 0.94 + broad.b * 0.16 + medium.b * 0.095 * mediumVisible;
-        water = mix(water, reflection * mix(vec3(0.70), vec3(0.07, 0.12, 0.20), night), 0.08 + fresnel * 0.78);
+        water = mix(water, reflection * mix(vec3(0.70), vec3(0.07, 0.12, 0.20), night), 0.045 + fresnel * 0.78);
 
         vec3 lightDirection = normalize(mix(vec3(-180.0, 282.0, 180.0), vec3(-180.0, 222.0, -330.0), night));
         vec3 halfwayDirection = normalize(viewDirection + lightDirection);
@@ -197,7 +197,9 @@ export function createWater(panorama: THREE.Texture) {
         float fog = 1.0 - exp(-pow(distanceToCamera * mix(0.00022, 0.00030, night), 2.0));
         // Clip the tiny depth-offset overlap with dry banks after derivative-based sampling.
         if (depth <= 0.0) discard;
-        float alpha = mix(0.58, 0.86, smoothstep(0.0, 5.0, waterDepth));
+        // Clear shallows let a shoal just under the surface remain readable from a low flight.
+        // At grazing angles Fresnel reflection still conceals underwater detail naturally.
+        float alpha = mix(0.32, 0.72, smoothstep(0.0, 7.0, waterDepth));
         alpha = mix(alpha, 0.98, fresnel);
         gl_FragColor = vec4(mix(water, skyColor, fog), alpha);
         #include <tonemapping_fragment>

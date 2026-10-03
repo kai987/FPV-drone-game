@@ -3,7 +3,7 @@ import type { RaceMode, Telemetry } from '../game/types';
 import { CHECKPOINTS } from '../game/world';
 import { TARGETS } from '../game/weapons';
 import { LAKES, RIVER_SAMPLES, WORLD_BOUNDS, lakeBoundary } from '../game/landscape';
-import { BRIDGES, CABINS } from '../game/rural-layout';
+import { BRIDGES, CABINS, FISH_SCHOOLS } from '../game/rural-layout';
 import './Minimap.css';
 
 interface MinimapProps {
@@ -74,6 +74,14 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
         position: projection.project(lake.x, lake.z),
         path: closedPath(lakeBoundary(lake, 96).map(point => projection.project(point.x, point.z))),
       })),
+      fishSchools: FISH_SCHOOLS.filter(school => school.points.length > 0).map(school => {
+        const center = school.points.reduce((sum, point) => ({ x: sum.x + point.x, z: sum.z + point.z }), { x: 0, z: 0 });
+        return {
+          id: school.id,
+          count: school.count,
+          position: projection.project(center.x / school.points.length, center.z / school.points.length),
+        };
+      }),
     };
   }, [bounds]);
 
@@ -97,7 +105,7 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
   const isWorld = mapView === 'world';
 
   return (
-    <div className={`minimap geographic-minimap${isWorld ? ' minimap-world' : ''}`} aria-label="小地图，河流、湖泊、小屋、小桥、当前位置、检查点与投弹靶标">
+    <div className={`minimap geographic-minimap${isWorld ? ' minimap-world' : ''}`} aria-label="小地图，河流、湖泊、小屋、小桥、鱼群、当前位置、检查点与投弹靶标">
       <div className="map-heading">
         <div className="minimap-modes" role="group" aria-label="地图范围">
           <button type="button" aria-pressed={isWorld} onClick={() => setMapView('world')} title="查看整个自然飞行场">全域</button>
@@ -105,7 +113,7 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
         </div>
         <span>N ↑</span>
       </div>
-      <svg viewBox="0 0 180 150" role="img" aria-label={`${isWorld ? '全域地图' : '航线地图'}，蓝色为河流湖泊，米色为小屋和桥，橙色为未命中靶标${outsideRoute ? '；当前位置超出航线图范围，可切换全域查看' : ''}`}>
+      <svg viewBox="0 0 180 150" role="img" aria-label={`${isWorld ? '全域地图' : '航线地图'}，蓝色为河流湖泊，浅蓝鱼形标记为鱼群，米色为小屋和桥，橙色为未命中靶标${outsideRoute ? '；当前位置超出航线图范围，可切换全域查看' : ''}`}>
         <defs>
           <pattern id={gridId} width="30" height="25" patternUnits="userSpaceOnUse">
             <path d="M 30 0 L 0 0 0 25" fill="none" stroke="currentColor" strokeOpacity="0.09" strokeWidth="0.6" />
@@ -139,6 +147,13 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
               <path d="M -4 -4 L -4 4 M 4 -4 L 4 4" stroke="#eddfb8" strokeWidth="1.2" />
             </g>;
           })}
+          {geography.fishSchools.map(school => <g key={school.id}
+            transform={`translate(${school.position.x} ${school.position.y}) scale(${isWorld ? 0.65 : 0.85})`}
+            role="img" aria-label={`鱼群，${school.count} 条，低空悬停并切换俯视观察`}>
+            <title>鱼群，{school.count} 条。靠近鱼标后低空悬停，按 V 切换俯视观察。</title>
+            <path d="M -4 0 C -1 -4 3 -4 6 0 C 3 4 -1 4 -4 0 L -7 -3 L -7 3 Z" fill="#b7eefa" stroke="#213e38" strokeWidth="0.8" strokeLinejoin="round" />
+            <circle cx="3" cy="-0.6" r="0.6" fill="#213e38" />
+          </g>)}
           <polyline points={course} fill="none" stroke="currentColor" strokeOpacity={isWorld ? 0.45 : 0.55} strokeWidth={isWorld ? 0.8 : 1.3} strokeDasharray={isWorld ? '2 2' : '3 4'} />
           {points.map((point, index) => {
             const passed = mode === 'race' && index < telemetry.checkpoint;
@@ -172,6 +187,10 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
       <div className="map-distance">
         <span>{outsideRoute ? '范围外' : mode === 'free' ? '探索范围' : target ? '下个检查点' : '航线完成'}</span>
         <strong>{outsideRoute ? '切换全域' : mode === 'race' && target ? `${distance} m` : mode === 'race' ? '8 / 8' : `${((bounds.maxX - bounds.minX) / 1000).toFixed(1)} km`}</strong>
+      </div>
+      <div className="map-discovery" aria-label="浅蓝鱼形标记是鱼群，沿河飞到木桥下游，低空悬停，按 V 或手机视角按钮切换俯视观察">
+        <svg viewBox="-8 -4 15 8" aria-hidden="true"><path d="M -4 0 C -1 -4 3 -4 6 0 C 3 4 -1 4 -4 0 L -7 -3 L -7 3 Z" fill="currentColor" /></svg>
+        <span>鱼群 · V 俯视</span>
       </div>
     </div>
   );
