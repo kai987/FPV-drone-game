@@ -1,0 +1,51 @@
+.geographic-minimap {
+  z-index: 3;
+}
+
+.geographic-minimap .map-heading {
+  align-items: center;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.geographic-minimap .minimap-modes {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.geographic-minimap .minimap-modes button {
+  display: block;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0 2px;
+  border-radius: 3px;
+  background: transparent;
+  color: #bac8b2;
+  font-size: inherit;
+  font-weight: 500;
+  line-height: inherit;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.geographic-minimap .minimap-modes button[aria-pressed='true'] {
+  background: #dff78120;
+  color: #dff781;
+}
+
+.geographic-minimap .minimap-modes button:hover {
+  background: #dff78130;
+  filter: none;
+}
+
+.geographic-minimap .minimap-modes button:focus-visible {
+  outline: 1px solid #dff781;
+  outline-offset: 2px;
+}
+
+@media (max-width: 800px) {
+  .geographic-minimap .minimap-water-labels {
+    display: none;
+  }
+}

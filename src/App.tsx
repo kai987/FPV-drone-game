@@ -81,10 +81,10 @@ export default function App() {
     </header>
     <main className="game-layout">
       <aside className="sidebar">
-        <div className="intro"><h1>把视野<br />交给天空。</h1><p>穿越松林，在风中找到你的航线。</p></div>
+        <div className="intro"><h1>把视野<br />交给天空。</h1><p>沿着河流，飞向湖泊与远山。</p></div>
         <section className="course-settings" aria-label="飞行设置">
           <h2><span>01 /</span> 松林山谷</h2>
-          <div className="course-meta"><span>8 检查点</span><i /><span>1.2 km</span><i /><span>入门</span></div>
+          <div className="course-meta"><span>8 检查点</span><i /><span>13 km²</span><i /><span>河湖</span></div>
           <div className="segment-control" role="group" aria-label="游戏模式"><button disabled={settingsLocked} aria-pressed={mode === 'race'} className={mode === 'race' ? 'active' : ''} onClick={() => changeMode('race')}>计时挑战</button><button disabled={settingsLocked} aria-pressed={mode === 'free'} className={mode === 'free' ? 'active' : ''} onClick={() => changeMode('free')}>自由飞行</button></div>
           <h3 className="setting-label">飞行模式</h3>
           <div className="segment-control" role="group" aria-label="飞行模式"><button disabled={settingsLocked} aria-pressed={flightMode === 'assisted'} className={flightMode === 'assisted' ? 'active' : ''} onClick={() => { setFlightMode('assisted'); engine.current?.reset(); }}>辅助</button><button disabled={settingsLocked} aria-pressed={flightMode === 'sport'} className={flightMode === 'sport' ? 'active' : ''} onClick={() => { setFlightMode('sport'); engine.current?.reset(); }}>运动</button></div>

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { createFlightState, stepFlight, crossesCheckpoint } from './flight';
 import { CHECKPOINTS, createWorld, groundHeight } from './world';
+import type { WorldObstacle } from './world';
+import { isWater, surfaceHeight, WORLD_BOUNDS } from './landscape';
 import { FlightAudio } from './audio';
 import { createDrone } from './drone';
 import { createWeaponState, dropBomb, stepWeapons, TARGETS } from './weapons';
@@ -19,7 +21,8 @@ export class FlightEngine {
   readonly renderer: THREE.WebGLRenderer;
   readonly audio = new FlightAudio();
   private world = createWorld();
-  private camera = new THREE.PerspectiveCamera(68, 1, 0.2, 2100);
+  private camera = new THREE.PerspectiveCamera(68, 1, 0.2, 7000);
+  private obstacleGrid = new Map<string, WorldObstacle[]>();
   private drone = createDrone();
   private weapons = createWeaponState();
   private weaponVisuals = createWeaponVisuals();
@@ -57,6 +60,18 @@ export class FlightEngine {
     this.camera.rotation.order = 'YXZ';
     this.drone.model.rotation.order = 'YXZ';
     this.world.scene.add(this.drone.model, this.weaponVisuals.group);
+    // Index static obstacles once; a larger forest should not require scanning
+    // thousands of distant trunks on every animation frame.
+    for (const obstacle of this.world.obstacles) {
+      const radius = obstacle.radius + 0.55;
+      for (let x = Math.floor((obstacle.x - radius) / 64); x <= Math.floor((obstacle.x + radius) / 64); x++) {
+        for (let z = Math.floor((obstacle.z - radius) / 64); z <= Math.floor((obstacle.z + radius) / 64); z++) {
+          const key = `${x},${z}`;
+          const cell = this.obstacleGrid.get(key) ?? [];
+          cell.push(obstacle); this.obstacleGrid.set(key, cell);
+        }
+      }
+    }
     this.resizeObserver = new ResizeObserver(this.resize);
     this.resizeObserver.observe(host);
     window.addEventListener('keydown', this.keydown);
@@ -149,20 +164,20 @@ export class FlightEngine {
         climb: pressed('Space') - Math.max(pressed('ShiftLeft'), pressed('ShiftRight')) + this.touch.climb,
         yaw: pressed('KeyQ') + pressed('ArrowLeft') - pressed('KeyE') - pressed('ArrowRight') + this.touch.yaw,
         lookPitch: pressed('ArrowUp') - pressed('ArrowDown'),
-      }, dt, this.flightMode, groundHeight);
+      }, dt, this.flightMode, surfaceHeight);
       this.elapsed += elapsedDelta; this.collisionCooldown -= dt;
       const p = this.state.position;
-      const constrained = {
-        x: THREE.MathUtils.clamp(p.x, -600, 600),
-        y: THREE.MathUtils.clamp(p.y, 1.8, 180),
-        z: THREE.MathUtils.clamp(p.z, -800, 300),
-      };
+      const x = THREE.MathUtils.clamp(p.x, WORLD_BOUNDS.minX, WORLD_BOUNDS.maxX);
+      const z = THREE.MathUtils.clamp(p.z, WORLD_BOUNDS.minZ, WORLD_BOUNDS.maxZ);
+      const floor = surfaceHeight(x, z) + 1.8;
+      const constrained = { x, z, y: THREE.MathUtils.clamp(p.y, floor, Math.max(floor, WORLD_BOUNDS.maxAltitude)) };
       if (constrained.x !== p.x || constrained.y !== p.y || constrained.z !== p.z) {
         this.state.position = constrained; this.state.velocity = { x: 0, y: 0, z: 0 };
         if (this.collisionCooldown <= 0) { this.events.notice('已到达飞行场边界 · 转向继续探索'); this.collisionCooldown = 1.5; }
       }
       {
-        const obstacle = this.world.obstacles?.find(o => {
+        const nearby = this.obstacleGrid.get(`${Math.floor(this.state.position.x / 64)},${Math.floor(this.state.position.z / 64)}`);
+        const obstacle = nearby?.find(o => {
           const p = this.state.position;
           return Math.hypot(p.x - o.x, p.z - o.z) < o.radius + 0.55 && p.y < groundHeight(o.x, o.z) + o.height;
         });
@@ -172,11 +187,12 @@ export class FlightEngine {
           if (this.collisionCooldown <= 0) {
             this.collisionCooldown = 1.5;
             if (this.mode === 'race') this.elapsed += 3;
-            this.events.notice(this.mode === 'race' ? '碰撞 · 已稳住机身，计时增加 3 秒' : '碰撞 · 已稳住机身，请避开障碍');
+            const contact = groundHit && isWater(this.state.position.x, this.state.position.z) ? '触水' : '碰撞';
+            this.events.notice(this.mode === 'race' ? `${contact} · 已稳住机身，计时增加 3 秒` : `${contact} · 已稳住机身，请升高或避开障碍`);
           }
         }
       }
-      const weaponEvents = stepWeapons(this.weapons, elapsedDelta, groundHeight);
+      const weaponEvents = stepWeapons(this.weapons, elapsedDelta, surfaceHeight);
       if (weaponEvents.impacts > 0) this.audio.explosion();
       if (weaponEvents.hits > 0) {
         this.events.notice(this.weapons.hitTargetIds.length === TARGETS.length
@@ -204,12 +220,12 @@ export class FlightEngine {
     } else {
       // Follow yaw rather than bank/pitch so turns show the aircraft's attitude
       // while keeping the horizon steady and the route ahead visible.
-      const heightAboveGround = Math.max(0, position.y - groundHeight(position.x, position.z));
+      const heightAboveGround = Math.max(0, position.y - surfaceHeight(position.x, position.z));
       const distanceBehind = this.cameraMode === 'bomb' ? Math.max(10, heightAboveGround * 0.55) : 8;
       const heightAbove = this.cameraMode === 'bomb' ? Math.max(15, heightAboveGround * 0.7) : 3.3;
       this.desiredPosition.set(position.x + Math.sin(yaw) * distanceBehind, position.y + heightAbove, position.z + Math.cos(yaw) * distanceBehind);
-      this.desiredPosition.y = Math.max(this.desiredPosition.y, groundHeight(this.desiredPosition.x, this.desiredPosition.z) + 2);
-      if (this.cameraMode === 'bomb') this.desiredTarget.set(position.x, groundHeight(position.x, position.z) + 0.4, position.z);
+      this.desiredPosition.y = Math.max(this.desiredPosition.y, surfaceHeight(this.desiredPosition.x, this.desiredPosition.z) + 2);
+      if (this.cameraMode === 'bomb') this.desiredTarget.set(position.x, surfaceHeight(position.x, position.z) + 0.4, position.z);
       else this.desiredTarget.set(position.x - Math.sin(yaw) * 5, position.y + 0.8, position.z - Math.cos(yaw) * 5);
       if (this.snapCamera) {
         this.cameraPosition.copy(this.desiredPosition); this.cameraTarget.copy(this.desiredTarget);
@@ -217,11 +233,11 @@ export class FlightEngine {
         const blend = 1 - Math.exp(-8 * dt);
         this.cameraPosition.lerp(this.desiredPosition, blend); this.cameraTarget.lerp(this.desiredTarget, blend);
       }
-      this.cameraPosition.y = Math.max(this.cameraPosition.y, groundHeight(this.cameraPosition.x, this.cameraPosition.z) + 1.5);
+      this.cameraPosition.y = Math.max(this.cameraPosition.y, surfaceHeight(this.cameraPosition.x, this.cameraPosition.z) + 1.5);
       this.camera.position.copy(this.cameraPosition); this.camera.lookAt(this.cameraTarget);
     }
     this.snapCamera = false;
-    this.world.update(time / 1000, this.mode === 'race' ? this.checkpoint : -1);
+    this.world.update(time / 1000, this.mode === 'race' ? this.checkpoint : -1, position);
     this.weaponVisuals.update(this.weapons, this.elapsed);
     this.renderer.render(this.world.scene, this.camera);
     this.audio.update(speed, this.status === 'flying');

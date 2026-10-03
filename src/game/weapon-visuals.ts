@@ -5,6 +5,7 @@ import {
 } from './weapons';
 import type { WeaponState } from './weapons';
 import { groundHeight } from './world';
+import { isWater } from './landscape';
 
 interface ExplosionVisual {
   group: THREE.Group;
@@ -322,18 +323,22 @@ export function createWeaponVisuals() {
         }
         const age = THREE.MathUtils.clamp(explosion.age, 0, EXPLOSION_LIFETIME);
         const progress = age / EXPLOSION_LIFETIME;
+        const waterImpact = isWater(explosion.position.x, explosion.position.z);
         visual.group.visible = progress < 1;
         visual.group.position.set(explosion.position.x, Math.max(explosion.position.y, groundHeight(explosion.position.x, explosion.position.z)) + 0.06, explosion.position.z);
         const flashProgress = THREE.MathUtils.clamp(age / 0.2, 0, 1);
         visual.flash.visible = flashProgress < 1;
-        visual.flash.scale.setScalar(0.45 + flashProgress * 2.8);
+        visual.flash.scale.set(0.45 + flashProgress * 2.8, waterImpact ? 0.22 : 0.45 + flashProgress * 2.8, 0.45 + flashProgress * 2.8);
+        visual.flashMaterial.color.set(waterImpact ? '#d9f4e9' : '#ffe6a6');
+        visual.waveMaterial.color.set(waterImpact ? '#c9ece4' : '#ffc76d');
+        visual.fragmentMaterial.color.set(waterImpact ? '#a7dcd3' : '#eb963e');
         visual.flashMaterial.opacity = (1 - flashProgress) * 0.86;
         const waveRadius = 0.5 + Math.sqrt(progress) * BLAST_RADIUS;
         visual.wave.scale.set(waveRadius, 1, waveRadius);
         visual.waveMaterial.opacity = Math.pow(1 - progress, 1.2) * 0.7;
         visual.fragmentMaterial.opacity = Math.max(0, 1 - progress * 1.25);
         visual.smokeMaterial.opacity = Math.sin(progress * Math.PI) * 0.21;
-        visual.smokeMaterial.color.set(explosion.hitCount > 0 ? '#958a6d' : '#8e8572');
+        visual.smokeMaterial.color.set(waterImpact ? '#d4eee6' : explosion.hitCount > 0 ? '#958a6d' : '#8e8572');
 
         for (let i = 0; i < 9; i++) {
           const angle = i * Math.PI * 2 / 9 + explosion.id * 0.71;
