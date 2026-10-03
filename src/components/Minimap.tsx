@@ -1,5 +1,6 @@
 import type { RaceMode, Telemetry } from '../game/types';
 import { CHECKPOINTS } from '../game/world';
+import { TARGETS } from '../game/weapons';
 
 interface MinimapProps {
   telemetry: Telemetry;
@@ -40,9 +41,9 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
   const course = [start, ...points].map(({ x, y }) => `${x},${y}`).join(' ');
 
   return (
-    <div className="minimap" aria-label="小地图，当前位置与检查点">
+    <div className="minimap" aria-label="小地图，当前位置、检查点与投弹靶标">
       <div className="map-heading"><span>航线</span><span>N ↑</span></div>
-      <svg viewBox="0 0 180 150" role="img" aria-label="无人机当前位置与八个航线检查点">
+      <svg viewBox="0 0 180 150" role="img" aria-label="无人机当前位置、八个航线检查点和五个投弹靶标，橙色为未命中靶标">
         <defs>
           <pattern id="map-grid" width="30" height="25" patternUnits="userSpaceOnUse">
             <path d="M 30 0 L 0 0 0 25" fill="none" stroke="currentColor" strokeOpacity="0.09" strokeWidth="0.6" />
@@ -68,6 +69,14 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
               <text x={point.x + 7} y={point.y + 3} fontSize="8" fill="currentColor" fillOpacity={active ? 1 : 0.5}>{index + 1}</text>
             </g>
           );
+        })}
+        {TARGETS.map(target => {
+          const point = mapPosition(target.position.x, target.position.z);
+          const hit = telemetry.weapons.hitTargetIds.includes(target.id);
+          return <g key={target.id} transform={`translate(${point.x} ${point.y})`}>
+            <title>{hit ? '已命中靶标' : '投弹靶标'}</title>
+            <path d="M 0 -6 L 6 0 L 0 6 L -6 0 Z" fill={hit ? '#dff781' : '#ec9b60'} fillOpacity={hit ? 0.45 : 0.9} stroke="#243329" strokeWidth="1" />
+          </g>;
         })}
         <g transform={`translate(${drone.x} ${drone.y}) rotate(${-telemetry.yaw * 180 / Math.PI})`}>
           <circle r="9" fill="#c8ff5f" fillOpacity="0.12" />

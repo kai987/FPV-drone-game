@@ -33,5 +33,23 @@ export class FlightAudio {
     tone.connect(gain); gain.connect(this.context.destination); tone.start(now); tone.stop(now + 0.26);
     tone.onended = () => { tone.disconnect(); gain.disconnect(); };
   }
+  drop() {
+    if (!this.enabled || !this.context) return;
+    const now = this.context.currentTime;
+    const tone = this.context.createOscillator(); const gain = this.context.createGain();
+    tone.type = 'sine'; tone.frequency.setValueAtTime(520, now); tone.frequency.exponentialRampToValueAtTime(170, now + 0.18);
+    gain.gain.setValueAtTime(0.06, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    tone.connect(gain); gain.connect(this.context.destination); tone.start(now); tone.stop(now + 0.21);
+    tone.onended = () => { tone.disconnect(); gain.disconnect(); };
+  }
+  explosion() {
+    if (!this.enabled || !this.context) return;
+    const now = this.context.currentTime;
+    const tone = this.context.createOscillator(); const gain = this.context.createGain();
+    tone.type = 'triangle'; tone.frequency.setValueAtTime(110, now); tone.frequency.exponentialRampToValueAtTime(28, now + 0.4);
+    gain.gain.setValueAtTime(0.16, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    tone.connect(gain); gain.connect(this.context.destination); tone.start(now); tone.stop(now + 0.46);
+    tone.onended = () => { tone.disconnect(); gain.disconnect(); };
+  }
   dispose() { this.motor?.stop(); void this.context?.close(); }
 }

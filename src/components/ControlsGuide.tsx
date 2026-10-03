@@ -7,7 +7,7 @@ export function CompactControls() {
     <div className="control-row"><div className="wasd"><Key>W</Key><span><Key>A</Key><Key>S</Key><Key>D</Key></span></div><span>前后 / 平移</span></div>
     <div className="control-row"><div className="keys"><Key>Q</Key><Key>E</Key></div><span>转向</span></div>
     <div className="control-row"><div className="keys"><Key>Space</Key><Key>Shift</Key></div><span>升降</span></div>
-    <div className="control-row"><div className="keys"><Key>Esc</Key><Key>V</Key></div><span>暂停 / 视角</span></div>
+    <div className="control-row"><div className="keys"><Key>Esc</Key><Key>V</Key><Key>B</Key></div><span>暂停 / 视角 / 投弹</span></div>
   </section>;
 }
 export default function ControlsGuide({ onClose }: { onClose: () => void }) {
@@ -24,10 +24,12 @@ export default function ControlsGuide({ onClose }: { onClose: () => void }) {
       <div><dt><Key>↑</Key><Key>↓</Key></dt><dd>抬头 / 低头，前进方向随视角变化</dd></div>
       <div><dt><Key>Esc</Key><Key>P</Key></dt><dd>Esc 暂停，P 暂停或继续</dd></div>
       <div><dt><Key>R</Key></dt><dd>从起点重新开始</dd></div>
-      <div><dt><Key>V</Key></dt><dd>第一视角 / 追尾视角，飞行中也能切换</dd></div>
+      <div><dt><Key>V</Key></dt><dd>循环切换追尾、俯视瞄准、第一视角</dd></div>
+      <div><dt><Key>B</Key></dt><dd>向下投放一枚炸弹，飞行中可投弹</dd></div>
     </dl></div>
-    <div className="guide-section"><h3><MousePointer2 size={18} /> 鼠标与触屏</h3><p>飞行时点击画面可启用鼠标视角，Esc 释放鼠标并暂停。手机上使用画面两侧的方向按钮，可同时操作多个方向。</p></div>
+    <div className="guide-section"><h3><MousePointer2 size={18} /> 鼠标与触屏</h3><p>飞行时点击画面可启用鼠标视角，Esc 释放鼠标并暂停。手机上使用画面两侧的方向按钮，可同时操作多个方向；点击左侧「投弹」按钮投放炸弹，点击右上角的视角按钮切换俯视瞄准。</p></div>
     <div className="guide-note"><strong>怎样完成挑战？</strong><p>按顺序，从正面穿过 8 个飞行环。当前目标会亮起，小地图会标出航线。碰到地形或树木会减速，并增加 3 秒计时；自由飞行没有计时惩罚。</p></div>
+    <div className="guide-note"><strong>在山谷里练习投弹</strong><p>计时挑战和自由飞行都可投弹。按 V 切换俯视瞄准，从目标上方投放；炸弹会继承无人机的飞行速度，减速悬停更容易命中。每轮携带 6 枚，连续投弹间隔 0.45 秒，用完后自动装填 3 秒。场内有 5 个地面靶标，每个首次命中加 100 分，重新开始会重置靶标和得分。</p></div>
     <button className="primary-button" onClick={onClose}>准备好了</button>
   </dialog>;
 }

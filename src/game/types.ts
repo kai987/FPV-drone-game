@@ -1,15 +1,17 @@
 import type { Vec3 } from './flight';
 export type RaceMode = 'race' | 'free';
 export type FlightMode = 'assisted' | 'sport';
-export type CameraMode = 'chase' | 'fpv';
+export type CameraMode = 'chase' | 'bomb' | 'fpv';
 export type Status = 'ready' | 'flying' | 'paused' | 'finished';
 export interface Telemetry {
   speed: number; altitude: number; elapsed: number; checkpoint: number;
   position: Vec3; yaw: number; pitch: number; roll: number;
+  weapons: { ammo: number; reloadRemaining: number; score: number; hitTargetIds: string[] };
 }
 export const EMPTY_TELEMETRY: Telemetry = {
   speed: 0, altitude: 12, elapsed: 0, checkpoint: 0,
   position: { x: 0, y: 12, z: 55 }, yaw: 0, pitch: 0, roll: 0,
+  weapons: { ammo: 6, reloadRemaining: 0, score: 0, hitTargetIds: [] },
 };
 export function formatTime(seconds: number) {
   const centiseconds = Math.floor(Math.max(0, seconds) * 100);

@@ -8,6 +8,7 @@ import ControlsGuide, { CompactControls } from './components/ControlsGuide';
 import TelemetryBar from './components/TelemetryBar';
 import Minimap from './components/Minimap';
 import TouchControls from './components/TouchControls';
+import WeaponPanel from './components/WeaponPanel';
 
 function readBest(): Record<FlightMode, number | null> {
   const result: Record<FlightMode, number | null> = { assisted: null, sport: null };
@@ -69,6 +70,8 @@ export default function App() {
   };
   const next = CHECKPOINTS[telemetry.checkpoint];
   const distance = next ? Math.round(Math.hypot(next.position.x - telemetry.position.x, next.position.y - telemetry.position.y, next.position.z - telemetry.position.z)) : 0;
+  const cameraLabels = { chase: '追尾视角', bomb: '俯视瞄准', fpv: '第一视角' };
+  const nextCamera = cameraMode === 'chase' ? 'bomb' : cameraMode === 'bomb' ? 'fpv' : 'chase';
 
   return <div className="app-shell">
     <header className="topbar">
@@ -95,7 +98,7 @@ export default function App() {
         <div className="viewport" data-testid="viewport">
           <div className="canvas-host" ref={host} />
           <div className="scene-heading"><span className="scene-number">01</span><div><strong>松林山谷</strong><small>PINE VALLEY</small></div></div>
-          <button className="fpv-mark view-toggle" aria-label={cameraMode === 'chase' ? '切换到第一视角' : '切换到追尾视角'} title="按 V 切换视角" onClick={() => engine.current?.setCameraMode(cameraMode === 'chase' ? 'fpv' : 'chase')}><Camera size={15} /><span>{cameraMode === 'chase' ? '追尾视角' : '第一视角'}</span><span className="view-key">V</span></button>
+          <button className="fpv-mark view-toggle" aria-label={`切换到${cameraLabels[nextCamera]}`} title="按 V 切换追尾、俯视瞄准、第一视角" onClick={() => engine.current?.cycleCameraMode()}><Camera size={15} /><span>{cameraLabels[cameraMode]}</span><span className="view-key">V</span></button>
           <div className={`crosshair ${cameraMode === 'chase' ? 'chase-crosshair' : ''}`} aria-hidden="true" />
           {status === 'flying' && mode === 'race' ? <div className="target-indicator"><span className="target-dot" />下一检查点 {String(telemetry.checkpoint + 1).padStart(2, '0')}<span className="target-distance">{distance} m</span></div> : null}
           {!loaded && !error ? <div className="scene-loading"><Wind size={28} /><span>正在准备山谷…</span></div> : null}
@@ -104,6 +107,7 @@ export default function App() {
           {status === 'finished' ? <div className="state-overlay"><div className="state-panel finish-panel"><Trophy className="state-icon" size={32} /><h2>漂亮的一次飞行。</h2><p>8 个检查点全部完成</p><strong className="finish-time">{formatTime(telemetry.elapsed)}</strong><div className="finish-best">个人最佳 · {formatTime(best[flightMode] ?? telemetry.elapsed)}</div><button className="primary-button" onClick={() => engine.current?.start()}>再飞一次<ArrowRight size={19} /></button><button className="text-button" onClick={() => { setMode('free'); if (engine.current) { engine.current.mode = 'free'; engine.current.start(); } }}>在山谷里自由探索</button></div></div> : null}
           <div className={`flight-notice ${notice ? 'visible' : ''}`} role="status">{notice}</div>
           <Minimap telemetry={telemetry} mode={mode} />
+          <WeaponPanel ammo={telemetry.weapons.ammo} reloadRemaining={telemetry.weapons.reloadRemaining} score={telemetry.weapons.score} hits={telemetry.weapons.hitTargetIds.length} status={status} onDrop={() => engine.current?.dropBomb()} />
           {status === 'flying' ? <TouchControls onAxis={(axis, value) => engine.current?.setTouch(axis, value)} /> : null}
           {status === 'flying' ? <button className="mobile-pause icon-button" aria-label="暂停飞行" onClick={() => engine.current?.pause()}><Pause size={19} /></button> : null}
         </div>

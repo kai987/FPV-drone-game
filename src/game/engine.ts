@@ -3,6 +3,8 @@ import { createFlightState, stepFlight, crossesCheckpoint } from './flight';
 import { CHECKPOINTS, createWorld, groundHeight } from './world';
 import { FlightAudio } from './audio';
 import { createDrone } from './drone';
+import { createWeaponState, dropBomb, stepWeapons, TARGETS } from './weapons';
+import { createWeaponVisuals } from './weapon-visuals';
 import type { RaceMode, FlightMode, CameraMode, Status, Telemetry } from './types';
 
 export interface EngineEvents {
@@ -19,6 +21,8 @@ export class FlightEngine {
   private world = createWorld();
   private camera = new THREE.PerspectiveCamera(68, 1, 0.2, 2100);
   private drone = createDrone();
+  private weapons = createWeaponState();
+  private weaponVisuals = createWeaponVisuals();
   private cameraPosition = new THREE.Vector3();
   private cameraTarget = new THREE.Vector3();
   private desiredPosition = new THREE.Vector3();
@@ -52,7 +56,7 @@ export class FlightEngine {
     host.appendChild(this.renderer.domElement);
     this.camera.rotation.order = 'YXZ';
     this.drone.model.rotation.order = 'YXZ';
-    this.world.scene.add(this.drone.model);
+    this.world.scene.add(this.drone.model, this.weaponVisuals.group);
     this.resizeObserver = new ResizeObserver(this.resize);
     this.resizeObserver.observe(host);
     window.addEventListener('keydown', this.keydown);
@@ -72,13 +76,14 @@ export class FlightEngine {
   private keydown = (event: KeyboardEvent) => {
     if ((event.target as HTMLElement)?.matches('input, textarea, select') || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.code === 'KeyV') {
-      event.preventDefault(); if (!event.repeat) this.setCameraMode(this.cameraMode === 'chase' ? 'fpv' : 'chase'); return;
+      event.preventDefault(); if (!event.repeat) this.cycleCameraMode(); return;
     }
     if (event.code === 'Escape' || event.code === 'KeyP') {
       event.preventDefault(); if (!event.repeat) { if (event.code === 'Escape') this.pause(); else this.togglePause(); } return;
     }
     if (event.code === 'KeyR' && !event.repeat && this.status !== 'ready') { event.preventDefault(); this.start(); return; }
     if (this.status !== 'flying') return;
+    if (event.code === 'KeyB') { event.preventDefault(); if (!event.repeat) this.dropBomb(); return; }
     if (['KeyW','KeyS','KeyA','KeyD','KeyQ','KeyE','Space','ShiftLeft','ShiftRight','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.code)) {
       event.preventDefault(); this.keys.add(event.code);
     }
@@ -102,13 +107,22 @@ export class FlightEngine {
     if (this.cameraMode === mode) return;
     this.cameraMode = mode; this.snapCamera = true; this.events.cameraMode(mode);
   }
+  cycleCameraMode() { this.setCameraMode(this.cameraMode === 'chase' ? 'bomb' : this.cameraMode === 'bomb' ? 'fpv' : 'chase'); }
+  dropBomb() {
+    if (this.status !== 'flying') return;
+    if (dropBomb(this.weapons, this.state.position, this.state.velocity)) {
+      this.audio.drop(); this.emit();
+      if (this.weapons.ammo === 0) this.events.notice('弹药已投完 · 3 秒后自动补充');
+    }
+  }
   private setStatus(status: Status) { this.status = status; this.events.status(status); }
   start() {
     this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
+    this.weapons = createWeaponState();
     this.snapCamera = true;
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
     this.collisionCooldown = 0; this.setStatus('flying'); this.emit();
-    this.events.notice(this.mode === 'race' ? '起飞成功 · 依次穿过亮色飞行环' : '起飞成功 · 山谷属于你，自由探索吧');
+    this.events.notice('起飞成功 · B 投弹，V 切换俯视瞄准 · 下方有练习靶标');
   }
   pause() {
     if (this.status !== 'flying') return;
@@ -118,6 +132,7 @@ export class FlightEngine {
   togglePause() { if (this.status === 'flying') this.pause(); else if (this.status === 'paused') this.setStatus('flying'); }
   reset() {
     this.setStatus('ready'); this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
+    this.weapons = createWeaponState();
     this.snapCamera = true; this.events.notice('');
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
     if (document.pointerLockElement) document.exitPointerLock(); this.emit();
@@ -161,6 +176,13 @@ export class FlightEngine {
           }
         }
       }
+      const weaponEvents = stepWeapons(this.weapons, elapsedDelta, groundHeight);
+      if (weaponEvents.impacts > 0) this.audio.explosion();
+      if (weaponEvents.hits > 0) {
+        this.events.notice(this.weapons.hitTargetIds.length === TARGETS.length
+          ? `全部靶标命中 · 总得分 ${this.weapons.score} · R 重新挑战`
+          : `命中靶标 +${weaponEvents.hits * 100} · ${this.weapons.hitTargetIds.length} / ${TARGETS.length}`);
+      }
       if (this.mode === 'race' && this.checkpoint < CHECKPOINTS.length && crossesCheckpoint(previous, this.state.position, CHECKPOINTS[this.checkpoint])) {
         this.checkpoint++; this.audio.checkpoint();
         if (this.checkpoint === CHECKPOINTS.length) {
@@ -174,7 +196,7 @@ export class FlightEngine {
     this.drone.model.position.set(position.x, position.y, position.z);
     const forwardVelocity = -Math.sin(yaw) * velocity.x - Math.cos(yaw) * velocity.z;
     this.drone.model.rotation.set(pitch - forwardVelocity * 0.004, yaw, roll);
-    this.drone.model.visible = this.cameraMode === 'chase';
+    this.drone.model.visible = this.cameraMode !== 'fpv';
     this.drone.update(time / 1000, this.status === 'flying', speed);
     if (this.cameraMode === 'fpv') {
       this.camera.position.set(position.x, position.y, position.z);
@@ -182,9 +204,13 @@ export class FlightEngine {
     } else {
       // Follow yaw rather than bank/pitch so turns show the aircraft's attitude
       // while keeping the horizon steady and the route ahead visible.
-      this.desiredPosition.set(position.x + Math.sin(yaw) * 8, position.y + 3.3, position.z + Math.cos(yaw) * 8);
+      const heightAboveGround = Math.max(0, position.y - groundHeight(position.x, position.z));
+      const distanceBehind = this.cameraMode === 'bomb' ? Math.max(10, heightAboveGround * 0.55) : 8;
+      const heightAbove = this.cameraMode === 'bomb' ? Math.max(15, heightAboveGround * 0.7) : 3.3;
+      this.desiredPosition.set(position.x + Math.sin(yaw) * distanceBehind, position.y + heightAbove, position.z + Math.cos(yaw) * distanceBehind);
       this.desiredPosition.y = Math.max(this.desiredPosition.y, groundHeight(this.desiredPosition.x, this.desiredPosition.z) + 2);
-      this.desiredTarget.set(position.x - Math.sin(yaw) * 5, position.y + 0.8, position.z - Math.cos(yaw) * 5);
+      if (this.cameraMode === 'bomb') this.desiredTarget.set(position.x, groundHeight(position.x, position.z) + 0.4, position.z);
+      else this.desiredTarget.set(position.x - Math.sin(yaw) * 5, position.y + 0.8, position.z - Math.cos(yaw) * 5);
       if (this.snapCamera) {
         this.cameraPosition.copy(this.desiredPosition); this.cameraTarget.copy(this.desiredTarget);
       } else {
@@ -196,6 +222,7 @@ export class FlightEngine {
     }
     this.snapCamera = false;
     this.world.update(time / 1000, this.mode === 'race' ? this.checkpoint : -1);
+    this.weaponVisuals.update(this.weapons, this.elapsed);
     this.renderer.render(this.world.scene, this.camera);
     this.audio.update(speed, this.status === 'flying');
     if (time - this.lastEmit > 90) { this.lastEmit = time; this.emit(); }
@@ -206,6 +233,8 @@ export class FlightEngine {
       speed: Math.hypot(this.state.velocity.x, this.state.velocity.y, this.state.velocity.z) * 3.6,
       altitude: this.state.position.y, elapsed: this.elapsed, checkpoint: this.checkpoint,
       position: { ...this.state.position }, yaw: this.state.yaw, pitch: this.state.pitch, roll: this.state.roll,
+      weapons: { ammo: this.weapons.ammo, reloadRemaining: this.weapons.reloadRemaining,
+        score: this.weapons.score, hitTargetIds: [...this.weapons.hitTargetIds] },
     });
   }
   dispose() {
@@ -215,6 +244,6 @@ export class FlightEngine {
     document.removeEventListener('mousemove', this.mousemove); document.removeEventListener('pointerlockchange', this.pointerlockchange);
     this.renderer.domElement.removeEventListener('click', this.lockPointer);
     if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
-    this.audio.dispose(); this.drone.dispose(); this.world.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
+    this.audio.dispose(); this.drone.dispose(); this.weaponVisuals.dispose(); this.world.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
   }
 }
