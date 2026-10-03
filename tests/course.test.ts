@@ -3,6 +3,7 @@ import test from 'node:test';
 import { createFlightState, crossesCheckpoint, stepFlight } from '../src/game/flight.ts';
 import type { Checkpoint, FlightInput, FlightMode, FlightState } from '../src/game/flight.ts';
 import { CHECKPOINTS, groundHeight } from '../src/game/world.ts';
+import { DRONES } from '../src/game/drone-catalog.ts';
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const straightForward: FlightInput = { forward: 1, strafe: 0, climb: 0, yaw: 0 };
@@ -22,8 +23,8 @@ function steerTowardGate(state: FlightState, checkpoint: Checkpoint): FlightInpu
   };
 }
 
-for (const mode of ['assisted', 'sport'] as const satisfies readonly FlightMode[]) {
-  test(`the actual eight-gate course can finish in ${mode} mode using flight controls only`, () => {
+for (const drone of DRONES) for (const mode of ['assisted', 'sport'] as const satisfies readonly FlightMode[]) {
+  test(`the actual eight-gate course can finish with ${drone.id} in ${mode} mode using flight controls only`, () => {
     assert.equal(CHECKPOINTS.length, 8);
     const state = createFlightState();
     const crossed: number[] = [];
@@ -35,7 +36,7 @@ for (const mode of ['assisted', 'sport'] as const satisfies readonly FlightMode[
       const previous = { ...state.position };
       // The beginner approach should work by holding only W at spawn altitude.
       const input = nextCheckpoint < 2 ? straightForward : steerTowardGate(state, checkpoint);
-      stepFlight(state, input, 1 / 60, mode, groundHeight);
+      stepFlight(state, input, 1 / 60, mode, groundHeight, drone.flight);
       if (state.collision) groundContacts++;
       assert.ok(state.position.y >= groundHeight(state.position.x, state.position.z) + 1.8 - 1e-9);
 

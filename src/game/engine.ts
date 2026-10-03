@@ -7,6 +7,8 @@ import { flightSurfaceHeight } from './surfaces';
 import { intersectsObstacle } from './collisions';
 import { FlightAudio } from './audio';
 import { createDrone } from './drone';
+import { DEFAULT_DRONE_ID, DRONES, getDroneSpec } from './drone-catalog';
+import type { DroneId } from './drone-catalog';
 import { createWeaponState, dropBomb, stepWeapons, TARGETS } from './weapons';
 import { createWeaponVisuals } from './weapon-visuals';
 import type { RaceMode, FlightMode, CameraMode, Status, Telemetry } from './types';
@@ -26,6 +28,8 @@ export class FlightEngine {
   private camera = new THREE.PerspectiveCamera(68, 1, 0.2, 10000);
   private obstacleGrid = new Map<string, WorldObstacle[]>();
   private drone = createDrone();
+  private selectedDroneId: DroneId = DEFAULT_DRONE_ID;
+  private disposed = false;
   private headlight = new THREE.SpotLight('#dcecff', 0, 85, Math.PI / 5, 0.55, 1.5);
   private headlightTarget = new THREE.Object3D();
   private weapons = createWeaponState();
@@ -49,6 +53,7 @@ export class FlightEngine {
   mode: RaceMode = 'race';
   flightMode: FlightMode = 'assisted';
   cameraMode: CameraMode = 'chase';
+  get droneId(): DroneId { return this.selectedDroneId; }
 
   constructor(private host: HTMLDivElement, private events: EngineEvents) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -98,7 +103,10 @@ export class FlightEngine {
     this.camera.aspect = width / Math.max(height, 1); this.camera.updateProjectionMatrix();
   };
   private keydown = (event: KeyboardEvent) => {
-    if ((event.target as HTMLElement)?.matches('input, textarea, select') || event.ctrlKey || event.metaKey || event.altKey) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (event.defaultPrevented || target?.closest('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"]')
+      || document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')
+      || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.code === 'KeyV') {
       event.preventDefault(); if (!event.repeat) this.cycleCameraMode(); return;
     }
@@ -123,7 +131,7 @@ export class FlightEngine {
   private pointerlockchange = () => { if (!document.pointerLockElement && this.status === 'flying') this.pause(); };
   private mousemove = (event: MouseEvent) => {
     if (document.pointerLockElement !== this.renderer.domElement || this.status !== 'flying') return;
-    this.state.yaw -= event.movementX * 0.0025;
+    this.state.yaw -= event.movementX * 0.0025 * getDroneSpec(this.selectedDroneId).flight.yaw;
     this.state.pitch = THREE.MathUtils.clamp(this.state.pitch - event.movementY * 0.0025, -0.7, 0.7);
   };
   setNight(enabled: boolean) {
@@ -131,6 +139,19 @@ export class FlightEngine {
     this.weaponVisuals.setNight(enabled);
     this.headlight.intensity = enabled ? 950 : 0;
     this.renderer.toneMappingExposure = enabled ? 1.05 : 1.2;
+  }
+  /** A model can be changed only outside an active or paused flight. */
+  setDrone(id: DroneId): boolean {
+    if (this.disposed || (this.status !== 'ready' && this.status !== 'finished') || !DRONES.some(spec => spec.id === id)) return false;
+    if (id !== this.selectedDroneId) {
+      const next = createDrone(id);
+      next.model.rotation.order = 'YXZ';
+      this.drone.dispose(); this.drone = next; this.selectedDroneId = id;
+      this.world.scene.add(next.model);
+    }
+    this.reset();
+    this.events.notice(`已选择 ${getDroneSpec(id).name} · 参考参数可在机库查看`);
+    return true;
   }
   setTouch(axis: keyof typeof this.touch, value: number) { this.touch[axis] = value; }
   setCameraMode(mode: CameraMode) {
@@ -179,7 +200,7 @@ export class FlightEngine {
         climb: pressed('Space') - Math.max(pressed('ShiftLeft'), pressed('ShiftRight')) + this.touch.climb,
         yaw: pressed('KeyQ') + pressed('ArrowLeft') - pressed('KeyE') - pressed('ArrowRight') + this.touch.yaw,
         lookPitch: pressed('ArrowUp') - pressed('ArrowDown'),
-      }, dt, this.flightMode, (x, z) => flightSurfaceHeight(x, z, previous.y));
+      }, dt, this.flightMode, (x, z) => flightSurfaceHeight(x, z, previous.y), getDroneSpec(this.selectedDroneId).flight);
       this.elapsed += elapsedDelta; this.collisionCooldown -= dt;
       const p = this.state.position;
       const x = THREE.MathUtils.clamp(p.x, WORLD_BOUNDS.minX, WORLD_BOUNDS.maxX);
@@ -271,6 +292,8 @@ export class FlightEngine {
     });
   }
   dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
     cancelAnimationFrame(this.frame); this.resizeObserver.disconnect();
     window.removeEventListener('keydown', this.keydown); window.removeEventListener('keyup', this.keyup);
     window.removeEventListener('blur', this.blur); document.removeEventListener('visibilitychange', this.visibility);

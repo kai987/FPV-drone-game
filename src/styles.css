@@ -253,3 +253,112 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
 .map-discovery { display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 3px; color: #b7eefa; font-size: 9px; line-height: 1.3; white-space: nowrap; }
 .minimap .map-discovery svg { display: block; width: 11px; height: 7px; }
 @media (max-width: 800px) { .map-discovery { gap: 3px; margin-top: 2px; font-size: 7px; } .minimap .map-discovery svg { width: 9px; height: 6px; } }
+
+.drone-hangar-toggle { display: flex; align-items: center; gap: 7px; min-height: 35px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.drone-hangar-toggle:hover { background: #e9eee1; }
+.hangar-entry-label { color: var(--muted); font-size: 10px; padding-right: 7px; border-right: 1px solid var(--line); }
+.drone-hangar { width: min(880px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--paper); color: var(--ink); overflow: hidden; }
+.drone-hangar[open] { display: flex; flex-direction: column; }
+.drone-hangar::backdrop { background: #14261770; backdrop-filter: blur(6px); }
+.hangar-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; gap: 16px; padding: 22px 26px 18px; border-bottom: 1px solid var(--line); }
+.hangar-heading h2 { font-size: 27px; margin: 8px 0 5px; font-weight: 700; letter-spacing: -.7px; }
+.hangar-heading p { margin: 0; color: var(--muted); font-size: 12px; }
+.hangar-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 26px; }
+.hangar-models { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.hangar-model { min-width: 0; padding: 7px 10px 12px; text-align: left; background: #eef1e7; border: 1px solid #dce2d2; border-radius: 11px; }
+.hangar-model.selected { background: #e6eddb; border-color: #879b5f; box-shadow: inset 0 0 0 1px #879b5f; }
+.hangar-drone-outline { display: block; width: 100%; height: 105px; }
+.hangar-model strong, .hangar-model > span { display: block; }
+.hangar-model strong { font-size: 13px; font-weight: 700; }
+.hangar-model > span { color: var(--muted); font-size: 10px; margin-top: 3px; }
+.hangar-model small { display: flex; align-items: center; gap: 3px; height: 15px; color: #687650; font-size: 9px; margin-top: 7px; }
+.hangar-selection { display: flex; align-items: flex-start; gap: 11px; margin: 18px 0 21px; }
+.hangar-model-color { display: block; width: 5px; align-self: stretch; min-height: 42px; border-radius: 3px; flex-shrink: 0; }
+.hangar-selection h3 { margin: 0 0 5px; font-size: 14px; }
+.hangar-selection h3 span { margin-left: 12px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.hangar-selection p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.8; }
+.hangar-performance-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.hangar-performance-heading h3 { font-size: 13px; margin: 0; }
+.hangar-performance-heading .segment-control { width: 144px; height: 33px; border-radius: 7px; }
+.hangar-performance-heading .segment-control button { font-size: 11px; border-radius: 4px; }
+.hangar-table-hint { margin: 8px 0 10px; color: var(--muted); font-size: 10px; }
+.hangar-selected-specs, .hangar-details-title { display: none; }
+@media (max-width: 560px) {
+  .hangar-comparison-title, .hangar-table-scroll, .hangar-table-hint { display: none; }
+  .hangar-details-title, .hangar-selected-specs { display: block; }
+  .hangar-selected-specs h4 { margin: 14px 0 0; padding: 10px; background: #92ab6420; font-size: 11px; font-weight: 600; }
+  .hangar-selected-specs dl { margin: 0; }
+  .hangar-selected-specs dl > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; padding: 10px; border-bottom: 1px solid var(--line); font-size: 11px; line-height: 1.5; }
+  .hangar-selected-specs dt { color: var(--muted); }
+  .hangar-selected-specs dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+}
+.hangar-table-scroll { overflow: auto; max-height: min(520px, 56dvh); border: 1px solid var(--line); border-radius: 9px; overscroll-behavior-x: contain; }
+.hangar-table-scroll:focus-visible { outline: 2px solid #91a854; outline-offset: 3px; }
+.hangar-table { width: 100%; min-width: 690px; border-collapse: collapse; font-size: 11px; text-align: left; }
+.hangar-table th, .hangar-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); line-height: 1.5; }
+.hangar-table thead th { position: sticky; top: 0; z-index: 2; background: #edf1e7; font-size: 12px; font-weight: 700; }
+.hangar-table th[scope="row"], .hangar-table thead th:first-child { position: sticky; left: 0; background: var(--paper); box-shadow: 1px 0 0 var(--line); }
+.hangar-table th[scope="row"] { z-index: 1; }
+.hangar-table thead th:first-child { z-index: 3; }
+.hangar-table thead small { display: block; color: #6d7c53; font-size: 9px; font-weight: 400; margin-top: 3px; }
+.hangar-table tbody th { font-weight: 500; color: var(--muted); white-space: nowrap; }
+.hangar-table th:first-child { min-width: 100px; }
+.hangar-table .selected-column { background: #dbe7c333; }
+.hangar-table thead th.selected-column { background: #e4ecd5; }
+.hangar-table .hangar-table-section th { background: #edf1e7; color: #526148; font-weight: 600; font-size: 10px; padding-top: 8px; padding-bottom: 8px; }
+.hangar-table tbody:last-child tr:last-child > * { border-bottom: 0; }
+.hangar-reference-note { font-size: 10px; line-height: 1.8; color: var(--muted); margin: 12px 0 0; }
+.hangar-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 15px 26px; border-top: 1px solid var(--line); background: var(--paper); }
+.hangar-footer > p { margin: 0; max-width: 350px; color: var(--muted); font-size: 11px; line-height: 1.8; }
+.hangar-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.hangar-apply { width: auto; min-height: 40px; padding: 10px 15px; font-size: 12px; border-radius: 7px; }
+.hangar-reset-apply { min-height: 40px; padding: 10px 13px; border: 1px solid #879b69; border-radius: 7px; color: #4e643c; background: transparent; font-size: 11px; }
+.hangar-reset-apply:disabled { opacity: .5; }
+.app-shell.night .drone-hangar-toggle:hover { background: #2d3c30; }
+.app-shell.night .hangar-model { background: #222f25; border-color: #45553c; }
+.app-shell.night .hangar-model.selected { background: #2c3c2a; border-color: #a3ba76; box-shadow: inset 0 0 0 1px #a3ba76; }
+.app-shell.night .hangar-model small, .app-shell.night .hangar-table thead small { color: #afc391; }
+.app-shell.night .hangar-table thead th, .app-shell.night .hangar-table .hangar-table-section th { background: #28392a; color: #c2d4ae; }
+.app-shell.night .hangar-table .selected-column { background: #a7c17e16; }
+.app-shell.night .hangar-table thead th.selected-column { background: #334531; }
+.app-shell.night .hangar-reset-apply { color: #d1e5b5; border-color: #819968; }
+@media (max-width: 800px) {
+  .drone-hangar-toggle { min-height: 32px; padding: 0 7px; gap: 4px; font-size: 10px; }
+  .drone-hangar-toggle > svg:first-child { width: 14px; }
+  .drone-hangar-toggle span { max-width: 85px; overflow: hidden; text-overflow: ellipsis; }
+  .drone-hangar { max-height: calc(100dvh - 24px); border-radius: 15px; }
+  .hangar-heading { padding: 16px 18px 13px; }
+  .hangar-heading h2 { font-size: 23px; }
+  .hangar-heading p { font-size: 10px; }
+  .hangar-body { padding: 14px 18px; }
+  .hangar-models { gap: 7px; }
+  .hangar-drone-outline { height: 83px; }
+  .hangar-model { padding: 5px 8px 9px; }
+  .hangar-model strong { font-size: 11px; }
+  .hangar-selection { margin: 14px 0 17px; }
+  .hangar-selection h3 span { display: block; margin: 4px 0 0; }
+  .hangar-footer { flex-direction: column; align-items: stretch; gap: 9px; padding: 12px 18px; }
+  .hangar-footer > p { max-width: none; font-size: 10px; }
+  .hangar-actions { justify-content: flex-end; }
+}
+@media (max-width: 600px) {
+  .hangar-models { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hangar-drone-outline { height: 64px; }
+  .hangar-model > span { font-size: 9px; }
+  .hangar-model small { margin-top: 4px; }
+}
+@media (max-width: 450px) {
+  .topbar .brand span { display: none; }
+  .topbar .brand { padding-right: 6px; }
+  .topbar nav { padding-left: 0; }
+  .drone-hangar-toggle span { max-width: 75px; }
+  .drone-hangar-toggle .hangar-entry-model { display: none; }
+  .hangar-entry-label { padding-right: 0; border-right: 0; color: var(--ink); }
+}
+@media (max-width: 360px) {
+  .drone-hangar-toggle { padding: 0 5px; gap: 3px; }
+  .drone-hangar-toggle span { max-width: 60px; }
+  .header-actions .day-night-toggle { min-width: 50px; padding: 0 5px; gap: 3px; }
+  .hangar-actions { gap: 6px; }
+  .hangar-apply, .hangar-reset-apply { padding-left: 9px; padding-right: 9px; font-size: 10px; }
+}

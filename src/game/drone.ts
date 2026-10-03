@@ -1,10 +1,25 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { DEFAULT_DRONE_ID, getDroneSpec } from './drone-catalog.ts';
+import type { DroneId } from './drone-catalog.ts';
 
 /** A compact quadcopter whose nose points along local -Z. */
-export function createDrone() {
+export function createDrone(id: DroneId = DEFAULT_DRONE_ID) {
+  const spec = getDroneSpec(id);
+  const shape = {
+    cinewhoop: { motorX: 0.56, motorZ: 0.53, propRadius: 0.38, motorScale: 0.8, armWidth: 0.09, bodyWidth: 0.56, bodyLength: 0.66, batteryWidth: 0.29, batteryHeight: 0.15, batteryLength: 0.34 },
+    freestyle: { motorX: 0.76, motorZ: 0.73, propRadius: 0.505, motorScale: 1, armWidth: 0.125, bodyWidth: 0.58, bodyLength: 0.9, batteryWidth: 0.29, batteryHeight: 0.18, batteryLength: 0.48 },
+    racer: { motorX: 0.64, motorZ: 0.88, propRadius: 0.505, motorScale: 0.86, armWidth: 0.075, bodyWidth: 0.35, bodyLength: 0.98, batteryWidth: 0.23, batteryHeight: 0.13, batteryLength: 0.51 },
+    explorer: { motorX: 1.04, motorZ: 1.03, propRadius: 0.66, motorScale: 1.2, armWidth: 0.15, bodyWidth: 0.66, bodyLength: 1.12, batteryWidth: 0.42, batteryHeight: 0.26, batteryLength: 0.75 },
+  }[spec.id];
+  const propScale = shape.propRadius / 0.505;
+  const slim = spec.id === 'racer';
+  const ducted = spec.id === 'cinewhoop';
+  const longRange = spec.id === 'explorer';
   const model = new THREE.Group();
-  model.name = 'AEROFLOW quadcopter';
+  model.name = `AEROFLOW ${spec.name}`;
+  model.userData.droneId = spec.id;
+  model.userData.frame = spec.frame;
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
   const ownGeometry = <T extends THREE.BufferGeometry>(geometry: T): T => {
@@ -26,7 +41,7 @@ export function createDrone() {
     color: '#eeeadd', metalness: 0.18, roughness: 0.34,
   }));
   const lime = ownMaterial(new THREE.MeshStandardMaterial({
-    color: '#c9df55', metalness: 0.18, roughness: 0.39,
+    color: spec.color, metalness: 0.18, roughness: 0.39,
   }));
   const darkRubber = ownMaterial(new THREE.MeshStandardMaterial({
     color: '#111916', roughness: 0.86,
@@ -85,50 +100,67 @@ export function createDrone() {
   };
 
   // The frame's dark lower sandwich stays visible beneath the cream canopy.
-  box(carbon, [0, 0.035, 0], [0.58, 0.12, 0.9], true);
-  box(carbonEdge, [0, 0.088, 0], [0.6, 0.028, 0.91], true);
-  box(shell, [0, 0.147, -0.035], [0.54, 0.15, 0.78], true);
+  box(carbon, [0, 0.035, 0], [shape.bodyWidth, slim ? 0.075 : 0.12, shape.bodyLength], true);
+  box(carbonEdge, [0, 0.088, 0], [shape.bodyWidth + 0.02, 0.028, shape.bodyLength + 0.01], true);
+  if (slim) {
+    box(carbon, [0, 0.147, -0.08], [0.29, 0.025, 0.82]);
+    for (const side of [-1, 1]) for (const z of [-0.32, 0.25]) box(aluminium, [side * 0.12, 0.12, z], [0.021, 0.095, 0.021]);
+    box(lime, [0, 0.164, -0.19], [0.075, 0.018, 0.45]);
+  } else box(shell, [0, 0.147, -0.035], [shape.bodyWidth - 0.04, 0.15, shape.bodyLength * 0.8667], true);
   for (const side of [-1, 1]) {
-    box(lime, [side * 0.218, 0.23, -0.06], [0.031, 0.014, 0.59], true);
-    box(carbonEdge, [side * 0.288, 0.053, 0.035], [0.028, 0.06, 0.34]);
+    if (!slim) box(lime, [side * shape.bodyWidth * 0.376, 0.23, -0.06], [0.031, 0.014, shape.bodyLength * 0.656], true);
+    box(carbonEdge, [side * (shape.bodyWidth / 2 - 0.002), 0.053, 0.035], [0.028, 0.06, shape.bodyLength * 0.378]);
   }
 
   // A removable top pack, retained by two narrow lime straps.
-  box(darkRubber, [0, 0.296, 0.073], [0.29, 0.18, 0.48], true);
-  box(carbonEdge, [0, 0.39, 0.07], [0.24, 0.015, 0.4], true);
-  for (const z of [-0.065, 0.205]) {
-    box(lime, [0, 0.405, z], [0.31, 0.022, 0.035], true);
-    for (const side of [-1, 1]) box(lime, [side * 0.153, 0.303, z], [0.017, 0.195, 0.035]);
+  const batteryY = slim ? 0.235 : 0.206 + shape.batteryHeight / 2;
+  const batteryTop = batteryY + shape.batteryHeight / 2;
+  box(darkRubber, [0, batteryY, 0.073], [shape.batteryWidth, shape.batteryHeight, shape.batteryLength], true);
+  box(carbonEdge, [0, batteryTop + 0.004, 0.07], [shape.batteryWidth - 0.05, 0.015, shape.batteryLength * 0.833], true);
+  for (const z of [0.07 - shape.batteryLength * 0.28, 0.07 + shape.batteryLength * 0.28]) {
+    box(lime, [0, batteryTop + 0.019, z], [shape.batteryWidth + 0.02, 0.022, 0.035], true);
+    for (const side of [-1, 1]) box(lime, [side * (shape.batteryWidth / 2 + 0.008), batteryY + 0.007, z], [0.017, shape.batteryHeight + 0.015, 0.035]);
   }
   const batteryCable = box(darkRubber, [0.18, 0.255, 0.264], [0.035, 0.03, 0.23], true);
   batteryCable.rotation.y = -0.48;
   box(lime, [0.216, 0.254, 0.354], [0.052, 0.047, 0.063], true);
 
   // The camera housing and optical glass distinguish the front during turns.
-  box(carbon, [0, 0.126, -0.477], [0.215, 0.19, 0.19], true);
+  const cameraZ = -shape.bodyLength * 0.53;
+  box(carbon, [0, 0.126, cameraZ], [slim ? 0.18 : 0.215, 0.19, 0.19], true);
   const bezelGeometry = ownGeometry(new THREE.CylinderGeometry(0.089, 0.098, 0.075, 24));
   bezelGeometry.rotateX(Math.PI / 2);
   const bezel = mesh(bezelGeometry, darkRubber);
-  bezel.position.set(0, 0.132, -0.592);
+  bezel.position.set(0, 0.132, cameraZ - 0.115);
   const glassGeometry = ownGeometry(new THREE.CircleGeometry(0.073, 24));
   const glass = mesh(glassGeometry, lens);
-  glass.position.set(0, 0.132, -0.632);
+  glass.position.set(0, 0.132, cameraZ - 0.155);
   glass.rotation.y = Math.PI;
   const lensRimGeometry = ownGeometry(new THREE.TorusGeometry(0.077, 0.006, 6, 24));
   const lensRim = mesh(lensRimGeometry, carbonEdge);
-  lensRim.position.set(0, 0.132, -0.635);
+  lensRim.position.set(0, 0.132, cameraZ - 0.158);
   const glint = mesh(ownGeometry(new THREE.SphereGeometry(0.012, 8, 6)), shell);
-  glint.position.set(0.026, 0.159, -0.637);
-  for (const side of [-1, 1]) box(frontLight, [side * 0.205, 0.141, -0.418], [0.085, 0.04, 0.034], true);
-  box(backLight, [0, 0.123, 0.465], [0.27, 0.042, 0.024], true);
+  glint.position.set(0.026, 0.159, cameraZ - 0.16);
+  for (const side of [-1, 1]) box(frontLight, [side * shape.bodyWidth * 0.353, 0.141, -shape.bodyLength * 0.464], [slim ? 0.045 : 0.085, 0.04, 0.034], true);
+  box(backLight, [0, 0.123, shape.bodyLength * 0.517], [shape.bodyWidth * 0.466, 0.042, 0.024], true);
 
   // A low-profile radio aerial, angled back away from the propellers.
-  const aerialGeometry = ownGeometry(new THREE.CylinderGeometry(0.014, 0.019, 0.26, 8));
+  const aerialHeight = longRange ? 0.66 : slim ? 0.18 : 0.26;
+  const aerialGeometry = ownGeometry(new THREE.CylinderGeometry(0.014, 0.019, aerialHeight, 8));
   const aerial = mesh(aerialGeometry, darkRubber);
-  aerial.position.set(-0.158, 0.28, 0.392);
-  aerial.rotation.x = 0.52;
+  const aerialZ = shape.bodyLength * 0.435;
+  aerial.position.set(-0.158, longRange ? 0.5 : 0.28, aerialZ);
+  aerial.rotation.x = longRange ? 0.16 : 0.52;
   const aerialTip = mesh(ownGeometry(new THREE.SphereGeometry(0.025, 8, 6)), carbon);
-  aerialTip.position.set(-0.158, 0.397, 0.458);
+  aerialTip.position.set(-0.158, (longRange ? 0.5 : 0.28) + Math.cos(aerial.rotation.x) * aerialHeight / 2,
+    aerialZ + Math.sin(aerial.rotation.x) * aerialHeight / 2);
+  if (longRange) {
+    const gps = mesh(ownGeometry(new THREE.CylinderGeometry(0.11, 0.11, 0.055, 20)), shell);
+    gps.position.set(0.19, batteryTop + 0.06, 0.39);
+    const secondAerial = mesh(aerialGeometry, carbonEdge);
+    secondAerial.position.set(0.18, 0.43, aerialZ - 0.04); secondAerial.scale.y = 0.7; secondAerial.rotation.z = -0.15;
+    box(carbon, [0, -0.095, 0.07], [0.42, 0.065, 0.88], true);
+  }
 
   // Curved, swept blades are actual extruded geometry, rather than flat sprites.
   const bladeShape = new THREE.Shape();
@@ -146,12 +178,21 @@ export function createDrone() {
   const rotors: THREE.Group[] = [];
   const blurDiscs: THREE.Mesh[] = [];
   const rotations: number[] = [];
+  let ductGeometry: THREE.BufferGeometry | undefined;
+  if (ducted) {
+    const contour = new THREE.Shape();
+    contour.absarc(0, 0, shape.propRadius + 0.062, 0, Math.PI * 2, false);
+    const hole = new THREE.Path(); hole.absarc(0, 0, shape.propRadius + 0.012, 0, Math.PI * 2, true);
+    contour.holes.push(hole);
+    ductGeometry = ownGeometry(new THREE.ExtrudeGeometry(contour, { depth: 0.16, bevelEnabled: true, bevelSize: 0.009, bevelThickness: 0.006, bevelSegments: 1, curveSegments: 24, steps: 1 }));
+    ductGeometry.rotateX(-Math.PI / 2);
+  }
 
-  for (const x of [-0.76, 0.76]) {
-    for (const z of [-0.73, 0.73]) {
+  for (const x of [-shape.motorX, shape.motorX]) {
+    for (const z of [-shape.motorZ, shape.motorZ]) {
       const angle = Math.atan2(x, z);
       const armLength = Math.hypot(x, z);
-      const arm = box(carbon, [x * 0.5, 0.015, z * 0.5], [0.125, 0.082, armLength], true);
+      const arm = box(carbon, [x * 0.5, 0.015, z * 0.5], [shape.armWidth, slim ? 0.052 : 0.082, armLength], true);
       arm.rotation.y = angle;
       const armRail = box(carbonEdge, [x * 0.5, 0.061, z * 0.5], [0.028, 0.012, armLength * 0.89]);
       armRail.rotation.y = angle;
@@ -160,16 +201,29 @@ export function createDrone() {
 
       const motor = mesh(motorGeometry, carbon);
       motor.position.set(x, 0.133, z);
+      motor.scale.setScalar(shape.motorScale);
       const cap = mesh(motorCapGeometry, aluminium);
       cap.position.set(x, 0.206, z);
+      cap.scale.setScalar(shape.motorScale);
       for (const y of [0.084, 0.12, 0.155]) {
         const rib = mesh(motorRibGeometry, carbonEdge);
         rib.rotation.x = Math.PI / 2;
         rib.position.set(x, y, z);
+        rib.scale.setScalar(shape.motorScale);
       }
       const motorStripe = mesh(motorRibGeometry, z < 0 ? lime : shell);
       motorStripe.rotation.x = Math.PI / 2;
       motorStripe.position.set(x, 0.19, z);
+      motorStripe.scale.setScalar(shape.motorScale);
+      if (ductGeometry) {
+        const guard = mesh(ductGeometry, shell);
+        guard.name = 'Protective propeller duct'; guard.position.set(x, 0.145, z);
+        for (let brace = 0; brace < 3; brace++) {
+          const a = brace * Math.PI * 2 / 3;
+          const support = box(carbon, [x + Math.cos(a) * 0.2, 0.113, z + Math.sin(a) * 0.2], [0.022, 0.032, 0.39]);
+          support.rotation.y = Math.PI / 2 - a;
+        }
+      }
 
       const leg = box(carbon, [x, -0.117, z], [0.055, 0.215, 0.055], true);
       leg.rotation.z = Math.sign(x) * 0.19;
@@ -177,10 +231,12 @@ export function createDrone() {
 
       const rotor = new THREE.Group();
       rotor.position.set(x, 0.233, z);
+      rotor.scale.setScalar(propScale);
       model.add(rotor);
-      for (let bladeIndex = 0; bladeIndex < 3; bladeIndex++) {
+      const bladeCount = ducted ? 4 : slim || longRange ? 2 : 3;
+      for (let bladeIndex = 0; bladeIndex < bladeCount; bladeIndex++) {
         const blade = mesh(bladeGeometry, propellerMaterial, rotor);
-        blade.rotation.y = bladeIndex * Math.PI * 2 / 3;
+        blade.rotation.y = bladeIndex * Math.PI * 2 / bladeCount;
         const tip = mesh(bladeTipGeometry, z < 0 ? lime : shell, rotor);
         const tipRadius = 0.472;
         tip.position.set(Math.cos(blade.rotation.y) * tipRadius, 0.008, -Math.sin(blade.rotation.y) * tipRadius);
@@ -192,6 +248,7 @@ export function createDrone() {
       hubScrew.position.y = 0.051;
       const blur = mesh(rotorDiscGeometry, propellerBlurMaterial);
       blur.position.set(x, 0.241, z);
+      blur.scale.setScalar(propScale);
       blur.castShadow = false;
       blur.receiveShadow = false;
       blur.visible = false;

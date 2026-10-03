@@ -12,10 +12,20 @@ export function CompactControls() {
 }
 export default function ControlsGuide({ onClose }: { onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => { ref.current?.showModal(); }, []);
-  return <dialog ref={ref} className="guide-dialog" onCancel={onClose} onClick={e => { if (e.target === ref.current) onClose(); }}>
-    <div className="dialog-heading"><div><span className="section-index">FLIGHT MANUAL</span><h2>从第一步，到自由飞行。</h2></div><button className="icon-button" aria-label="关闭操作指南" onClick={onClose}><X size={20} /></button></div>
+  const closeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialog?.showModal(); closeButton.current?.focus({ preventScroll: true });
+    return () => { dialog?.close(); if (opener?.isConnected) opener.focus({ preventScroll: true }); };
+  }, []);
+  return <dialog ref={ref} className="guide-dialog" aria-label="飞行操作指南"
+    onCancel={event => { event.preventDefault(); onClose(); }}
+    onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') { event.preventDefault(); onClose(); } }}
+    onKeyUp={event => event.stopPropagation()} onClick={e => { if (e.target === ref.current) onClose(); }}>
+    <div className="dialog-heading"><div><span className="section-index">FLIGHT MANUAL</span><h2>从第一步，到自由飞行。</h2></div><button ref={closeButton} className="icon-button" aria-label="关闭操作指南" onClick={onClose}><X size={20} /></button></div>
     <p>先试试辅助模式。机身会自动悬停，松开按键就能减速。</p>
+    <div className="guide-note"><strong>在机库里挑选飞行伙伴</strong><p>点击页头当前机型名称，查看四款机架和完整参数对比。CINE 轻影适合低速近景，FLOW 自由式均衡灵活，RACE 疾风追求速度，RANGE 远行者适合平稳巡航。辅助与运动的性能按钮仅用于预览，不会修改当前飞行模式。</p><p>飞行中打开机库会暂停，关闭后仍可决定何时继续；切换须明确点击「返回起点并应用」，本轮进度和弹药会重置。个人最佳按机型与飞行模式分别记录。四款均为虚构游戏机型；电池、镜头、图传和续航为参考设定，当前不模拟耗电。</p></div>
     <div className="guide-section"><h3><Keyboard size={18} /> 键盘操作</h3><dl>
       <div><dt><Key>W</Key><Key>S</Key></dt><dd>向前 / 向后飞行</dd></div>
       <div><dt><Key>A</Key><Key>D</Key></dt><dd>向左 / 向右平移</dd></div>

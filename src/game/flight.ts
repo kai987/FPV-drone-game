@@ -1,3 +1,6 @@
+import { DEFAULT_DRONE_ID, getDroneSpec, resolveFlightConfig } from './drone-catalog.ts';
+import type { DroneProfile } from './drone-catalog.ts';
+
 /** World coordinates use metres. At yaw 0 the drone faces world -Z. */
 export interface Vec3 {
   x: number;
@@ -39,11 +42,6 @@ const MAX_STEP = 0.06;
 const GROUND_CLEARANCE = 1.8;
 const PITCH_LIMIT = 0.75;
 
-const settings = {
-  assisted: { speed: 20, climbSpeed: 10, response: 5.6, brake: 6.8, yawSpeed: 1.4, bank: 0.2 },
-  sport: { speed: 34, climbSpeed: 17, response: 3.2, brake: 2.8, yawSpeed: 1.7, bank: 0.34 },
-} as const;
-
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -81,10 +79,11 @@ export function stepFlight(
   dt: number,
   mode: FlightMode = 'assisted',
   groundHeight: (x: number, z: number) => number = () => 0,
+  profile: Readonly<DroneProfile> = getDroneSpec(DEFAULT_DRONE_ID).flight,
 ): FlightState {
   if (!Number.isFinite(dt) || dt <= 0) return state;
   const time = Math.min(dt, MAX_STEP);
-  const config = settings[mode];
+  const config = resolveFlightConfig(profile, mode, Boolean(input.boost));
   const forward = axis(input.forward);
   const strafe = axis(input.strafe);
   const climb = axis(input.climb);
@@ -94,7 +93,7 @@ export function stepFlight(
   state.yaw = wrapAngle(state.yaw + yawInput * config.yawSpeed * time);
   state.pitch = clamp(state.pitch + axis(input.lookPitch) * 1.25 * time, -PITCH_LIMIT, PITCH_LIMIT);
 
-  const speed = config.speed * (input.boost ? 1.45 : 1);
+  const speed = config.speed;
   const horizontalInputLength = Math.max(1, Math.hypot(forward, strafe));
   const thrust = forward / horizontalInputLength;
   const sideThrust = strafe / horizontalInputLength;
