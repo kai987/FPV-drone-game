@@ -3,6 +3,7 @@ import type { RaceMode, Telemetry } from '../game/types';
 import { CHECKPOINTS } from '../game/world';
 import { TARGETS } from '../game/weapons';
 import { LAKES, RIVER_SAMPLES, WORLD_BOUNDS, lakeBoundary } from '../game/landscape';
+import { BRIDGES, CABINS } from '../game/rural-layout';
 import './Minimap.css';
 
 interface MinimapProps {
@@ -96,7 +97,7 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
   const isWorld = mapView === 'world';
 
   return (
-    <div className={`minimap geographic-minimap${isWorld ? ' minimap-world' : ''}`} aria-label="小地图，河流、湖泊、当前位置、检查点与投弹靶标">
+    <div className={`minimap geographic-minimap${isWorld ? ' minimap-world' : ''}`} aria-label="小地图，河流、湖泊、小屋、小桥、当前位置、检查点与投弹靶标">
       <div className="map-heading">
         <div className="minimap-modes" role="group" aria-label="地图范围">
           <button type="button" aria-pressed={isWorld} onClick={() => setMapView('world')} title="查看整个自然飞行场">全域</button>
@@ -104,7 +105,7 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
         </div>
         <span>N ↑</span>
       </div>
-      <svg viewBox="0 0 180 150" role="img" aria-label={`${isWorld ? '全域地图' : '航线地图'}，蓝色为河流湖泊，橙色为未命中靶标${outsideRoute ? '；当前位置超出航线图范围，可切换全域查看' : ''}`}>
+      <svg viewBox="0 0 180 150" role="img" aria-label={`${isWorld ? '全域地图' : '航线地图'}，蓝色为河流湖泊，米色为小屋和桥，橙色为未命中靶标${outsideRoute ? '；当前位置超出航线图范围，可切换全域查看' : ''}`}>
         <defs>
           <pattern id={gridId} width="30" height="25" patternUnits="userSpaceOnUse">
             <path d="M 30 0 L 0 0 0 25" fill="none" stroke="currentColor" strokeOpacity="0.09" strokeWidth="0.6" />
@@ -122,6 +123,22 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
             {geography.lakes.map(lake => <text key={lake.id} x={lake.position.x} y={lake.position.y + 2}>{lake.name}</text>)}
             {geography.riverLabel && <text x={geography.riverLabel.x - 6} y={geography.riverLabel.y} textAnchor="end">河流</text>}
           </g>}
+          {CABINS.map(cabin => {
+            const point = geography.project(cabin.x, cabin.z);
+            return <g key={cabin.id} transform={`translate(${point.x} ${point.y}) scale(${isWorld ? 0.45 : 0.7})`}>
+              <title>{cabin.name}，乡间小屋</title>
+              <path d="M -5 0 L 0 -4 L 5 0 L 5 5 L -5 5 Z" fill="#dcca9b" stroke="#243329" strokeWidth="1" />
+              <path d="M -1 5 L -1 2 L 1 2 L 1 5" fill="#3c4631" />
+            </g>;
+          })}
+          {BRIDGES.map(bridge => {
+            const point = geography.project(bridge.x, bridge.z);
+            return <g key={bridge.id} transform={`translate(${point.x} ${point.y}) rotate(${-bridge.yaw * 180 / Math.PI}) scale(${isWorld ? 0.55 : 0.85})`}>
+              <title>{bridge.name}，跨河小桥</title>
+              <path d="M -6 -2 L 6 -2 L 6 2 L -6 2 Z" fill="#dcca9b" stroke="#243329" strokeWidth="1" />
+              <path d="M -4 -4 L -4 4 M 4 -4 L 4 4" stroke="#eddfb8" strokeWidth="1.2" />
+            </g>;
+          })}
           <polyline points={course} fill="none" stroke="currentColor" strokeOpacity={isWorld ? 0.45 : 0.55} strokeWidth={isWorld ? 0.8 : 1.3} strokeDasharray={isWorld ? '2 2' : '3 4'} />
           {points.map((point, index) => {
             const passed = mode === 'race' && index < telemetry.checkpoint;

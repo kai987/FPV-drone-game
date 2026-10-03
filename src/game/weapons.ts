@@ -20,7 +20,7 @@ export const BOMB_GRAVITY = 18;
 export const DROP_COOLDOWN = 0.45;
 export const RELOAD_TIME = 3;
 export const BLAST_RADIUS = 9;
-export const EXPLOSION_LIFETIME = 1.1;
+export const EXPLOSION_LIFETIME = 3.8;
 export const MAX_ACTIVE_BOMBS = 24;
 export const MAX_ACTIVE_EXPLOSIONS = 32;
 
@@ -51,6 +51,9 @@ export interface WeaponState {
   hitTargetIds: string[];
   nextId: number;
 }
+
+/** Optional origin height lets game scenery distinguish a deck from the ground below it. */
+export type ImpactSurface = (x: number, z: number, fromY?: number) => number;
 
 export function createWeaponState(): WeaponState {
   return {
@@ -85,8 +88,8 @@ export function dropBomb(state: WeaponState, position: Vec3, velocity: Vec3): bo
   return true;
 }
 
-function groundAt(groundHeight: (x: number, z: number) => number, x: number, z: number): number {
-  const height = groundHeight(x, z);
+function groundAt(groundHeight: ImpactSurface, x: number, z: number, fromY?: number): number {
+  const height = groundHeight(x, z, fromY);
   return Number.isFinite(height) ? height : 0;
 }
 
@@ -104,10 +107,10 @@ function positionAt(bomb: Bomb, time: number): Vec3 {
 }
 
 /** Locate ground contact along the trajectory instead of using its endpoint. */
-function groundImpactTime(bomb: Bomb, dt: number, groundHeight: (x: number, z: number) => number): number | null {
+function groundImpactTime(bomb: Bomb, dt: number, groundHeight: ImpactSurface): number | null {
   const aboveGround = (time: number) => {
     const position = positionAt(bomb, time);
-    return position.y - groundAt(groundHeight, position.x, position.z);
+    return position.y - groundAt(groundHeight, position.x, position.z, bomb.position.y);
   };
   if (aboveGround(0) <= 0) return 0;
 
@@ -134,7 +137,7 @@ function groundImpactTime(bomb: Bomb, dt: number, groundHeight: (x: number, z: n
 export function stepWeapons(
   state: WeaponState,
   dt: number,
-  groundHeight: (x: number, z: number) => number,
+  groundHeight: ImpactSurface,
 ): { impacts: number; hits: number } {
   const result = { impacts: 0, hits: 0 };
   if (!Number.isFinite(dt) || dt <= 0) return result;
@@ -162,7 +165,7 @@ export function stepWeapons(
       }
 
       const impact = positionAt(bomb, impactTime);
-      impact.y = groundAt(groundHeight, impact.x, impact.z);
+      impact.y = groundAt(groundHeight, impact.x, impact.z, bomb.position.y);
       let hitCount = 0;
       for (const target of TARGETS) {
         if (state.hitTargetIds.includes(target.id)) continue;

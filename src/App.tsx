@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Camera, Drone, Maximize, Minimize, Pause, Play, RotateCcw, Volume2, VolumeX, Trophy, Wind } from 'lucide-react';
+import { ArrowRight, Camera, Drone, Maximize, Minimize, Moon, Pause, Play, RotateCcw, Sun, Volume2, VolumeX, Trophy, Wind } from 'lucide-react';
 import { FlightEngine } from './game/engine';
 import { CHECKPOINTS } from './game/world';
 import { EMPTY_TELEMETRY, formatTime } from './game/types';
@@ -29,6 +29,7 @@ export default function App() {
   const [flightMode, setFlightMode] = useState<FlightMode>('assisted');
   const [cameraMode, setCameraMode] = useState<CameraMode>('chase');
   const [sound, setSound] = useState(false);
+  const [night, setNight] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [guide, setGuide] = useState(false);
   const [notice, setNotice] = useState('');
@@ -60,6 +61,18 @@ export default function App() {
     }
   }, []);
   useEffect(() => { if (engine.current) { engine.current.mode = mode; engine.current.flightMode = flightMode; } }, [mode, flightMode]);
+  useEffect(() => { engine.current?.setNight(night); }, [night, loaded]);
+  useEffect(() => {
+    const switchDayNight = (event: KeyboardEvent) => {
+      if (event.code !== 'KeyN' || event.repeat || event.isComposing || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="textbox"]'))) return;
+      event.preventDefault();
+      setNight(current => !current);
+    };
+    window.addEventListener('keydown', switchDayNight);
+    return () => window.removeEventListener('keydown', switchDayNight);
+  }, []);
   useEffect(() => { const listener = () => setFullscreen(Boolean(document.fullscreenElement)); document.addEventListener('fullscreenchange', listener); return () => document.removeEventListener('fullscreenchange', listener); }, []);
   const action = () => { if (status === 'paused' || status === 'flying') engine.current?.togglePause(); else engine.current?.start(); };
   const changeMode = (value: RaceMode) => { setMode(value); engine.current?.reset(); };
@@ -73,18 +86,18 @@ export default function App() {
   const cameraLabels = { chase: '追尾视角', bomb: '俯视瞄准', fpv: '第一视角' };
   const nextCamera = cameraMode === 'chase' ? 'bomb' : cameraMode === 'bomb' ? 'fpv' : 'chase';
 
-  return <div className="app-shell">
+  return <div className={`app-shell${night ? ' night' : ''}`}>
     <header className="topbar">
       <a className="brand" href="./" aria-label="AEROFLOW 首页"><Drone size={32} strokeWidth={1.8} /><span>AEROFLOW</span></a>
       <nav aria-label="主导航"><button className={!guide ? 'nav-link selected' : 'nav-link'} onClick={() => setGuide(false)}>飞行场</button><button className={guide ? 'nav-link selected' : 'nav-link'} onClick={() => { engine.current?.pause(); setGuide(true); }}>操作指南</button></nav>
-      <div className="header-actions"><button className="icon-button" aria-label={sound ? '关闭声音' : '开启声音'} aria-pressed={sound} onClick={toggleSound}>{sound ? <Volume2 size={21} /> : <VolumeX size={21} />}</button><span className="vertical-rule" /><button className="icon-button" aria-label={fullscreen ? '退出全屏' : '进入全屏'} onClick={() => void toggleFullscreen()}>{fullscreen ? <Minimize size={21} /> : <Maximize size={21} />}</button></div>
+      <div className="header-actions"><button className="day-night-toggle" type="button" aria-label={night ? '切换到日间' : '切换到夜间'} aria-pressed={night} title={`N · ${night ? '切换到日间' : '切换到夜间'}`} onClick={() => setNight(current => !current)}>{night ? <Moon size={17} aria-hidden="true" /> : <Sun size={17} aria-hidden="true" />}<span>{night ? '夜间' : '日间'}</span></button><button className="icon-button" aria-label={sound ? '关闭声音' : '开启声音'} aria-pressed={sound} onClick={toggleSound}>{sound ? <Volume2 size={21} /> : <VolumeX size={21} />}</button><span className="vertical-rule" /><button className="icon-button" aria-label={fullscreen ? '退出全屏' : '进入全屏'} onClick={() => void toggleFullscreen()}>{fullscreen ? <Minimize size={21} /> : <Maximize size={21} />}</button></div>
     </header>
     <main className="game-layout">
       <aside className="sidebar">
-        <div className="intro"><h1>把视野<br />交给天空。</h1><p>沿着河流，飞向湖泊与远山。</p></div>
+        <div className="intro"><h1>把视野<br />交给天空。</h1><p>沿着河流，飞过小桥与乡间村落。</p></div>
         <section className="course-settings" aria-label="飞行设置">
           <h2><span>01 /</span> 松林山谷</h2>
-          <div className="course-meta"><span>8 检查点</span><i /><span>13 km²</span><i /><span>河湖</span></div>
+          <div className="course-meta"><span>8 检查点</span><i /><span>13 km²</span><i /><span>乡村</span></div>
           <div className="segment-control" role="group" aria-label="游戏模式"><button disabled={settingsLocked} aria-pressed={mode === 'race'} className={mode === 'race' ? 'active' : ''} onClick={() => changeMode('race')}>计时挑战</button><button disabled={settingsLocked} aria-pressed={mode === 'free'} className={mode === 'free' ? 'active' : ''} onClick={() => changeMode('free')}>自由飞行</button></div>
           <h3 className="setting-label">飞行模式</h3>
           <div className="segment-control" role="group" aria-label="飞行模式"><button disabled={settingsLocked} aria-pressed={flightMode === 'assisted'} className={flightMode === 'assisted' ? 'active' : ''} onClick={() => { setFlightMode('assisted'); engine.current?.reset(); }}>辅助</button><button disabled={settingsLocked} aria-pressed={flightMode === 'sport'} className={flightMode === 'sport' ? 'active' : ''} onClick={() => { setFlightMode('sport'); engine.current?.reset(); }}>运动</button></div>

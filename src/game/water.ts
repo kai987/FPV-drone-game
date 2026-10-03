@@ -99,6 +99,7 @@ export function createWater(panorama: THREE.Texture) {
   const material = new THREE.ShaderMaterial({
     uniforms: {
       time: { value: 0 },
+      night: { value: 0 },
       rippleMap: { value: ripples },
       panorama: { value: panorama },
       deepColor: { value: new THREE.Color('#123e49') },
@@ -120,6 +121,7 @@ export function createWater(panorama: THREE.Texture) {
     `,
     fragmentShader: `
       uniform float time;
+      uniform float night;
       uniform sampler2D rippleMap;
       uniform sampler2D panorama;
       uniform vec3 deepColor;
@@ -177,35 +179,45 @@ export function createWater(panorama: THREE.Texture) {
         vec3 water = mix(shallowColor, deepColor, 1.0 - exp(-waterDepth * 0.34));
         // Subtle moving light bands over a shallow bed, never bright foam across deep lakes.
         float caustic = pow(max(0.0, 1.0 - abs(medium.b + fine.b * 0.35) * 3.5), 3.0);
-        water += vec3(0.026, 0.042, 0.023) * caustic * exp(-waterDepth * 1.4) * mediumVisible;
+        water += vec3(0.026, 0.042, 0.023) * (1.0 - night * 0.8) * caustic * exp(-waterDepth * 1.4) * mediumVisible;
         water *= 0.94 + broad.b * 0.16 + medium.b * 0.095 * mediumVisible;
-        water = mix(water, reflection * 0.70, 0.08 + fresnel * 0.78);
+        water = mix(water, reflection * mix(vec3(0.70), vec3(0.07, 0.12, 0.20), night), 0.08 + fresnel * 0.78);
 
-        vec3 lightDirection = normalize(vec3(-180.0, 282.0, 180.0));
+        vec3 lightDirection = normalize(mix(vec3(-180.0, 282.0, 180.0), vec3(-180.0, 222.0, -330.0), night));
         vec3 halfwayDirection = normalize(viewDirection + lightDirection);
         float specular = pow(max(dot(normal, halfwayDirection), 0.0), mix(360.0, 100.0, smoothstep(0.3, 2.0, pixelFootprint)));
         // A low energy glint preserves individual highlights without washing the water white.
-        water += vec3(1.0, 0.91, 0.72) * specular * 0.32;
+        water += mix(vec3(1.0, 0.91, 0.72), vec3(0.38, 0.57, 0.88), night) * specular * 0.32;
         float crest = smoothstep(0.24, 0.67, medium.b + broad.b * 0.3);
-        water += vec3(0.09, 0.13, 0.12) * crest * mediumVisible * (0.4 + river * 0.3);
+        water += vec3(0.09, 0.13, 0.12) * (1.0 - night * 0.7) * crest * mediumVisible * (0.4 + river * 0.3);
         float shore = (1.0 - smoothstep(0.08, 0.85, waterDepth)) * smoothstep(0.0, 0.055, waterDepth);
         float wash = sin(waterDepth * 14.0 - time * 1.1 + broad.b * 3.0);
         float foam = smoothstep(0.45, 0.85, wash) * smoothstep(-0.12, 0.5, medium.b);
         water = mix(water, vec3(0.60, 0.70, 0.61), shore * foam * 0.26 * mediumVisible);
-        float fog = 1.0 - exp(-pow(distanceToCamera * 0.00022, 2.0));
+        float fog = 1.0 - exp(-pow(distanceToCamera * mix(0.00022, 0.00030, night), 2.0));
         // Clip the tiny depth-offset overlap with dry banks after derivative-based sampling.
         if (depth <= 0.0) discard;
-        gl_FragColor = vec4(mix(water, skyColor, fog), 1.0);
+        float alpha = mix(0.58, 0.86, smoothstep(0.0, 5.0, waterDepth));
+        alpha = mix(alpha, 0.98, fresnel);
+        gl_FragColor = vec4(mix(water, skyColor, fog), alpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }
     `,
   });
+  material.transparent = true;
+  material.depthWrite = false;
   const surface = new THREE.Mesh(geometry, material);
   surface.position.set(0, WATER_LEVEL + 0.025, WORLD_CENTER_Z);
   group.add(surface);
   return {
     group,
+    setNight(enabled: boolean) {
+      material.uniforms.night.value = enabled ? 1 : 0;
+      material.uniforms.deepColor.value.set(enabled ? '#071c30' : '#123e49');
+      material.uniforms.shallowColor.value.set(enabled ? '#183c4a' : '#447b69');
+      material.uniforms.skyColor.value.set(enabled ? '#101e32' : '#b0c9d5');
+    },
     update(time: number) { material.uniforms.time.value = time; },
     dispose() {
       group.removeFromParent();

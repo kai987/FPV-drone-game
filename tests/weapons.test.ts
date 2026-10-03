@@ -51,7 +51,7 @@ test('a long frame finds the swept ground impact and scores each target only onc
   assert.deepEqual(stepWeapons(state, 1.5, () => 2), { impacts: 1, hits: 0 });
   assert.equal(state.score, 100);
   assert.deepEqual(state.hitTargetIds, [target.id]);
-  assert.equal(state.explosions[0].hitCount, 0);
+  assert.equal(state.explosions.at(-1)?.hitCount, 0);
 });
 
 test('the impact occurs along the trajectory rather than at a distant frame endpoint', () => {
@@ -125,6 +125,33 @@ test('explosions expire and all five fictional practice targets can be scored', 
   assert.deepEqual(state.hitTargetIds, TARGETS.map(target => target.id));
   stepWeapons(state, EXPLOSION_LIFETIME, flatGround);
   assert.equal(state.explosions.length, 0);
+});
+
+test('explosions retain their smoke phase for several seconds without rescoring a target', () => {
+  const state = createWeaponState();
+  dropBomb(state, { x: 0, y: 0.8, z: 55 }, still);
+  stepWeapons(state, 1 / 60, flatGround);
+  stepWeapons(state, 2.5, flatGround);
+  assert.equal(state.explosions.length, 1);
+  assert.ok(state.explosions[0].age > 2.5);
+  assert.equal(state.score, 100);
+  assert.ok(EXPLOSION_LIFETIME >= 3 && EXPLOSION_LIFETIME <= 4);
+  stepWeapons(state, EXPLOSION_LIFETIME, flatGround);
+  assert.equal(state.explosions.length, 0);
+  assert.equal(state.score, 100);
+});
+
+test('height-aware scenery lets bombs hit a deck from above and pass beneath it', () => {
+  const deckSurface = (_x: number, _z: number, fromY = Infinity) => fromY >= 5 ? 5 : -2;
+  const above = createWeaponState();
+  dropBomb(above, { x: 500, y: 12, z: 500 }, still);
+  assert.equal(stepWeapons(above, 1.5, deckSurface).impacts, 1);
+  assert.equal(above.explosions[0].position.y, 5);
+
+  const beneath = createWeaponState();
+  dropBomb(beneath, { x: 500, y: 4, z: 500 }, still);
+  assert.equal(stepWeapons(beneath, 1.5, deckSurface).impacts, 1);
+  assert.equal(beneath.explosions[0].position.y, -2);
 });
 
 test('paused or invalid time and invalid drops cannot change state', () => {

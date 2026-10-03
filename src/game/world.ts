@@ -6,6 +6,10 @@ import {
   RIVER_SAMPLES, LAKES, lakeBoundary,
 } from './landscape.ts';
 import { createWater } from './water.ts';
+import { createRockMaterial } from './rock-material.ts';
+import { createNightSky } from './night-sky.ts';
+import { createRural } from './rural.ts';
+import { clearance } from './rural-layout.ts';
 import { TARGETS } from './weapons.ts';
 
 export { groundHeight } from './landscape.ts';
@@ -27,6 +31,9 @@ export interface WorldObstacle {
   z: number;
   radius: number;
   height: number;
+  /** Optional absolute bottom for elevated bridge rails and beams. */
+  base?: number;
+  roof?: boolean;
 }
 
 function randomGenerator(seed: number) {
@@ -92,7 +99,8 @@ export function createWorld() {
     return distance;
   };
 
-  scene.add(new THREE.HemisphereLight('#f3f5ed', '#59694b', 2.15));
+  const hemisphere = new THREE.HemisphereLight('#f3f5ed', '#59694b', 2.15);
+  scene.add(hemisphere);
   const sun = new THREE.DirectionalLight('#fff2d7', 2.55);
   sun.position.set(-180, 282, 235);
   sun.target.position.set(0, 0, 55);
@@ -122,6 +130,8 @@ export function createWorld() {
   panoramaMesh.scale.y = 0.72;
   panoramaMesh.rotation.y = Math.PI / 2 + 0.13;
   scene.add(panoramaMesh);
+  const nightSky = createNightSky();
+  scene.add(nightSky.group);
 
   const grassTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/grass-texture.jpg`);
   grassTexture.colorSpace = THREE.SRGBColorSpace;
@@ -178,6 +188,9 @@ export function createWorld() {
   scene.add(terrain);
   const water = createWater(panorama);
   scene.add(water.group);
+  const rural = createRural();
+  scene.add(rural.group);
+  obstacles.push(...rural.obstacles);
 
   const buildPath = (points: THREE.Vector3[], width: number) => {
     const vertices: number[] = [];
@@ -247,7 +260,7 @@ export function createWorld() {
     if (!insideBounds(x, z, 35)) continue;
     if (distanceFromCourse(x, z) < 13.5) continue;
     if (Math.hypot(x, z - 55) < 24) continue;
-    if (!clearTrainingGround(x, z, 5.5)) continue;
+    if (!clearTrainingGround(x, z, 5.5) || !clearance(x, z, 9)) continue;
     if (waterDistance(x, z) < 8) continue;
     const meadow = Math.sin(x * 0.0038 + 0.4) * Math.cos(z * 0.0047 - 0.7);
     if (!clustered && meadow > 0.18 && random() < 0.83) continue;
@@ -284,7 +297,7 @@ export function createWorld() {
     }
   });
 
-  const rawRockGeometry = ownGeometry(new THREE.IcosahedronGeometry(1, 1));
+  const rawRockGeometry = ownGeometry(new THREE.IcosahedronGeometry(1, 2));
   const rockPositions = rawRockGeometry.attributes.position;
   for (let i = 0; i < rockPositions.count; i++) {
     const x = rockPositions.getX(i);
@@ -297,7 +310,12 @@ export function createWorld() {
   rawRockGeometry.deleteAttribute('uv');
   const rockGeometry = ownGeometry(mergeVertices(rawRockGeometry));
   rockGeometry.computeVertexNormals();
-  const rockMaterial = ownMaterial(new THREE.MeshStandardMaterial({ color: '#a6aca1', roughness: 1, flatShading: false }));
+  const rockTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/weathered-rock.jpg`);
+  rockTexture.colorSpace = THREE.SRGBColorSpace;
+  rockTexture.wrapS = rockTexture.wrapT = THREE.RepeatWrapping;
+  rockTexture.anisotropy = 8;
+  textureResources.add(rockTexture);
+  const rockMaterial = ownMaterial(createRockMaterial(rockTexture));
   const rockCount = 1150;
   const rocks = new THREE.InstancedMesh(rockGeometry, rockMaterial, rockCount);
   rocks.castShadow = true;
@@ -309,7 +327,7 @@ export function createWorld() {
     const z = nearCourse ? random() * 950 - 715 : WORLD_BOUNDS.minZ + random() * (WORLD_BOUNDS.maxZ - WORLD_BOUNDS.minZ);
     if (waterDistance(x, z) < 3) continue;
     if (distanceFromCourse(x, z) < 10.5) continue;
-    if (!clearTrainingGround(x, z, 3)) continue;
+    if (!clearTrainingGround(x, z, 3) || !clearance(x, z, 6)) continue;
     const size = 0.65 + random() * 4.9;
     const height = size * (0.48 + random() * 0.65);
     transform.position.set(x, groundHeight(x, z) + height * 0.36, z);
@@ -317,7 +335,7 @@ export function createWorld() {
     transform.scale.set(size, height, size * (0.75 + random() * 0.7));
     transform.updateMatrix();
     rocks.setMatrixAt(rockIndex, transform.matrix);
-    color.set('#93978d').multiplyScalar(0.9 + random() * 0.32);
+    color.set('#f4f2e7').multiplyScalar(0.84 + random() * 0.23);
     rocks.setColorAt(rockIndex, color);
     obstacles.push({ x, z, radius: size * 0.85, height: height * 1.25 });
     rockIndex++;
@@ -357,7 +375,7 @@ export function createWorld() {
     const point = sampleBank(0.5 + random() * 12);
     const distance = waterDistance(point.x, point.z);
     if (!insideBounds(point.x, point.z, 10) || distance < -0.5 || distance > 20) continue;
-    if (distanceFromCourse(point.x, point.z) < 10 || !clearTrainingGround(point.x, point.z, 3)) continue;
+    if (distanceFromCourse(point.x, point.z) < 10 || !clearTrainingGround(point.x, point.z, 3) || !clearance(point.x, point.z, 3)) continue;
     const size = 0.45 + random() * 2.2;
     const height = size * (0.36 + random() * 0.37);
     transform.position.set(point.x, groundHeight(point.x, point.z) + height * 0.27, point.z);
@@ -365,7 +383,7 @@ export function createWorld() {
     transform.scale.set(size, height, size * (0.8 + random() * 0.45));
     transform.updateMatrix();
     bankStones.setMatrixAt(bankStoneIndex, transform.matrix);
-    color.set('#9eaa9d').lerp(new THREE.Color('#d0cbbb'), random() * 0.7);
+    color.set('#b7bdac').lerp(new THREE.Color('#f5efdf'), random() * 0.7);
     bankStones.setColorAt(bankStoneIndex, color);
     obstacles.push({ x: point.x, z: point.z, radius: size * 0.82, height: height * 1.15 });
     bankStoneIndex++;
@@ -384,7 +402,7 @@ export function createWorld() {
     const point = sampleBank(5 + random() * 21);
     const distance = waterDistance(point.x, point.z);
     if (!insideBounds(point.x, point.z, 20) || distance < 3 || distance > 38) continue;
-    if (distanceFromCourse(point.x, point.z) < 12 || !clearTrainingGround(point.x, point.z, 5)) continue;
+    if (distanceFromCourse(point.x, point.z) < 12 || !clearTrainingGround(point.x, point.z, 5) || !clearance(point.x, point.z, 4)) continue;
     const height = 0.7 + random() * 1.9;
     const y = groundHeight(point.x, point.z);
     for (let leaf = 0; leaf < 3; leaf++) {
@@ -478,13 +496,32 @@ export function createWorld() {
   scene.add(markers);
 
   let disposed = false;
+  let nightMode = false;
   return {
     scene,
     obstacles,
+    setNight(enabled: boolean) {
+      nightMode = enabled;
+      scene.background = new THREE.Color(enabled ? '#091425' : '#adcadf');
+      scene.fog = new THREE.FogExp2(enabled ? '#101e32' : '#b0c9d5', enabled ? 0.00030 : 0.00022);
+      hemisphere.color.set(enabled ? '#94b2db' : '#f3f5ed');
+      hemisphere.groundColor.set(enabled ? '#1f2a33' : '#59694b');
+      hemisphere.intensity = enabled ? 0.65 : 2.15;
+      sun.color.set(enabled ? '#a2c1ef' : '#fff2d7');
+      sun.intensity = enabled ? 1.0 : 2.55;
+      panoramaMesh.material.color.set(enabled ? '#142439' : '#ffffff');
+      pineMaterial.color.set(enabled ? '#647f9b' : '#ffffff');
+      ringMaterial.emissive.set(enabled ? '#45586c' : '#000000');
+      ringMaterial.emissiveIntensity = enabled ? 0.65 : 0;
+      nightSky.setNight(enabled);
+      water.setNight(enabled);
+      rural.setNight(enabled);
+    },
     update(time: number, nextCheckpoint: number, focus?: { x: number; y: number; z: number }) {
       water.update(time);
+      rural.update(time);
       if (focus) {
-        sun.position.set(focus.x - 180, focus.y + 270, focus.z + 180);
+        sun.position.set(focus.x - 180, focus.y + (nightMode ? 210 : 270), focus.z + (nightMode ? -330 : 180));
         sun.target.position.set(focus.x, focus.y - 12, focus.z);
         sun.target.updateMatrixWorld();
       }
@@ -497,6 +534,8 @@ export function createWorld() {
       if (disposed) return;
       disposed = true;
       water.dispose();
+      rural.dispose();
+      nightSky.dispose();
       scene.traverse(object => {
         if (object instanceof THREE.InstancedMesh) object.dispose();
       });

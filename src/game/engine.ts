@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { createFlightState, stepFlight, crossesCheckpoint } from './flight';
-import { CHECKPOINTS, createWorld, groundHeight } from './world';
+import { CHECKPOINTS, createWorld } from './world';
 import type { WorldObstacle } from './world';
-import { isWater, surfaceHeight, WORLD_BOUNDS } from './landscape';
+import { isWater, WORLD_BOUNDS, WATER_LEVEL } from './landscape';
+import { flightSurfaceHeight } from './surfaces';
+import { intersectsObstacle } from './collisions';
 import { FlightAudio } from './audio';
 import { createDrone } from './drone';
 import { createWeaponState, dropBomb, stepWeapons, TARGETS } from './weapons';
@@ -21,9 +23,11 @@ export class FlightEngine {
   readonly renderer: THREE.WebGLRenderer;
   readonly audio = new FlightAudio();
   private world = createWorld();
-  private camera = new THREE.PerspectiveCamera(68, 1, 0.2, 7000);
+  private camera = new THREE.PerspectiveCamera(68, 1, 0.2, 10000);
   private obstacleGrid = new Map<string, WorldObstacle[]>();
   private drone = createDrone();
+  private headlight = new THREE.SpotLight('#dcecff', 0, 85, Math.PI / 5, 0.55, 1.5);
+  private headlightTarget = new THREE.Object3D();
   private weapons = createWeaponState();
   private weaponVisuals = createWeaponVisuals();
   private cameraPosition = new THREE.Vector3();
@@ -60,6 +64,11 @@ export class FlightEngine {
     this.camera.rotation.order = 'YXZ';
     this.drone.model.rotation.order = 'YXZ';
     this.world.scene.add(this.drone.model, this.weaponVisuals.group);
+    this.headlight.position.set(0, -0.1, -0.75);
+    this.headlightTarget.position.set(0, -5, -17);
+    this.headlight.target = this.headlightTarget;
+    // Keep lights outside the hidden FPV model, so first-person flight is illuminated too.
+    this.world.scene.add(this.headlight, this.headlightTarget);
     // Index static obstacles once; a larger forest should not require scanning
     // thousands of distant trunks on every animation frame.
     for (const obstacle of this.world.obstacles) {
@@ -117,6 +126,12 @@ export class FlightEngine {
     this.state.yaw -= event.movementX * 0.0025;
     this.state.pitch = THREE.MathUtils.clamp(this.state.pitch - event.movementY * 0.0025, -0.7, 0.7);
   };
+  setNight(enabled: boolean) {
+    this.world.setNight(enabled);
+    this.weaponVisuals.setNight(enabled);
+    this.headlight.intensity = enabled ? 950 : 0;
+    this.renderer.toneMappingExposure = enabled ? 1.05 : 1.2;
+  }
   setTouch(axis: keyof typeof this.touch, value: number) { this.touch[axis] = value; }
   setCameraMode(mode: CameraMode) {
     if (this.cameraMode === mode) return;
@@ -164,12 +179,12 @@ export class FlightEngine {
         climb: pressed('Space') - Math.max(pressed('ShiftLeft'), pressed('ShiftRight')) + this.touch.climb,
         yaw: pressed('KeyQ') + pressed('ArrowLeft') - pressed('KeyE') - pressed('ArrowRight') + this.touch.yaw,
         lookPitch: pressed('ArrowUp') - pressed('ArrowDown'),
-      }, dt, this.flightMode, surfaceHeight);
+      }, dt, this.flightMode, (x, z) => flightSurfaceHeight(x, z, previous.y));
       this.elapsed += elapsedDelta; this.collisionCooldown -= dt;
       const p = this.state.position;
       const x = THREE.MathUtils.clamp(p.x, WORLD_BOUNDS.minX, WORLD_BOUNDS.maxX);
       const z = THREE.MathUtils.clamp(p.z, WORLD_BOUNDS.minZ, WORLD_BOUNDS.maxZ);
-      const floor = surfaceHeight(x, z) + 1.8;
+      const floor = flightSurfaceHeight(x, z, previous.y) + 1.8;
       const constrained = { x, z, y: THREE.MathUtils.clamp(p.y, floor, Math.max(floor, WORLD_BOUNDS.maxAltitude)) };
       if (constrained.x !== p.x || constrained.y !== p.y || constrained.z !== p.z) {
         this.state.position = constrained; this.state.velocity = { x: 0, y: 0, z: 0 };
@@ -177,23 +192,23 @@ export class FlightEngine {
       }
       {
         const nearby = this.obstacleGrid.get(`${Math.floor(this.state.position.x / 64)},${Math.floor(this.state.position.z / 64)}`);
-        const obstacle = nearby?.find(o => {
-          const p = this.state.position;
-          return Math.hypot(p.x - o.x, p.z - o.z) < o.radius + 0.55 && p.y < groundHeight(o.x, o.z) + o.height;
-        });
+        const obstacle = nearby?.find(o => intersectsObstacle(this.state.position, o));
         const groundHit = this.state.collision;
         if (obstacle || groundHit) {
           if (obstacle) { this.state.position = previous; this.state.velocity = { x: 0, y: 0, z: 0 }; }
           if (this.collisionCooldown <= 0) {
             this.collisionCooldown = 1.5;
             if (this.mode === 'race') this.elapsed += 3;
-            const contact = groundHit && isWater(this.state.position.x, this.state.position.z) ? '触水' : '碰撞';
+            const contact = groundHit && this.state.position.y < WATER_LEVEL + 3 && isWater(this.state.position.x, this.state.position.z) ? '触水' : '碰撞';
             this.events.notice(this.mode === 'race' ? `${contact} · 已稳住机身，计时增加 3 秒` : `${contact} · 已稳住机身，请升高或避开障碍`);
           }
         }
       }
-      const weaponEvents = stepWeapons(this.weapons, elapsedDelta, surfaceHeight);
-      if (weaponEvents.impacts > 0) this.audio.explosion();
+      const weaponEvents = stepWeapons(this.weapons, elapsedDelta, flightSurfaceHeight);
+      if (weaponEvents.impacts > 0) {
+        const impact = this.weapons.explosions.at(-1);
+        this.audio.explosion(Boolean(impact && impact.position.y < WATER_LEVEL + 0.3 && isWater(impact.position.x, impact.position.z)));
+      }
       if (weaponEvents.hits > 0) {
         this.events.notice(this.weapons.hitTargetIds.length === TARGETS.length
           ? `全部靶标命中 · 总得分 ${this.weapons.score} · R 重新挑战`
@@ -210,6 +225,8 @@ export class FlightEngine {
     const { position, velocity, yaw, pitch, roll } = this.state;
     const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
     this.drone.model.position.set(position.x, position.y, position.z);
+    this.headlight.position.set(position.x - Math.sin(yaw) * 0.75, position.y - 0.1, position.z - Math.cos(yaw) * 0.75);
+    this.headlightTarget.position.set(position.x - Math.sin(yaw) * 17, position.y - 5, position.z - Math.cos(yaw) * 17);
     const forwardVelocity = -Math.sin(yaw) * velocity.x - Math.cos(yaw) * velocity.z;
     this.drone.model.rotation.set(pitch - forwardVelocity * 0.004, yaw, roll);
     this.drone.model.visible = this.cameraMode !== 'fpv';
@@ -220,12 +237,12 @@ export class FlightEngine {
     } else {
       // Follow yaw rather than bank/pitch so turns show the aircraft's attitude
       // while keeping the horizon steady and the route ahead visible.
-      const heightAboveGround = Math.max(0, position.y - surfaceHeight(position.x, position.z));
+      const heightAboveGround = Math.max(0, position.y - flightSurfaceHeight(position.x, position.z, position.y));
       const distanceBehind = this.cameraMode === 'bomb' ? Math.max(10, heightAboveGround * 0.55) : 8;
       const heightAbove = this.cameraMode === 'bomb' ? Math.max(15, heightAboveGround * 0.7) : 3.3;
       this.desiredPosition.set(position.x + Math.sin(yaw) * distanceBehind, position.y + heightAbove, position.z + Math.cos(yaw) * distanceBehind);
-      this.desiredPosition.y = Math.max(this.desiredPosition.y, surfaceHeight(this.desiredPosition.x, this.desiredPosition.z) + 2);
-      if (this.cameraMode === 'bomb') this.desiredTarget.set(position.x, surfaceHeight(position.x, position.z) + 0.4, position.z);
+      this.desiredPosition.y = Math.max(this.desiredPosition.y, flightSurfaceHeight(this.desiredPosition.x, this.desiredPosition.z, this.desiredPosition.y) + 2);
+      if (this.cameraMode === 'bomb') this.desiredTarget.set(position.x, flightSurfaceHeight(position.x, position.z, position.y) + 0.4, position.z);
       else this.desiredTarget.set(position.x - Math.sin(yaw) * 5, position.y + 0.8, position.z - Math.cos(yaw) * 5);
       if (this.snapCamera) {
         this.cameraPosition.copy(this.desiredPosition); this.cameraTarget.copy(this.desiredTarget);
@@ -233,7 +250,7 @@ export class FlightEngine {
         const blend = 1 - Math.exp(-8 * dt);
         this.cameraPosition.lerp(this.desiredPosition, blend); this.cameraTarget.lerp(this.desiredTarget, blend);
       }
-      this.cameraPosition.y = Math.max(this.cameraPosition.y, surfaceHeight(this.cameraPosition.x, this.cameraPosition.z) + 1.5);
+      this.cameraPosition.y = Math.max(this.cameraPosition.y, flightSurfaceHeight(this.cameraPosition.x, this.cameraPosition.z, this.cameraPosition.y) + 1.5);
       this.camera.position.copy(this.cameraPosition); this.camera.lookAt(this.cameraTarget);
     }
     this.snapCamera = false;
@@ -260,6 +277,6 @@ export class FlightEngine {
     document.removeEventListener('mousemove', this.mousemove); document.removeEventListener('pointerlockchange', this.pointerlockchange);
     this.renderer.domElement.removeEventListener('click', this.lockPointer);
     if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
-    this.audio.dispose(); this.drone.dispose(); this.weaponVisuals.dispose(); this.world.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
+    this.headlight.dispose(); this.audio.dispose(); this.drone.dispose(); this.weaponVisuals.dispose(); this.world.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
   }
 }

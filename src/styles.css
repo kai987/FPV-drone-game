@@ -23,6 +23,8 @@ svg { flex-shrink: 0; }
 .nav-link.selected { color: var(--ink); font-weight: 700; }
 .nav-link.selected::after { content: ''; position: absolute; height: 2px; background: #bfd64a; bottom: 6px; left: 0; right: 0; }
 .header-actions { margin-left: auto; display: flex; gap: 13px; align-items: center; padding: 0 25px; }
+.day-night-toggle { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 68px; min-height: 35px; padding: 0 9px; border: 1px solid #d7dfcd; border-radius: 7px; background: #edf1e7; color: #344b31; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.day-night-toggle:hover { background: #e5eddb; }
 .icon-button { display: flex; align-items: center; justify-content: center; width: 35px; height: 35px; border-radius: 5px; background: transparent; }
 .icon-button:hover { background: #e8ebe2; }
 .vertical-rule { width: 1px; height: 24px; background: var(--line); }
@@ -208,4 +210,42 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
   .flight-notice { top: 12px; left: 14px; max-width: calc(100% - 120px); }
   .minimap, .status-flying .minimap { top: 51px; right: 14px; bottom: auto; width: 80px; padding: 6px; }
   .mobile-pause { top: auto; right: 14px; bottom: 113px; }
+}
+
+.app-shell.night { --paper: #17221d; --ink: #edf3e8; --muted: #b3bdac; --line: #354239; background: var(--paper); color: var(--ink); color-scheme: dark; }
+.app-shell.night .intro p, .app-shell.night .course-meta, .app-shell.night .launch-note, .app-shell.night .setting-label, .app-shell.night .control-row, .app-shell.night .text-button, .app-shell.night .personal-best, .app-shell.night .metric small, .app-shell.night .guide-dialog p, .app-shell.night .guide-section dd, .app-shell.night .finish-best { color: #b9c6b1; }
+.app-shell.night .course-meta i { background: #52604b; }
+.app-shell.night .metric { border-color: var(--line); }
+.app-shell.night .segment-control { background: #222e25; border-color: #455243; }
+.app-shell.night .segment-control button.active { background: #dff781; color: #253128; }
+.app-shell.night .primary-button { background: #dff781; color: #253128; }
+.app-shell.night .primary-button svg { color: #253128; }
+.app-shell.night .primary-button:hover:not(:disabled) { background: #eaffaa; }
+.app-shell.night .icon-button:hover { background: #2d3c30; }
+.app-shell.night .day-night-toggle { background: #2c3c2e; border-color: #758660; color: #dff781; }
+.app-shell.night .day-night-toggle:hover { background: #344832; }
+.app-shell.night .compact-controls kbd, .app-shell.night .guide-dialog kbd { background: #253228; border-color: #5f6e5a; color: #e4eddd; }
+.app-shell.night .state-panel { background: #1c2a22f5; border-color: #74816c70; }
+.app-shell.night .guide-dialog { border-color: var(--line); }
+.app-shell.night .guide-note { background: #263727; }
+.app-shell.night .section-index { color: #9fb58e; }
+.app-shell.night .flight-notice { background: #26382bef; border-color: #788e6966; color: #eff5e9; }
+.app-shell.night .viewport { background: #152636; }
+.app-shell.night .scene-loading { background: #13241d; color: #c1d5b5; }
+
+@media (max-width: 800px) {
+  .header-actions .day-night-toggle { min-width: 58px; min-height: 32px; padding: 0 7px; gap: 5px; font-size: 11px; }
+  .day-night-toggle svg { width: 15px; height: 15px; }
+}
+@media (max-width: 450px) {
+  .brand { padding-left: 14px; padding-right: 12px; gap: 7px; }
+  .brand span { font-size: 16px; letter-spacing: .8px; }
+  .header-actions { padding: 0 8px; gap: 2px; }
+  .topbar nav { gap: 10px; }
+}
+@media (max-width: 360px) {
+  .brand { padding-left: 10px; padding-right: 6px; gap: 5px; }
+  .brand svg { width: 24px; height: 24px; }
+  .brand span { font-size: 14px; letter-spacing: .6px; }
+  .topbar .nav-link { font-size: 11px; }
 }
