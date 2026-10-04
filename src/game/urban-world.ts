@@ -7,7 +7,6 @@ import type { Vec3 } from './flight.ts';
 import { createNightSky } from './night-sky.ts';
 import { getMapLayout, HARBOR_PIERS, HARBOR_SHORE_X, HARBOR_BREAKWATERS } from './map-layout.ts';
 import type { UrbanBox, WarehouseSpec, ContainerSpec, CraneSpec, TruckSpec } from './map-layout.ts';
-import { getUrbanRoadNetwork, isUrbanRoadArea } from './urban-roads.ts';
 import { createGroundBodyGeometry, createUrbanGroundGeometry, splitPavementRectangle } from './urban-pavement.ts';
 import { generateRipplePixels } from './scene-simulation.ts';
 import { createRippleTexture, createWaterMaterial, setWaterNight } from './water.ts';
@@ -20,7 +19,7 @@ interface InstancePose { position: THREE.Vector3; scale: THREE.Vector3; quaterni
 export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map: MapSpec, _panoramaOptions: PanoramaOptions = {}) {
   const harbor = map.id === 'harbor';
   const layout = getMapLayout(map.id);
-  const roads = getUrbanRoadNetwork(map.id);
+  const roads = layout.roads;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(harbor ? '#a6cbd6' : '#b9cbd1');
   scene.fog = new THREE.FogExp2(harbor ? '#a6cbd6' : '#b9cbd1', 0.00028);
@@ -278,7 +277,8 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
     const distance = from.distanceTo(to);
     for (let value = 0; value <= distance; value += 10) {
       const point = from.clone().lerp(to, value / distance);
-      if (isUrbanRoadArea(map.id, point.x, point.z, 2.5)) continue;
+      if (roads.surfaces.some(road => Math.abs(point.x - road.x) <= road.width / 2 + 2.5
+        && Math.abs(point.z - road.z) <= road.depth / 2 + 2.5)) continue;
       const supportHeight = point.y - pipe.radius - 2;
       cylinder(darkSteel, point.x, 2 + supportHeight / 2, point.z, 0.17, supportHeight);
       box(steel, point.x, 2.1, point.z, 1.5, 0.22, 1.5);
@@ -408,6 +408,16 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
       const x = vertical ? road.x + side * (halfWidth + 8) : along;
       const z = vertical ? along : road.z + side * (halfWidth + 8);
       if (roads.intersections.some(junction => Math.abs(x - junction.x) < 44 && Math.abs(z - junction.z) < 36)) continue;
+      // Branches approach loading doors closely: keep lamp poles outside both
+      // the connected pavement and buildings, cargo and elevated structures.
+      if (roads.surfaces.some(surface => Math.abs(x - surface.x) < surface.width / 2 + 1
+        && Math.abs(z - surface.z) < surface.depth / 2 + 1)) continue;
+      if (layout.boxes.some(solid => {
+        if (solid.base >= 15.8 || solid.base + solid.height <= 2.1) return false;
+        const c = Math.cos(solid.yaw ?? 0), s = Math.sin(solid.yaw ?? 0);
+        return Math.abs((x - solid.x) * c - (z - solid.z) * s) < solid.width / 2 + 0.3
+          && Math.abs((x - solid.x) * s + (z - solid.z) * c) < solid.depth / 2 + 0.3;
+      })) continue;
       const tipX = x - (vertical ? side * 3 : 0), tipZ = z - (vertical ? 0 : side * 3);
       cylinder(steel, x, 8.5, z, 0.14, 13);
       beam(steel, new THREE.Vector3(x, 15, z), new THREE.Vector3(tipX, 15.5, tipZ), 0.13);
