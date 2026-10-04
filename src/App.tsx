@@ -63,6 +63,8 @@ export default function App() {
   };
   useEffect(() => {
     let cancelled = false;
+    const loading = new AbortController();
+    const loadingStarted = performance.now();
     let game: FlightEngine | null = null;
     setLoaded(false); setError(''); setNotice(''); setFinishedRecordKey(null);
     setMapProgress({ ready: [], current: null, total: MAPS.length });
@@ -71,16 +73,9 @@ export default function App() {
     setTelemetry({ ...EMPTY_TELEMETRY, position: { ...map.spawn }, yaw: map.spawnYaw });
     clearTimeout(noticeTimeout.current);
     void (async () => {
-      let flightCore: WebAssembly.Module;
-      try {
-        flightCore = await loadFlightCore();
-      } catch {
-        if (!cancelled) setError('飞行模块加载失败。请刷新页面，并使用支持 WebAssembly 的新版浏览器。');
-        return;
-      }
       if (cancelled || !host.current) return;
       try {
-        game = new FlightEngine(host.current, {
+        game = await FlightEngine.create(host.current, {
           telemetry: value => { if (!cancelled) setTelemetry(value); },
           status: value => { if (!cancelled) setStatus(value); },
           notice: value => { if (!cancelled) notify(value); },
@@ -102,7 +97,8 @@ export default function App() {
               return { ...current, [key]: seconds };
             });
           },
-        }, flightCore, settings.current.mapId);
+        }, loadFlightCore(), settings.current.mapId, loading.signal, loadingStarted);
+        if (cancelled) { game.dispose(); return; }
         engine.current = game;
         const current = settings.current;
         game.mode = current.mode; game.flightMode = current.flightMode;
@@ -121,13 +117,15 @@ export default function App() {
       } catch (failure) {
         game?.dispose();
         if (engine.current === game) engine.current = null;
-        if (!cancelled) setError(failure instanceof Error && failure.message.startsWith('地图纹理加载失败')
+        if (!cancelled) setError(failure instanceof Error && failure.message.startsWith('飞行模块加载失败')
+          ? failure.message
+          : failure instanceof Error && failure.message.startsWith('地图纹理加载失败')
           ? `${failure.message}。请检查网络连接后重新加载。`
           : '当前浏览器无法启动 3D 画面。请启用硬件加速，或使用支持 WebGL 2 的新版 Chrome、Edge 或 Safari。');
       }
     })();
     return () => {
-      cancelled = true; clearTimeout(noticeTimeout.current); game?.dispose();
+      cancelled = true; loading.abort(); clearTimeout(noticeTimeout.current); game?.dispose();
       if (engine.current === game) engine.current = null;
     };
   }, []);

@@ -24,6 +24,11 @@ import { createWorldFlightSimulation } from './flight-simulation';
 import type { FlightSimulation } from './flight-simulation';
 import { createMapCache } from './map-cache';
 import type { MapLoadProgress } from './map-cache';
+import { abortableResource } from './asset-cache';
+import { preloadWorldAssets } from './world-assets';
+import type { WorldAssets } from './world-assets';
+import { createLoadingMetrics } from './loading-metrics';
+import type { LoadingMetrics } from './loading-metrics';
 
 export interface EngineEvents {
   telemetry: (value: Telemetry) => void;
@@ -52,6 +57,7 @@ export class FlightEngine {
   private prepared = false;
   private preparing: Promise<void> | null = null;
   private compilation: Promise<THREE.Object3D> | null = null;
+  private readonly warmupTarget = new THREE.WebGLRenderTarget(256, 144);
   private readonly panoramaResolution: 3548 | 7096;
   private night = false;
   private get world() { return this.activeMap.world; }
@@ -95,22 +101,61 @@ export class FlightEngine {
   get windSettings(): Readonly<WindSettings> { return this.currentWind; }
   get recordEligible(): boolean { return this.unchangedWind; }
 
-  constructor(private host: HTMLDivElement, private events: EngineEvents, flightCore: WebAssembly.Module, mapId: MapId = DEFAULT_MAP_ID) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  /** Start the selected images before WASM/CPU work, sharing the actual renderer and decoded Images. */
+  static async create(host: HTMLDivElement, events: EngineEvents, flightCore: Promise<WebAssembly.Module>,
+    mapId: MapId = DEFAULT_MAP_ID, signal: AbortSignal = new AbortController().signal,
+    startedAt = performance.now()): Promise<FlightEngine> {
+    // The shared module may reject even if WebGL fails before its await is reached.
+    void flightCore.catch(() => {});
+    const metrics = createLoadingMetrics(startedAt);
+    const stopRenderer = metrics.measure('renderer');
+    let renderer: THREE.WebGLRenderer | undefined;
+    let assets: WorldAssets | undefined;
+    try {
+      if (signal.aborted) throw new DOMException('Loading cancelled', 'AbortError');
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+      const resolution = host.getBoundingClientRect().width * renderer.getPixelRatio() > 900
+        && renderer.capabilities.maxTextureSize >= 7096 ? 7096 : 3548;
+      stopRenderer();
+      const stopTextures = metrics.measure('textures');
+      assets = preloadWorldAssets(resolution);
+      void assets.ready.then(stopTextures, () => {});
+      let core: WebAssembly.Module;
+      try { core = await abortableResource(flightCore, signal); }
+      catch (error) {
+        if (signal.aborted) throw error;
+        throw new Error('飞行模块加载失败。请刷新页面，并使用支持 WebAssembly 的新版浏览器。', { cause: error });
+      }
+      metrics.record('wasm', startedAt);
+      if (signal.aborted) throw new DOMException('Loading cancelled', 'AbortError');
+      return new FlightEngine(host, events, core, mapId, renderer, assets, metrics, resolution);
+    } catch (error) {
+      assets?.dispose(); renderer?.dispose(); renderer?.forceContextLoss();
+      throw error;
+    }
+  }
+
+  private constructor(private host: HTMLDivElement, private events: EngineEvents, flightCore: WebAssembly.Module,
+    mapId: MapId, renderer: THREE.WebGLRenderer, private assets: WorldAssets,
+    private loadingMetrics: LoadingMetrics, resolution: 3548 | 7096) {
+    this.renderer = renderer;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
-    this.panoramaResolution = host.getBoundingClientRect().width * this.renderer.getPixelRatio() > 900
-      && this.renderer.capabilities.maxTextureSize >= 7096 ? 7096 : 3548;
+    this.panoramaResolution = resolution;
     let maps: FlightEngine['maps'] | undefined;
     try {
       this.runtime = createRustRuntime(flightCore);
-      this.maps = maps = createMapCache(MAPS.map(map => map.id), id => this.createMap(id), map => this.prepareMap(map));
+      this.maps = maps = createMapCache(MAPS.map(map => map.id), id => this.createMap(id), map => this.prepareMap(map), {
+        // Build the urban CPU scenes while the valley's larger images download/decode.
+        beforeCreate: () => new Promise(resolve => requestAnimationFrame(() => resolve())),
+        waitUntilReady: map => map.world.ready,
+      });
       this.activeMap = this.maps.getOrCreate(mapId);
       this.state = this.initialState();
       this.weapons = this.weaponSimulation.state;
     } catch (error) {
       maps?.dispose(); this.drone.dispose(); this.headlight.dispose(); this.audio.dispose();
-      this.renderer.dispose();
-      this.renderer.forceContextLoss();
+      this.warmupTarget.dispose();
       throw error;
     }
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -146,6 +191,7 @@ export class FlightEngine {
     this.refreshWind(); this.resize();
   }
   private createMap(id: MapId): MapResources {
+    const stopCpu = this.loadingMetrics.measure(`${id}.cpu`);
     const spec = getMapSpec(id);
     let kernel: WorldKernel | undefined;
     let world: ReturnType<typeof createWorld> | undefined;
@@ -157,6 +203,7 @@ export class FlightEngine {
       world = createWorld(this.runtime, kernel, {
         resolution: this.panoramaResolution,
         maxAnisotropy: this.renderer.capabilities.getMaxAnisotropy(),
+        assets: this.assets,
       }, id);
       kernel.setObstacles(world.obstacles);
       simulation = createWorldFlightSimulation(this.runtime, kernel.handle);
@@ -164,6 +211,7 @@ export class FlightEngine {
       visuals = createWeaponVisuals(this.runtime, kernel, spec.targets);
       world.scene.add(visuals.group);
       world.setNight(this.night); visuals.setNight(this.night);
+      stopCpu();
       let disposed = false;
       return { spec, kernel, world, simulation, weapons, visuals, dispose() {
         if (disposed) return;
@@ -182,8 +230,7 @@ export class FlightEngine {
     // Let React paint the progress before CPU scene preparation and GPU work.
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     if (this.disposed) throw new Error('Flight engine has been disposed');
-    await map.world.ready;
-    if (this.disposed) throw new Error('Flight engine has been disposed');
+    const stopGpu = this.loadingMetrics.measure(`${map.spec.id}.gpu`);
     this.attachAircraft(map);
     const { spawn, spawnYaw } = map.spec;
     this.drone.model.position.set(spawn.x, spawn.y, spawn.z);
@@ -195,21 +242,25 @@ export class FlightEngine {
     for (const night of [false, true]) {
       map.world.setNight(night); map.visuals.setNight(night);
       this.headlight.intensity = night ? 950 : 0;
+      const stopCompile = this.loadingMetrics.measure(`${map.spec.id}.${night ? 'night' : 'day'}.compile`);
       const compiling = this.renderer.compileAsync(map.world.scene, this.camera);
       this.compilation = compiling;
       try { await compiling; } finally { if (this.compilation === compiling) this.compilation = null; }
+      stopCompile();
       if (this.disposed) throw new Error('Flight engine has been disposed');
       const previousTarget = this.renderer.getRenderTarget();
-      const target = new THREE.WebGLRenderTarget(256, 144);
+      const stopUpload = this.loadingMetrics.measure(`${map.spec.id}.${night ? 'night' : 'day'}.upload`);
       try {
         // The render also uploads visible geometry, decoded textures and shadow maps.
-        this.renderer.setRenderTarget(target);
+        this.renderer.setRenderTarget(this.warmupTarget);
         this.renderer.render(map.world.scene, this.camera);
-      } finally { this.renderer.setRenderTarget(previousTarget); target.dispose(); }
+      } finally { this.renderer.setRenderTarget(previousTarget); }
+      stopUpload();
     }
     map.world.setNight(this.night); map.visuals.setNight(this.night);
     this.headlight.intensity = this.night ? 950 : 0;
     this.attachAircraft(this.activeMap);
+    stopGpu();
   }
   preloadMaps(onProgress: (progress: MapLoadProgress<MapId>) => void = () => {}) {
     this.preparing ??= (async () => {
@@ -219,8 +270,13 @@ export class FlightEngine {
       });
       if (this.disposed) throw new Error('Flight engine has been disposed');
       this.prepared = true; this.snapCamera = true;
+      this.setNight(this.night);
       this.attachAircraft(this.activeMap);
       this.tick(performance.now());
+      // Measured through the first visible frame, the same point at which App enables flight.
+      const measurements = this.loadingMetrics.snapshot();
+      this.renderer.domElement.dataset.loadingMetrics = JSON.stringify(measurements);
+      this.renderer.domElement.dataset.initializationMs = String(measurements.total);
     })();
     return this.preparing;
   }
@@ -283,6 +339,8 @@ export class FlightEngine {
   setNight(enabled: boolean) {
     if (this.disposed) return;
     this.night = enabled;
+    // Changes during async compilation must not mutate the lighting state being warmed.
+    if (!this.prepared) return;
     this.maps.forEach(map => { map.world.setNight(enabled); map.visuals.setNight(enabled); });
     this.headlight.intensity = enabled ? 950 : 0;
     this.renderer.toneMappingExposure = enabled ? 1.05 : 1.2;
@@ -476,8 +534,10 @@ export class FlightEngine {
     this.renderer.domElement.removeEventListener('click', this.lockPointer);
     if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
     this.audio.dispose(); this.renderer.domElement.remove();
+    this.assets.dispose();
     const release = () => {
       this.headlight.dispose(); this.drone.dispose(); this.maps.dispose();
+      this.warmupTarget.dispose();
       this.renderer.dispose(); this.renderer.forceContextLoss();
     };
     // Three's async compiler polls program objects. Keep them valid until that poll finishes.

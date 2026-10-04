@@ -34,4 +34,30 @@ Use case: stylized-concept. Asset type: high resolution distant alpine sky panor
 
 ## 生成素材
 
-`pine-tree.png`、`grass-texture.jpg`、`weathered-rock.jpg`及docs内设计参考由内置Image Gen生成。源码采用仓库MIT许可；这些素材随项目提供。原始生成说明与视觉验证见[design.md](./design.md)。
+`pine-tree.webp`、`grass-texture.webp`、`weathered-rock.webp`及docs内设计参考由内置Image Gen生成。源码采用仓库MIT许可；这些素材随项目提供。原始生成说明与视觉验证见[design.md](./design.md)。WebP是已有素材的离线格式转换，没有重新生成、裁切、重绘或降低分辨率，也没有改变素材来源。
+
+### 加载资源编码优化
+
+原始 PNG/JPEG 可从 Git 提交 `62450333fb213aa24209bd97f843b7731ccba4de` 恢复；生产目录仅保留转换后的 WebP，不重复发布旧文件。使用 `cwebp 1.6.0`（libsharpyuv 0.4.2）；松树采用 `-lossless -z 9 -exact -metadata none`，草地与岩石采用 `-q 90 -m 6 -sharp_yuv -metadata none`。源文件均没有 ICC 配置；输出沿用原有 Three.js sRGB 颜色空间、平铺、过滤与各向异性设置。
+
+| 资源 | 像素尺寸 | 原文件字节 | WebP 字节 | 减少 | 解码质量比较 |
+| --- | --- | ---: | ---: | ---: | --- |
+| `pine-tree.webp` | 1024×1536 | 2,573,886 | 1,691,120 | 34.30% | 全部 RGBA 值逐像素一致，包括透明区域的 RGB 和半透明针叶边缘 |
+| `grass-texture.webp` | 1254×1254 | 1,148,987 | 837,528 | 27.11% | RGB PSNR 40.030 dB；亮度 SSIM 0.996534 |
+| `weathered-rock.webp` | 1254×1254 | 1,099,859 | 786,868 | 28.46% | RGB PSNR 40.877 dB；亮度 SSIM 0.996782 |
+
+三张资源合计从 4,822,732 字节降至 3,315,516 字节，减少 1,507,216 字节（31.25%）。PSNR 比较 Pillow 解码后的 RGB 全通道均方误差；SSIM 使用亮度 `0.299R + 0.587G + 0.114B`、11×11 高斯窗口、σ=1.5、K₁=0.01、K₂=0.03，排除 5 像素边缘。数值只衡量已有 PNG/JPEG 与新编码的差异，不代表原始生成素材的真实性。原生像素裁片前后直接查看，确认松针轮廓、草茎和岩石裂隙的细节保留。两版雪峰全景的文件内容与上述 SHA256 完全不变。
+
+SHA256：
+
+- `pine-tree.webp`：`17900e7190b3391a2fc7758150d59d244133dfd407a2dba82ddc9ae1de5a125a`
+- `grass-texture.webp`：`ad5fb557be4a70c32bf16497728f0d124627bb61d5dbfac517636d1be2c17767`
+- `weathered-rock.webp`：`d86370df0cd8791f114c36af1999e7ec2a62672f2eccb6da69c3e8e48378551e`
+
+可复现编码脚本会从上述 Git 提交读回并校验原图 SHA256，全部编码成功后更新三张生产资源；不会处理全景。图像工具只在离线重编码时需要，游戏和 `npm run build` 没有新增依赖：
+
+```sh
+node scripts/optimize-textures.mjs
+# 在独立目录验证编码结果，而不修改 public：
+node scripts/optimize-textures.mjs --output-dir /tmp/aeroflow-texture-check
+```

@@ -17,6 +17,8 @@ import { TARGETS } from './weapons.ts';
 import type { RustRuntime } from './rust-runtime.ts';
 import type { WorldKernel } from './world-kernel.ts';
 import { createSceneSimulation } from './scene-simulation.ts';
+import { preloadWorldAssets } from './world-assets.ts';
+import type { WorldAsset, WorldAssets } from './world-assets.ts';
 
 export { groundHeight } from './landscape.ts';
 
@@ -61,6 +63,7 @@ function numberTexture(number: number): THREE.CanvasTexture {
 export interface PanoramaOptions {
   resolution?: 3548 | 7096;
   maxAnisotropy?: number;
+  assets?: WorldAssets;
 }
 
 export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaOptions: PanoramaOptions = {}, mapId: MapId = DEFAULT_MAP_ID) {
@@ -73,18 +76,19 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   const materialResources = new Set<THREE.Material>();
   const textureResources = new Set<THREE.Texture>();
   let disposed = false;
+  const assets = panoramaOptions.assets ?? preloadWorldAssets(panoramaOptions.resolution ?? 3548);
   const textureLoads: Promise<void>[] = [];
-  const loadTexture = (asset: string, onLoad?: () => void) => {
-    let resolve!: () => void;
-    let reject!: (error: Error) => void;
-    const ready = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+  const loadTexture = (asset: WorldAsset, onLoad?: () => void) => {
+    const texture = new THREE.Texture();
+    const ready = assets.image(asset).then(image => {
+      if (disposed) return;
+      texture.image = image;
+      texture.needsUpdate = true;
+      onLoad?.();
+    });
     // A synchronous scene-construction error must not leave a later network rejection unhandled.
     void ready.catch(() => {});
     textureLoads.push(ready);
-    const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/${asset}`, () => {
-      if (!disposed) onLoad?.();
-      resolve();
-    }, undefined, () => reject(new Error(`地图纹理加载失败：${asset}`)));
     textureResources.add(texture);
     return texture;
   };
@@ -164,13 +168,13 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   const nightSky = createNightSky();
   scene.add(nightSky.group);
 
-  const grassTexture = loadTexture('grass-texture.jpg');
+  const grassTexture = loadTexture('grass-texture.webp');
   grassTexture.colorSpace = THREE.SRGBColorSpace;
   grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
   grassTexture.repeat.set(TERRAIN_SIZE / 13, TERRAIN_SIZE / 13);
   grassTexture.anisotropy = 8;
   textureResources.add(grassTexture);
-  const rockTexture = loadTexture('weathered-rock.jpg');
+  const rockTexture = loadTexture('weathered-rock.webp');
   rockTexture.colorSpace = THREE.SRGBColorSpace;
   rockTexture.wrapS = rockTexture.wrapT = THREE.RepeatWrapping;
   rockTexture.anisotropy = 8;
@@ -272,7 +276,7 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   const treeData = sceneData.placements.trees;
   for (const tree of treeData) obstacles.push({ x: tree.x, z: tree.z, radius: 0.35 + tree.height * 0.016, height: tree.height });
   const transform = new THREE.Object3D();
-  const pineTexture = loadTexture('pine-tree.png');
+  const pineTexture = loadTexture('pine-tree.webp');
   pineTexture.colorSpace = THREE.SRGBColorSpace;
   pineTexture.anisotropy = 4;
   textureResources.add(pineTexture);
@@ -466,6 +470,7 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
     dispose() {
       if (disposed) return;
       disposed = true;
+      if (!panoramaOptions.assets) assets.dispose();
       water.dispose();
       rural.dispose();
       shrubs.dispose();
