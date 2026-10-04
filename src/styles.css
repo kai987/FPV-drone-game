@@ -111,6 +111,7 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
 .finish-time { font-size: 43px; letter-spacing: -1px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .finish-best { margin: 8px 0 24px; font-size: 11px; color: #7c876f; }
 .scene-loading { position: absolute; inset: 0; display: flex; gap: 15px; flex-direction: column; align-items: center; justify-content: center; background: #c3d6dc; font-size: 14px; color: #59726c; }
+.map-load-details { max-width: 90%; padding: 0 12px; text-align: center; font-size: 12px; line-height: 1.8; }
 .guide-dialog { border: 1px solid #d6ddce; width: min(580px, calc(100% - 32px)); background: var(--paper); color: var(--ink); border-radius: 20px; padding: 30px; max-height: calc(100dvh - 40px); overflow: auto; }
 .guide-dialog::backdrop { background: #13271755; backdrop-filter: blur(5px); }
 .dialog-heading { display: flex; justify-content: space-between; align-items: flex-start; }

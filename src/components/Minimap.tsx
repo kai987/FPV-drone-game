@@ -6,6 +6,7 @@ import { getMapSpec } from '../game/map-catalog';
 import type { MapId } from '../game/map-catalog';
 import { getMapLayout, HARBOR_PIERS, HARBOR_SHORE_X } from '../game/map-layout';
 import type { UrbanBox } from '../game/map-layout';
+import { getUrbanRoadNetwork } from '../game/urban-roads';
 import { BRIDGES, CABINS, FISH_SCHOOLS } from '../game/rural-layout';
 import { beginMapDrag, centerMapBounds, clamp, createProjection, formatMapSpan, getMapBounds, getMapCenter, isOutsideBounds, panMapBounds, ZOOM_LEVELS } from './minimap-view.ts';
 import type { MapBounds, MapPoint, MapPosition, MapView, MapViewportSize } from './minimap-view.ts';
@@ -77,6 +78,7 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
   const worldBounds = selectedMap.bounds;
   const layout = getMapLayout(mapId);
   const isValley = mapId === 'valley';
+  const roads = getUrbanRoadNetwork(mapId);
   const [mapView, setMapView] = useState<MapView>(mode === 'race' ? 'route' : 'world');
   const [zoomIndex, setZoomIndex] = useState(0);
   const [cameraMode, setCameraMode] = useState<MapCameraMode>('overview');
@@ -194,12 +196,14 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
         const radius = Math.hypot(box.width, box.depth) / 2;
         return box.x + radius >= bounds.minX && box.x - radius <= bounds.maxX && box.z + radius >= bounds.minZ && box.z - radius <= bounds.maxZ;
       }).map(box => ({ ...box, position: projection.project(box.x, box.z), width: box.width * projection.scale, depth: box.depth * projection.scale })),
+      roads: roads.surfaces.map(road => ({ ...road, position: projection.project(road.x, road.z), width: road.width * projection.scale, depth: road.depth * projection.scale })),
+      crossings: roads.markings.filter(marking => marking.kind === 'zebra').map(marking => ({ ...marking, position: projection.project(marking.x, marking.z), width: marking.width * projection.scale, depth: marking.depth * projection.scale })),
       landmarks: layout.landmarks.map(landmark => ({ ...landmark, position: projection.project(landmark.x, landmark.z) })),
       shore: projection.project(HARBOR_SHORE_X, worldBounds.minZ),
       seaCorner: projection.project(worldBounds.maxX, worldBounds.maxZ),
       ship: layout.ship ? { ...layout.ship, position: projection.project(layout.ship.x, layout.ship.z), width: layout.ship.width * projection.scale, length: layout.ship.length * projection.scale } : null,
     };
-  }, [bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ, mapId, isValley, layout, worldBounds]);
+  }, [bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ, mapId, isValley, layout, roads, worldBounds]);
 
   const points = selectedMap.checkpoints.map(({ position }) => geography.project(position.x, position.z));
   const start = geography.project(selectedMap.spawn.x, selectedMap.spawn.z);
@@ -219,8 +223,8 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
   const calm = wind.speed < 0.1;
   const windLabel = calm ? '无风' : `${wind.directionLabel}风`;
   const geographyLabel = isValley ? '蓝色为河流湖泊，浅蓝鱼形标记为鱼群，米色为小屋和桥'
-    : mapId === 'factory' ? '灰色为厂房和工业设施，金色为堆箱，圆点为厂房和储罐地标'
-      : '蓝色为海面，米色为码头，灰色为仓库和货轮，金色为堆箱，圆点为桥吊和灯塔地标';
+    : mapId === 'factory' ? '深灰为道路，白色条带为斑马线，灰色为厂房和工业设施，金色为堆箱，圆点为厂房和储罐地标'
+      : '蓝色为海面，深灰为道路，白色条带为斑马线，米色为码头，灰色为仓库和货轮，金色为堆箱，圆点为桥吊和灯塔地标';
 
   return (
     <div className={`minimap geographic-minimap${isWorld ? ' minimap-world' : ''}`} aria-label={`${selectedMap.name}小地图，${isValley ? '河流、湖泊、小屋、小桥、鱼群' : mapId === 'factory' ? '厂房、储罐、烟囱、堆箱' : '海岸、码头、仓库、堆箱、桥吊、货轮'}、当前位置、检查点与投弹靶标`} data-map-mode={cameraMode} data-map-id={mapId}
@@ -268,6 +272,10 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
           <rect width="180" height="150" fill={`url(#${gridId})`} />
           {!isValley && <>
             {mapId === 'harbor' && <rect x={geography.shore.x} y={geography.shore.y} width={geography.seaCorner.x - geography.shore.x} height={geography.seaCorner.y - geography.shore.y} fill="#6094a8" fillOpacity="0.72"><title>海岸与港口水区</title></rect>}
+            <g aria-label="道路与十字路口">
+              {geography.roads.map((road, index) => <rect key={`road-${index}`} x={road.position.x - road.width / 2} y={road.position.y - road.depth / 2} width={road.width} height={road.depth} fill="#192524" fillOpacity="0.85" />)}
+              {!compactSymbols && geography.crossings.map((crossing, index) => <rect key={`crossing-${index}`} x={crossing.position.x - crossing.width / 2} y={crossing.position.y - crossing.depth / 2} width={crossing.width} height={crossing.depth} fill="#eeeedb" fillOpacity="0.85" />)}
+            </g>
             {geography.urbanBoxes.map(box => <rect key={box.key} x={-box.width / 2} y={-box.depth / 2} width={box.width} height={box.depth}
               transform={`translate(${box.position.x} ${box.position.y}) rotate(${-(box.yaw ?? 0) * 180 / Math.PI})`} fill={box.color} fillOpacity="0.72" stroke="#202f2a" strokeWidth="0.25" />)}
             {geography.ship && <g transform={`translate(${geography.ship.position.x} ${geography.ship.position.y})`}>

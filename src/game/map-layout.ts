@@ -1,3 +1,5 @@
+import { isUrbanRoadArea } from './urban-roads.ts';
+
 /** Metres, shared by the renderer, Rust collision geometry and minimap. */
 export interface UrbanBox {
   x: number;
@@ -68,7 +70,7 @@ function factoryLayout(): UrbanMapLayout {
     { x: -220, z: -610, width: 110, depth: 144, base: 2, height: 26, color: '#637179', label: 'POWER HOUSE' },
     { x: 230, z: -660, width: 122, depth: 164, base: 2, height: 24, color: '#815b49', label: 'FOUNDRY 06' },
     { x: -335, z: -350, width: 85, depth: 120, base: 2, height: 17, color: '#818b86', label: 'STORAGE 07' },
-    { x: 360, z: -245, width: 110, depth: 135, base: 2, height: 20, color: '#647f85', label: 'DISTRIBUTION' },
+    { x: 360, z: -320, width: 110, depth: 135, base: 2, height: 20, color: '#647f85', label: 'DISTRIBUTION' },
     { x: -490, z: -1020, width: 120, depth: 175, base: 2, height: 22, color: '#788382', label: 'ROLLING MILL' },
     { x: 520, z: -1090, width: 180, depth: 128, base: 2, height: 26, color: '#7d7165', label: 'METAL WORKS' },
     { x: -130, z: -1380, width: 145, depth: 180, base: 2, height: 29, color: '#6c7c82', label: 'MACHINERY' },
@@ -85,7 +87,7 @@ function factoryLayout(): UrbanMapLayout {
   ];
   const containers = [
     ...containerStacks(-190, 28, 6, 2, 2), ...containerStacks(170, 5, 8, 2, 3),
-    ...containerStacks(-265, -435, 9, 3, 3), ...containerStacks(252, -405, 10, 3, 3),
+    ...containerStacks(-265, -470, 9, 3, 3), ...containerStacks(252, -470, 10, 3, 3),
   ];
   const trucks: TruckSpec[] = [
     { x: -43, z: -89, width: 2.7, depth: 14, base: 2, height: 4.2, color: '#d6cda9' },
@@ -122,11 +124,12 @@ function factoryLayout(): UrbanMapLayout {
   });
   for (const pipe of pipes) {
     const length = Math.hypot(pipe.to[0] - pipe.from[0], pipe.to[2] - pipe.from[2]);
-    for (let value = 0; value <= length; value += 10) boxes.push({
-      x: pipe.from[0] + (pipe.to[0] - pipe.from[0]) * value / length,
-      z: pipe.from[2] + (pipe.to[2] - pipe.from[2]) * value / length,
-      width: 0.34, depth: 0.34, base: 2, height: pipe.from[1] - pipe.radius - 2,
-    });
+    for (let value = 0; value <= length; value += 10) {
+      const x = pipe.from[0] + (pipe.to[0] - pipe.from[0]) * value / length;
+      const z = pipe.from[2] + (pipe.to[2] - pipe.from[2]) * value / length;
+      if (isUrbanRoadArea('factory', x, z, 2.5)) continue;
+      boxes.push({ x, z, width: 0.34, depth: 0.34, base: 2, height: pipe.from[1] - pipe.radius - 2 });
+    }
   }
   return { boxes, warehouses, containers, tanks, chimneys, cranes: [], trucks, pipes,
     landmarks: [
@@ -140,12 +143,12 @@ function harborLayout(): UrbanMapLayout {
   const warehouses: WarehouseSpec[] = [
     { x: -87, z: -125, width: 82, depth: 122, base: 2, height: 16, color: '#748c8e', label: 'PORT STORAGE 01' },
     { x: -150, z: -535, width: 150, depth: 112, base: 2, height: 18, color: '#788685', label: 'CUSTOMS TERMINAL' },
-    { x: -265, z: -265, width: 94, depth: 172, base: 2, height: 17, color: '#a39c87', label: 'BONDED STORAGE' },
+    { x: -265, z: -320, width: 94, depth: 172, base: 2, height: 17, color: '#a39c87', label: 'BONDED STORAGE' },
   ];
   const containers = [
-    ...containerStacks(57, 4, 17, 4, 3), ...containerStacks(47, -205, 20, 8, 4),
+    ...containerStacks(57, 4, 17, 4, 3), ...containerStacks(47, -246, 20, 8, 4),
     ...containerStacks(56, -545, 17, 6, 3), ...containerStacks(-197, -59, 10, 4, 4),
-    ...containerStacks(-356, -420, 21, 7, 4),
+    ...containerStacks(-356, -470, 21, 7, 4),
     ...containerStacks(181, -106, 14, 2, 2, Math.PI / 2),
     ...containerStacks(188, -416, 14, 2, 2, Math.PI / 2),
   ];
@@ -156,7 +159,7 @@ function harborLayout(): UrbanMapLayout {
   ];
   const ship: ShipSpec = { x: 540, z: -473, width: 67, length: 273, deckY: 6.2 };
   const trucks: TruckSpec[] = [
-    { x: 30, z: -195, width: 2.7, depth: 14, base: 2, height: 4.2, color: '#dfa647' },
+    { x: 30, z: -175, width: 2.7, depth: 14, base: 2, height: 4.2, color: '#dfa647' },
     { x: -27, z: -335, width: 2.7, depth: 14, base: 2, height: 4.2, color: '#d9cbb2' },
     { x: 31, z: -597, width: 2.7, depth: 14, base: 2, height: 4.2, color: '#55889a' },
   ];

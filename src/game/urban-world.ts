@@ -7,6 +7,7 @@ import type { Vec3 } from './flight.ts';
 import { createNightSky } from './night-sky.ts';
 import { getMapLayout, HARBOR_PIERS, HARBOR_SHORE_X } from './map-layout.ts';
 import type { UrbanBox, WarehouseSpec, ContainerSpec, CraneSpec, TruckSpec } from './map-layout.ts';
+import { getUrbanRoadNetwork, isUrbanRoadArea } from './urban-roads.ts';
 
 interface InstancePose { position: THREE.Vector3; scale: THREE.Vector3; quaternion: THREE.Quaternion; }
 
@@ -14,6 +15,7 @@ interface InstancePose { position: THREE.Vector3; scale: THREE.Vector3; quaterni
 export function createUrbanWorld(_runtime: RustRuntime, kernel: WorldKernel, map: MapSpec, _panoramaOptions: PanoramaOptions = {}) {
   const harbor = map.id === 'harbor';
   const layout = getMapLayout(map.id);
+  const roads = getUrbanRoadNetwork(map.id);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(harbor ? '#a6cbd6' : '#b9cbd1');
   scene.fog = new THREE.FogExp2(harbor ? '#a6cbd6' : '#b9cbd1', 0.00048);
@@ -31,6 +33,7 @@ export function createUrbanWorld(_runtime: RustRuntime, kernel: WorldKernel, map
   const silver = standard('#a4b1b0', 0.46, 0.7);
   const roofRib = standard('#a2afad', 0.56, 0.55);
   const cream = standard('#d7d8c8', 0.63, 0.2);
+  const roadWhite = standard('#f1f0e4', 0.86, 0);
   const yellow = standard('#d8ac41', 0.58, 0.45);
   const orange = standard('#d48835', 0.64, 0.4);
   const black = standard('#1c282b', 0.88, 0.02);
@@ -136,16 +139,10 @@ export function createUrbanWorld(_runtime: RustRuntime, kernel: WorldKernel, map
     box(concrete, 500, -1.5, -1030, 720, 13, 20);
     for (let x = 153; x <= 850; x += 8) box(paleConcrete, x, 5.6, -1030, 3.3, 1.2, 3.3, 0.55);
   } else box(concrete, 0, -3, -700, horizonExtent, 10, horizonExtent, 0, false);
-  land(asphalt, 0, -580, 44, 1560);
-  for (const side of [-1, 1]) {
-    land(paleConcrete, side * 24, -580, 3.5, 1560, 2.045);
-    land(yellow, side * 19.5, -580, 0.13, 1560, 2.075);
-  }
-  for (let z = 140; z > -1320; z -= 24) land(cream, 0, z, 0.23, 9, 2.06);
-  for (const z of [-210, -430, -870]) {
-    land(asphalt, harbor ? -120 : 0, z, harbor ? 560 : 910, 26, 2.035);
-    for (let x = harbor ? -390 : -440; x < (harbor ? 130 : 440); x += 22) land(cream, x, z, 7, 0.18, 2.065);
-  }
+  for (const surface of roads.surfaces) land(asphalt, surface.x, surface.z, surface.width, surface.depth);
+  for (const kerb of roads.kerbs) land(paleConcrete, kerb.x, kerb.z, kerb.width, kerb.depth, 2.045);
+  for (const marking of roads.markings) land(marking.kind === 'edge' ? yellow : roadWhite,
+    marking.x, marking.z, marking.width, marking.depth, 2.075);
   for (let x = -420; x < -240; x += 8) {
     land(cream, x, 24, 0.1, 15, 2.07); land(cream, x + 3.5, 24, 6.9, 0.1, 2.07);
   }
@@ -241,6 +238,7 @@ export function createUrbanWorld(_runtime: RustRuntime, kernel: WorldKernel, map
     const distance = from.distanceTo(to);
     for (let value = 0; value <= distance; value += 10) {
       const point = from.clone().lerp(to, value / distance);
+      if (isUrbanRoadArea(map.id, point.x, point.z, 2.5)) continue;
       const supportHeight = point.y - pipe.radius - 2;
       cylinder(darkSteel, point.x, 2 + supportHeight / 2, point.z, 0.17, supportHeight);
       box(steel, point.x, 2.1, point.z, 1.5, 0.22, 1.5);
@@ -359,6 +357,7 @@ export function createUrbanWorld(_runtime: RustRuntime, kernel: WorldKernel, map
     }
   }
   for (let z = 90; z > -1060; z -= 105) for (const side of [-1, 1]) {
+    if (roads.intersections.some(junction => Math.abs(z - junction.z) < 20)) continue;
     const x = side * 30;
     cylinder(steel, x, 8.5, z, 0.14, 13);
     beam(steel, new THREE.Vector3(x, 15, z), new THREE.Vector3(x - side * 3, 15.5, z), 0.13);
