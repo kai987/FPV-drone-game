@@ -27,6 +27,16 @@ npm run preview    # 预览已有的 dist/ 生产构建
 
 `dist/` 可部署到任意静态网站服务。构建采用相对资源路径，支持子目录。仓库 CI 对每次推送和 PR 运行检查与构建。无付费 API、服务器密钥或数据库依赖。
 
+## GitHub Pages 发布
+
+线上地址：[AEROFLOW 飞行场](https://kai987.github.io/FPV-drone-game/)。
+
+仓库 **Settings → Pages → Build and deployment → Source** 设为 **GitHub Actions**。发布由 [pages.yml](./.github/workflows/pages.yml) 完成：推送到 `main` 后，安装 Node.js 24 与 Rust 1.93.0 的 WASM 目标，执行 `npm ci`、`npm run check`、`npm run build`，将 **`dist/`** 上传为 Pages artifact，再部署到 `github-pages` 环境。检查或构建失败时不会发布。
+
+也可在 **Actions → Deploy game to GitHub Pages → Run workflow** 选择 `main` 手动重新发布。其他分支不发布；PR 使用独立 CI 检查。`dist/` 与生成的 WASM 不提交 Git，线上只接收构建后的 HTML、JavaScript、CSS、WASM 和美术资源。当前 `base: './'` 保证资源在 `/FPV-drone-game/` 子目录及本地预览中正常加载。
+
+发布后应确认 Actions 中的 `build` 和 `deploy` 都成功，再打开线上地址检查游戏加载与起飞；一次普通 CI 构建成功并不表示网页已更新。发布流程参考 [GitHub 自定义 Pages 工作流](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)。
+
 ## 游戏内容
 
 - **FPV 机库**：涵道航拍、花式穿越、竞速、远航及两款极速原型，共六款游戏机型，机库缩略图直接渲染游戏同款三维模型，选中后可拖动旋转查看细节，并查看硬件参考规格和实际飞行性能；不同机型具有不同机架外形、速度、爬升、转向及加减速响应。
