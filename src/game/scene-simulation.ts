@@ -16,6 +16,14 @@ export interface SceneSimulation {
 }
 const BATCH = 512;
 
+/** Ripple generation has no scene/world handle; copy before releasing its Rust buffer. */
+export function generateRipplePixels(runtime: RustRuntime, size = 256): Uint8Array {
+  const ripple = runtime.call('scene_ripple_new', size);
+  if (!ripple) throw new Error('Ripple size must be between 16 and 512');
+  try { return new Uint8Array(runtime.memory.buffer, runtime.call('scene_ripple_ptr', ripple), size * size * 4).slice(); }
+  finally { runtime.call('scene_ripple_free', ripple); }
+}
+
 /** One scene-generation batch; randomness has the same seed/ordering as before. */
 export function createSceneSimulation(runtime: RustRuntime, world: WorldKernel,
   course: readonly { x: number; z: number }[], targets: readonly Target[], randomSkip: number): SceneSimulation {
@@ -85,10 +93,7 @@ export function createSceneSimulation(runtime: RustRuntime, world: WorldKernel,
       return { depths, currents };
     },
     ripplePixels(size = 256) {
-      live(); const ripple = runtime.call('scene_ripple_new', size);
-      if (!ripple) throw new Error('Ripple size must be between 16 and 512');
-      try { return new Uint8Array(runtime.memory.buffer, runtime.call('scene_ripple_ptr', ripple), size * size * 4).slice(); }
-      finally { runtime.call('scene_ripple_free', ripple); }
+      live(); return generateRipplePixels(runtime, size);
     },
     dispose() { if (disposed) return; disposed = true; runtime.call('scene_free', handle); },
   };

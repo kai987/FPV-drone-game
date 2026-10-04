@@ -4,9 +4,7 @@ import type { SceneSimulation } from './scene-simulation.ts';
 import { PANORAMA_SAMPLING_GLSL } from './panorama-sampling.ts';
 
 /** Seamless slope texture: integer frequencies wrap exactly, and mipmaps filter tiny ripples. */
-function createRippleTexture(scene: SceneSimulation) {
-  const size = 256;
-  const pixels = scene.ripplePixels(size);
+export function createRippleTexture(pixels: Uint8Array, size = 256) {
   const texture = new THREE.DataTexture(pixels, size, size, THREE.RGBAFormat);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.magFilter = THREE.LinearFilter;
@@ -17,27 +15,26 @@ function createRippleTexture(scene: SceneSimulation) {
   return texture;
 }
 
-/** A level collision surface with animated, filtered optical waves above its carved bed. */
-export function createWater(panorama: THREE.Texture, scene: SceneSimulation, points: Float32Array, heights: Float32Array, panoramaRotation: number, panoramaHaze: THREE.Vector2) {
-  const group = new THREE.Group();
-  group.name = 'Lakes and flowing river';
-  const geometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, 300, 300);
-  geometry.rotateX(-Math.PI / 2);
-  const { depths, currents } = scene.waterData(points, heights);
-  geometry.setAttribute('waterDepth', new THREE.BufferAttribute(depths, 1));
-  geometry.setAttribute('waterCurrent', new THREE.BufferAttribute(currents, 3));
-  const ripples = createRippleTexture(scene);
+interface WaterReflection {
+  uniforms: Record<string, THREE.IUniform>;
+  /** Supplies reflectedSky(ray), using the same sky as the surrounding world. */
+  fragmentShader: string;
+}
+
+/** River, lake and harbor share ripple scales, filtering, Fresnel and the water palette. */
+export function createWaterMaterial(ripples: THREE.DataTexture, reflection: WaterReflection,
+  options: { opaque?: boolean; clipDry?: boolean; fogDensity?: readonly [number, number]; skyColor?: string; fogAfterToneMapping?: boolean } = {}) {
   const material = new THREE.ShaderMaterial({
     uniforms: {
       time: { value: 0 },
       night: { value: 0 },
       rippleMap: { value: ripples },
-      panorama: { value: panorama },
-      panoramaRotation: { value: panoramaRotation },
-      panoramaHaze: { value: panoramaHaze },
       deepColor: { value: new THREE.Color('#123e49') },
       shallowColor: { value: new THREE.Color('#447b69') },
-      skyColor: { value: new THREE.Color('#b0c9d5') },
+      skyColor: { value: new THREE.Color(options.skyColor ?? '#b0c9d5') },
+      fogDensity: { value: new THREE.Vector2(...(options.fogDensity ?? [0.00022, 0.00030])) },
+      opacityFloor: { value: options.opaque ? 1 : 0 },
+      ...reflection.uniforms,
     },
     vertexShader: `
       attribute float waterDepth;
@@ -56,18 +53,17 @@ export function createWater(panorama: THREE.Texture, scene: SceneSimulation, poi
       uniform float time;
       uniform float night;
       uniform sampler2D rippleMap;
-      uniform sampler2D panorama;
-      uniform float panoramaRotation;
-      uniform vec2 panoramaHaze;
       uniform vec3 deepColor;
       uniform vec3 shallowColor;
       uniform vec3 skyColor;
+      uniform vec2 fogDensity;
+      uniform float opacityFloor;
       varying vec3 worldPoint;
       varying float depth;
       varying vec3 current;
       const float PI = 3.14159265359;
       const mat2 ROTATE = mat2(0.8, -0.6, 0.6, 0.8);
-      ${PANORAMA_SAMPLING_GLSL}
+      ${reflection.fragmentShader}
 
       vec3 ripple(vec2 point, float scale, vec2 velocity) {
         // Two overlapping phases reset the advection before curved currents can stretch UVs.
@@ -78,18 +74,6 @@ export function createWater(panorama: THREE.Texture, scene: SceneSimulation, poi
         vec3 a = texture2D(rippleMap, uv - velocity * (phaseA / 0.075) * scale).rgb;
         vec3 b = texture2D(rippleMap, uv - velocity * (phaseB / 0.075) * scale).rgb;
         return (mix(a, b, blend) * 2.0 - 1.0);
-      }
-
-      vec3 reflectedSky(vec3 ray) {
-        // Match the sky dome's rotation and native spherical projection.
-        vec3 localRay = normalize(vec3(
-          cos(panoramaRotation) * ray.x - sin(panoramaRotation) * ray.z,
-          ray.y,
-          sin(panoramaRotation) * ray.x + cos(panoramaRotation) * ray.z));
-        vec2 uv = vec2(fract(atan(localRay.z, -localRay.x) / (2.0 * PI)),
-          0.5 + asin(clamp(localRay.y, -1.0, 1.0)) / PI);
-        return mix(skyColor, sampleDistantPanorama(panorama, uv).rgb,
-          smoothstep(panoramaHaze.x, panoramaHaze.y, uv.y));
       }
 
       void main() {
@@ -130,31 +114,70 @@ export function createWater(panorama: THREE.Texture, scene: SceneSimulation, poi
         float wash = sin(waterDepth * 14.0 - time * 1.1 + broad.b * 3.0);
         float foam = smoothstep(0.45, 0.85, wash) * smoothstep(-0.12, 0.5, medium.b);
         water = mix(water, vec3(0.60, 0.70, 0.61), shore * foam * 0.26 * mediumVisible);
-        float fog = 1.0 - exp(-pow(distanceToCamera * mix(0.00022, 0.00030, night), 2.0));
+        float fog = 1.0 - exp(-pow(distanceToCamera * mix(fogDensity.x, fogDensity.y, night), 2.0));
         // Clip the tiny depth-offset overlap with dry banks after derivative-based sampling.
-        if (depth <= 0.0) discard;
+        ${options.clipDry === false ? '' : 'if (depth <= 0.0) discard;'}
         // Clear shallows let a shoal just under the surface remain readable from a low flight.
         // At grazing angles Fresnel reflection still conceals underwater detail naturally.
         float alpha = mix(0.32, 0.72, smoothstep(0.0, 7.0, waterDepth));
         alpha = mix(alpha, 0.98, fresnel);
-        gl_FragColor = vec4(mix(water, skyColor, fog), alpha);
+        gl_FragColor = vec4(${options.fogAfterToneMapping ? 'water' : 'mix(water, skyColor, fog)'}, max(alpha, opacityFloor));
         #include <tonemapping_fragment>
+        ${options.fogAfterToneMapping ? 'gl_FragColor.rgb = mix(gl_FragColor.rgb, skyColor, fog);' : ''}
         #include <colorspace_fragment>
       }
     `,
   });
-  material.transparent = true;
-  material.depthWrite = false;
+  material.transparent = !options.opaque;
+  material.depthWrite = !!options.opaque;
+  return material;
+}
+
+export function setWaterNight(material: THREE.ShaderMaterial, enabled: boolean,
+  skyColor = enabled ? '#101e32' : '#b0c9d5') {
+  material.uniforms.night.value = enabled ? 1 : 0;
+  material.uniforms.deepColor.value.set(enabled ? '#071c30' : '#123e49');
+  material.uniforms.shallowColor.value.set(enabled ? '#183c4a' : '#447b69');
+  material.uniforms.skyColor.value.set(skyColor);
+}
+
+/** A level collision surface with animated, filtered optical waves above its carved bed. */
+export function createWater(panorama: THREE.Texture, scene: SceneSimulation, points: Float32Array, heights: Float32Array, panoramaRotation: number, panoramaHaze: THREE.Vector2) {
+  const group = new THREE.Group();
+  group.name = 'Lakes and flowing river';
+  const geometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, 300, 300);
+  geometry.rotateX(-Math.PI / 2);
+  const { depths, currents } = scene.waterData(points, heights);
+  geometry.setAttribute('waterDepth', new THREE.BufferAttribute(depths, 1));
+  geometry.setAttribute('waterCurrent', new THREE.BufferAttribute(currents, 3));
+  const ripples = createRippleTexture(scene.ripplePixels());
+  const material = createWaterMaterial(ripples, {
+    uniforms: { panorama: { value: panorama }, panoramaRotation: { value: panoramaRotation }, panoramaHaze: { value: panoramaHaze } },
+    fragmentShader: `
+      uniform sampler2D panorama;
+      uniform float panoramaRotation;
+      uniform vec2 panoramaHaze;
+      ${PANORAMA_SAMPLING_GLSL}
+      vec3 reflectedSky(vec3 ray) {
+        // Match the sky dome's rotation and native spherical projection.
+        vec3 localRay = normalize(vec3(
+          cos(panoramaRotation) * ray.x - sin(panoramaRotation) * ray.z,
+          ray.y,
+          sin(panoramaRotation) * ray.x + cos(panoramaRotation) * ray.z));
+        vec2 uv = vec2(fract(atan(localRay.z, -localRay.x) / (2.0 * PI)),
+          0.5 + asin(clamp(localRay.y, -1.0, 1.0)) / PI);
+        return mix(skyColor, sampleDistantPanorama(panorama, uv).rgb,
+          smoothstep(panoramaHaze.x, panoramaHaze.y, uv.y));
+      }
+    `,
+  });
   const surface = new THREE.Mesh(geometry, material);
   surface.position.set(0, WATER_LEVEL + 0.025, WORLD_CENTER_Z);
   group.add(surface);
   return {
     group,
     setNight(enabled: boolean) {
-      material.uniforms.night.value = enabled ? 1 : 0;
-      material.uniforms.deepColor.value.set(enabled ? '#071c30' : '#123e49');
-      material.uniforms.shallowColor.value.set(enabled ? '#183c4a' : '#447b69');
-      material.uniforms.skyColor.value.set(enabled ? '#101e32' : '#b0c9d5');
+      setWaterNight(material, enabled);
     },
     update(time: number) { material.uniforms.time.value = time; },
     dispose() {
