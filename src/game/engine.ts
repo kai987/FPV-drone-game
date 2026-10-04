@@ -77,7 +77,7 @@ export class FlightEngine {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     const panoramaResolution = host.getBoundingClientRect().width * this.renderer.getPixelRatio() > 900
-      && this.renderer.capabilities.maxTextureSize >= 8192 ? 8192 : 4096;
+      && this.renderer.capabilities.maxTextureSize >= 7096 ? 7096 : 3548;
     try {
       this.runtime = createRustRuntime(flightCore);
       this.worldKernel = createWorldKernel(this.runtime);

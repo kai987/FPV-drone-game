@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PANORAMA_SAMPLING_GLSL } from './panorama-sampling.ts';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Checkpoint } from './flight';
 import {
@@ -65,7 +66,7 @@ function numberTexture(number: number): THREE.CanvasTexture {
 }
 
 export interface PanoramaOptions {
-  resolution?: 4096 | 8192;
+  resolution?: 3548 | 7096;
   maxAnisotropy?: number;
 }
 
@@ -110,9 +111,9 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   sun.shadow.radius = 3;
   scene.add(sun, sun.target);
 
-  // Use an open hilltop panorama: nearby trees in a forest photograph look like
-  // giant trees when mapped onto the distant sky. Keep the native 2:1 projection.
-  const panoramaAsset = panoramaOptions.resolution === 8192 ? 'open-hills-panorama-8k.webp' : 'open-hills-panorama-4k.webp';
+  // Preserve the alpine illustration's distant scale and 2:1 projection.
+  // These dimensions are the enhanced image's actual widths, not native 8K.
+  const panoramaAsset = panoramaOptions.resolution === 7096 ? 'alpine-panorama-hd.webp' : 'alpine-panorama-mobile.webp';
   const panorama = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/${panoramaAsset}`, () => {
     panoramaMesh.visible = true;
   });
@@ -131,20 +132,20 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
     shader.uniforms.panoramaHaze = { value: panoramaHaze };
     shader.uniforms.panoramaHorizonColor = panoramaHorizonColor;
     shader.fragmentShader = `uniform vec2 panoramaHaze;
-      uniform vec3 panoramaHorizonColor;\n` + shader.fragmentShader;
+      uniform vec3 panoramaHorizonColor;\n${PANORAMA_SAMPLING_GLSL}\n` + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
-      #include <map_fragment>
-      // A sky photograph's foreground is not terrain beyond the playable map.
+      ${THREE.ShaderChunk.map_fragment.replace('texture2D( map, vMapUv )', 'sampleDistantPanorama( map, vMapUv )')}
+      // The panorama's foreground is not terrain beyond the playable map.
       diffuseColor.rgb = mix(panoramaHorizonColor, diffuseColor.rgb,
         smoothstep(panoramaHaze.x, panoramaHaze.y, vMapUv.y));
     `);
   };
-  panoramaMaterial.customProgramCacheKey = () => 'distant-panorama-horizon-haze-v1';
+  panoramaMaterial.customProgramCacheKey = () => 'distant-panorama-horizon-haze-wrap-v2';
   const panoramaMesh = new THREE.Mesh(
     ownGeometry(new THREE.SphereGeometry(5400, 96, 48)),
     panoramaMaterial,
   );
-  const panoramaRotation = 0;
+  const panoramaRotation = Math.PI / 2;
   // Show the scene's sky colour while the larger image downloads and decodes.
   panoramaMesh.visible = false;
   panoramaMesh.position.set(0, 0, WORLD_CENTER_Z);

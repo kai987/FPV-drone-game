@@ -144,6 +144,6 @@ docs/design.md              设计、素材与视觉验证说明
 
 ## 美术与许可
 
-远山与云层使用 Poly Haven 的 [Fouriesburg Mountain Midday](https://polyhaven.com/a/fouriesburg_mountain_midday) 真实全景摄影（Dimitrios Savva摄影、Jarod Guest处理，CC0），提供8192×4096的8K及4096×2048的4K WebP，按实际画面宽度和GPU能力自动选择；河湖反射共用此全景。全景包含开阔远山、蓝天积云与低植被，没有近景高树伸入天空。透明松树、草地与风化岩石纹理由内置 Image Gen 生成，已随仓库提供。素材来源与许可见 [asset-licenses.md](./docs/asset-licenses.md)。松树用实例化交叉贴图节省 GPU 开销，地形和飞行环是原生三维几何体。HUD 与所有操作控件使用 HTML/SVG。字体为 Manrope / Noto Sans SC，可用时从 Google Fonts 加载，离线时回退到系统字体；图标使用 Lucide。
+远山与云层采用参考图的雪峰、松林山谷和蓝天白云风格，由内置 Image Gen 生成1774×887图像，再经Real-ESRGAN的4倍超分辨率处理，提供7096×3548的高清WebP及3548×1774的手机版，按实际画面宽度和GPU能力自动选择。这是超分辨率增强素材，不能视为原生7K/8K摄影；河湖反射共用此全景。背景树木位于地平线以下，并平滑过渡为雾色，保持地图树林的比例。透明松树、草地与风化岩石纹理也由内置 Image Gen 生成，已随仓库提供。生成提示词、处理方式与素材来源见 [asset-licenses.md](./docs/asset-licenses.md)。松树用实例化交叉贴图节省 GPU 开销，地形和飞行环是原生三维几何体。HUD 与所有操作控件使用 HTML/SVG。字体为 Manrope / Noto Sans SC，可用时从 Google Fonts 加载，离线时回退到系统字体；图标使用 Lucide。
 
 源码采用仓库的 [MIT License](./LICENSE)。游戏运行不调用生成式 AI API。

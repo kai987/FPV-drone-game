@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TERRAIN_SIZE, WATER_LEVEL, WORLD_CENTER_Z } from './landscape.ts';
 import type { SceneSimulation } from './scene-simulation.ts';
+import { PANORAMA_SAMPLING_GLSL } from './panorama-sampling.ts';
 
 /** Seamless slope texture: integer frequencies wrap exactly, and mipmaps filter tiny ripples. */
 function createRippleTexture(scene: SceneSimulation) {
@@ -66,6 +67,7 @@ export function createWater(panorama: THREE.Texture, scene: SceneSimulation, poi
       varying vec3 current;
       const float PI = 3.14159265359;
       const mat2 ROTATE = mat2(0.8, -0.6, 0.6, 0.8);
+      ${PANORAMA_SAMPLING_GLSL}
 
       vec3 ripple(vec2 point, float scale, vec2 velocity) {
         // Two overlapping phases reset the advection before curved currents can stretch UVs.
@@ -86,7 +88,7 @@ export function createWater(panorama: THREE.Texture, scene: SceneSimulation, poi
           sin(panoramaRotation) * ray.x + cos(panoramaRotation) * ray.z));
         vec2 uv = vec2(fract(atan(localRay.z, -localRay.x) / (2.0 * PI)),
           0.5 + asin(clamp(localRay.y, -1.0, 1.0)) / PI);
-        return mix(skyColor, texture2D(panorama, uv).rgb,
+        return mix(skyColor, sampleDistantPanorama(panorama, uv).rgb,
           smoothstep(panoramaHaze.x, panoramaHaze.y, uv.y));
       }
 
