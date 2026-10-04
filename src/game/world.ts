@@ -64,7 +64,7 @@ export interface PanoramaOptions {
 }
 
 export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaOptions: PanoramaOptions = {}, mapId: MapId = DEFAULT_MAP_ID) {
-  if (mapId !== 'valley') return createUrbanWorld(runtime, kernel, getMapSpec(mapId), panoramaOptions);
+  if (mapId !== 'valley') return { ...createUrbanWorld(runtime, kernel, getMapSpec(mapId), panoramaOptions), ready: Promise.resolve() };
   const groundHeight = (x: number, z: number) => kernel.groundHeight(x, z);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#adcadf');
@@ -72,6 +72,22 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   const geometryResources = new Set<THREE.BufferGeometry>();
   const materialResources = new Set<THREE.Material>();
   const textureResources = new Set<THREE.Texture>();
+  let disposed = false;
+  const textureLoads: Promise<void>[] = [];
+  const loadTexture = (asset: string, onLoad?: () => void) => {
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    const ready = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+    // A synchronous scene-construction error must not leave a later network rejection unhandled.
+    void ready.catch(() => {});
+    textureLoads.push(ready);
+    const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/${asset}`, () => {
+      if (!disposed) onLoad?.();
+      resolve();
+    }, undefined, () => reject(new Error(`地图纹理加载失败：${asset}`)));
+    textureResources.add(texture);
+    return texture;
+  };
   const ownGeometry = <T extends THREE.BufferGeometry>(geometry: T): T => {
     geometryResources.add(geometry);
     return geometry;
@@ -108,7 +124,7 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   // Preserve the alpine illustration's distant scale and 2:1 projection.
   // These dimensions are the enhanced image's actual widths, not native 8K.
   const panoramaAsset = panoramaOptions.resolution === 7096 ? 'alpine-panorama-hd.webp' : 'alpine-panorama-mobile.webp';
-  const panorama = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/${panoramaAsset}`, () => {
+  const panorama = loadTexture(panoramaAsset, () => {
     panoramaMesh.visible = true;
   });
   panorama.colorSpace = THREE.SRGBColorSpace;
@@ -148,13 +164,13 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   const nightSky = createNightSky();
   scene.add(nightSky.group);
 
-  const grassTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/grass-texture.jpg`);
+  const grassTexture = loadTexture('grass-texture.jpg');
   grassTexture.colorSpace = THREE.SRGBColorSpace;
   grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
   grassTexture.repeat.set(TERRAIN_SIZE / 13, TERRAIN_SIZE / 13);
   grassTexture.anisotropy = 8;
   textureResources.add(grassTexture);
-  const rockTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/weathered-rock.jpg`);
+  const rockTexture = loadTexture('weathered-rock.jpg');
   rockTexture.colorSpace = THREE.SRGBColorSpace;
   rockTexture.wrapS = rockTexture.wrapT = THREE.RepeatWrapping;
   rockTexture.anisotropy = 8;
@@ -256,7 +272,7 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   const treeData = sceneData.placements.trees;
   for (const tree of treeData) obstacles.push({ x: tree.x, z: tree.z, radius: 0.35 + tree.height * 0.016, height: tree.height });
   const transform = new THREE.Object3D();
-  const pineTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/pine-tree.png`);
+  const pineTexture = loadTexture('pine-tree.png');
   pineTexture.colorSpace = THREE.SRGBColorSpace;
   pineTexture.anisotropy = 4;
   textureResources.add(pineTexture);
@@ -403,11 +419,13 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   }
   scene.add(markers);
 
-  let disposed = false;
   let nightMode = false;
+  const ready = Promise.all(textureLoads).then(() => {});
+  void ready.catch(() => {});
   return {
     scene,
     obstacles,
+    ready,
     setNight(enabled: boolean) {
       nightMode = enabled;
       scene.background = new THREE.Color(enabled ? '#091425' : '#adcadf');
