@@ -7,6 +7,7 @@ import {
   RELOAD_TIME, TARGETS, TIMER_EPSILON,
 } from './weapons.ts';
 import type { WeaponState } from './weapons.ts';
+import type { Target } from './weapons.ts';
 
 const MAX_TARGETS = 16;
 const INPUT_LENGTH = 51;
@@ -32,9 +33,9 @@ function packetCount(value: number, maximum: number): number {
 }
 
 /** A single shared-memory packet carries every active projectile and explosion. */
-export function createWeaponSimulation(runtime: RustRuntime, world: WorldKernel): WeaponSimulation {
+export function createWeaponSimulation(runtime: RustRuntime, world: WorldKernel, targets: readonly Target[] = TARGETS): WeaponSimulation {
   if (runtime.call('weapons_input_len') !== INPUT_LENGTH
-    || runtime.call('weapons_output_len') !== OUTPUT_LENGTH || TARGETS.length > MAX_TARGETS) {
+    || runtime.call('weapons_output_len') !== OUTPUT_LENGTH || targets.length > MAX_TARGETS) {
     throw new Error('Unsupported Rust weapon interface');
   }
   const handle = runtime.call('weapons_new', world.handle);
@@ -45,7 +46,7 @@ export function createWeaponSimulation(runtime: RustRuntime, world: WorldKernel)
     const output = runtime.view(outputPointer, OUTPUT_LENGTH);
     const bombCount = packetCount(output[5], MAX_ACTIVE_BOMBS);
     const explosionCount = packetCount(output[6], MAX_ACTIVE_EXPLOSIONS);
-    const hitCount = packetCount(output[7], TARGETS.length);
+    const hitCount = packetCount(output[7], targets.length);
     return {
       ammo: output[0], reloadRemaining: output[1], cooldown: output[2],
       score: output[3], nextId: output[4],
@@ -62,8 +63,8 @@ export function createWeaponSimulation(runtime: RustRuntime, world: WorldKernel)
           age: output[offset + 4], hitCount: output[offset + 5] };
       }),
       hitTargetIds: Array.from({ length: hitCount }, (_, index) => {
-        const targetIndex = packetCount(output[TARGET_OFFSET + index], TARGETS.length - 1);
-        return TARGETS[targetIndex].id;
+        const targetIndex = packetCount(output[TARGET_OFFSET + index], targets.length - 1);
+        return targets[targetIndex].id;
       }),
     };
   };
@@ -72,8 +73,8 @@ export function createWeaponSimulation(runtime: RustRuntime, world: WorldKernel)
     input.fill(0);
     input.set([BOMB_CAPACITY, BOMB_GRAVITY, DROP_COOLDOWN, RELOAD_TIME, BLAST_RADIUS,
       EXPLOSION_LIFETIME, MAX_ACTIVE_BOMBS, MAX_ACTIVE_EXPLOSIONS, MAX_SUBSTEP,
-      MAX_SUBSTEPS, TIMER_EPSILON, TARGETS.length]);
-    TARGETS.forEach((target, index) => input.set([target.position.x, target.position.z], 12 + index * 2));
+      MAX_SUBSTEPS, TIMER_EPSILON, targets.length]);
+    targets.forEach((target, index) => input.set([target.position.x, target.position.z], 12 + index * 2));
     if (runtime.call('weapons_configure', handle) !== 1) throw new Error('Invalid shared weapon configuration');
   } catch (error) {
     runtime.call('weapons_free', handle);

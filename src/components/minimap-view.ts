@@ -2,7 +2,7 @@ export type MapView = 'world' | 'route';
 export interface MapBounds { minX: number; maxX: number; minZ: number; maxZ: number }
 export interface MapPosition { x: number; z: number }
 export interface MapPoint { x: number; y: number }
-export interface MapViewportOptions { center?: MapPosition; follow?: boolean }
+export interface MapViewportOptions { center?: MapPosition; follow?: boolean; routeBounds?: MapBounds }
 export interface MapViewportSize { width: number; height: number }
 
 export const ZOOM_LEVELS = [1, 2, 4, 8] as const;
@@ -31,7 +31,7 @@ export function centerMapBounds(bounds: MapBounds, center: MapPosition, world: M
 
 /** Optional centers retain a manual view; explicit follow also works at 1×. */
 export function getMapBounds(view: MapView, zoom: number, position: MapPosition, world: MapBounds, options: MapViewportOptions = {}): MapBounds {
-  const base = view === 'world' ? world : ROUTE_BOUNDS;
+  const base = view === 'world' ? world : options.routeBounds ?? ROUTE_BOUNDS;
   const factor = clamp(zoom, ZOOM_LEVELS[0], ZOOM_LEVELS[ZOOM_LEVELS.length - 1]);
   const width = Math.min((base.maxX - base.minX) / factor, world.maxX - world.minX);
   const depth = Math.min((base.maxZ - base.minZ) / factor, world.maxZ - world.minZ);

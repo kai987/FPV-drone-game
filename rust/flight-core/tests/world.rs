@@ -1,5 +1,5 @@
 use flight_core::flight::Vec3;
-use flight_core::world::{Bridge, Cabin, Lake, Obstacle, Pasture, RiverSample, World};
+use flight_core::world::{Bridge, Cabin, Lake, Obstacle, Pasture, RiverSample, UrbanBox, World};
 
 fn world() -> World {
     World::new(
@@ -192,4 +192,126 @@ fn malformed_uploaded_geometry_is_rejected_before_building_a_world() {
         ])
         .is_none()
     );
+}
+
+#[test]
+fn factory_map_is_flat_dry_and_does_not_inherit_rural_structures() {
+    let mut world = world();
+    assert!(world.set_map_kind(1));
+    assert!(!world.set_map_kind(3));
+    for (x, z) in [(0.0, 0.0), (100.0, 0.0), (300.0, 0.0), (-1800.0, -2500.0)] {
+        near(world.ground_height(x, z), 2.0);
+        near(world.surface_height(x, z), 2.0);
+        near(world.flight_surface_height(x, z, f64::INFINITY), 2.0);
+        assert_eq!(world.water_distance(x, z), f64::INFINITY);
+        assert!(!world.is_water(x, z));
+        assert!(world.clearance(x, z, 0.0));
+    }
+    assert!(world.rural_surface_height(100.0, 0.0).is_none());
+}
+
+#[test]
+fn harbor_coast_and_piers_share_exact_dry_union_and_underwater_slope() {
+    let mut world = world();
+    assert!(world.set_map_kind(2));
+    near(world.water_distance(100.0, 0.0), 40.0);
+    near(world.water_distance(180.0, 0.0), -40.0);
+    // The buried west edge of a connected pier must not become a shore.
+    near(world.water_distance(150.0, -120.0), 35.0);
+    near(world.water_distance(140.0, -120.0), 35.0);
+    near(world.water_distance(380.0, -120.0), 0.0);
+    near(world.water_distance(385.0, -120.0), -5.0);
+    near(world.water_distance(385.0, -80.0), -5.0_f64.hypot(5.0));
+    for (east, z) in [(380.0, -120.0), (430.0, -430.0), (350.0, -750.0)] {
+        assert!(!world.is_water(150.0, z));
+        assert!(!world.is_water(east, z));
+        assert!(world.is_water(east + 0.001, z));
+        near(world.ground_height(east, z), 2.0);
+        near(world.surface_height(east + 10.0, z), -2.0);
+    }
+    near(world.ground_height(900.0, 0.0), -18.0);
+    assert!(world.ground_height(141.0, 0.0) > world.ground_height(160.0, 0.0));
+    assert!(world.ground_height(160.0, 0.0) > world.ground_height(230.0, 0.0));
+}
+
+#[test]
+fn rotated_boxes_use_their_outline_and_keep_elevated_passages_open() {
+    let mut world = world();
+    world.set_map_kind(1);
+    let yaw = std::f64::consts::FRAC_PI_4;
+    let center = UrbanBox {
+        x: 63.8,
+        z: -64.0,
+        width: 20.0,
+        depth: 2.0,
+        base: 10.0,
+        height: 4.0,
+        yaw,
+    };
+    world.set_boxes(vec![center]);
+    let point = |x: f64, z: f64, y| Vec3 {
+        x: center.x + x * yaw.cos() + z * yaw.sin(),
+        z: center.z - x * yaw.sin() + z * yaw.cos(),
+        y,
+    };
+    assert!(world.intersects_obstacle(point(9.5, 0.5, 12.0)));
+    assert!(!world.intersects_obstacle(point(0.0, 5.0, 12.0)));
+    assert!(!world.intersects_obstacle(point(10.5, 1.5, 12.0)));
+    assert!(world.intersects_obstacle(point(10.3, 1.3, 12.0)));
+    assert!(!world.intersects_obstacle(point(0.0, 0.0, 9.0)));
+    near(world.flight_surface_height(center.x, center.z, 9.0), 2.0);
+    near(world.flight_surface_height(center.x, center.z, 14.0), 14.0);
+    let outside = point(0.0, 5.0, 12.0);
+    near(world.surface_height(outside.x, outside.z), 2.0);
+    assert!(world.clearance(outside.x, outside.z, 3.0));
+    assert!(!world.clearance(outside.x, outside.z, 4.0));
+    world.set_boxes(vec![]);
+    assert!(!world.intersects_obstacle(point(0.0, 0.0, 12.0)));
+    near(world.surface_height(center.x, center.z), 2.0);
+}
+
+#[test]
+fn stacked_boxes_select_the_highest_reachable_lower_roof() {
+    let mut world = world();
+    world.set_map_kind(1);
+    world.set_boxes(vec![
+        UrbanBox {
+            x: 0.0,
+            z: 0.0,
+            width: 20.0,
+            depth: 12.0,
+            base: 2.0,
+            height: 6.0,
+            yaw: 0.0,
+        },
+        UrbanBox {
+            x: 0.0,
+            z: 0.0,
+            width: 4.0,
+            depth: 4.0,
+            base: 8.0,
+            height: 5.0,
+            yaw: 0.0,
+        },
+        UrbanBox {
+            x: 0.0,
+            z: 0.0,
+            width: 10.0,
+            depth: 2.0,
+            base: 20.0,
+            height: 2.0,
+            yaw: 0.0,
+        },
+    ]);
+    near(world.surface_height(0.0, 0.0), 22.0);
+    near(world.flight_surface_height(0.0, 0.0, 30.0), 22.0);
+    near(world.flight_surface_height(0.0, 0.0, 18.0), 13.0);
+    near(world.flight_surface_height(0.0, 0.0, 10.0), 8.0);
+    near(world.flight_surface_height(0.0, 0.0, 6.0), 2.0);
+    near(world.flight_surface_height(7.0, 0.0, 30.0), 8.0);
+    assert!(!world.intersects_obstacle(Vec3 {
+        x: 0.0,
+        z: 0.0,
+        y: 17.0
+    }));
 }

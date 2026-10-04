@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { PANORAMA_SAMPLING_GLSL } from './panorama-sampling.ts';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { Checkpoint } from './flight';
+import { CHECKPOINTS } from './courses.ts';
+import { DEFAULT_MAP_ID, getMapSpec } from './map-catalog.ts';
+import type { MapId } from './map-catalog.ts';
+import { createUrbanWorld } from './urban-world.ts';
 import {
   WATER_LEVEL, TERRAIN_SIZE, WORLD_CENTER_Z,
 } from './landscape.ts';
@@ -17,17 +20,7 @@ import { createSceneSimulation } from './scene-simulation.ts';
 
 export { groundHeight } from './landscape.ts';
 
-/** The first two gates share a straight, level approach for a gentle first flight. */
-export const CHECKPOINTS: Checkpoint[] = [
-  { position: { x: 0, y: 12, z: 5 }, yaw: 0, radius: 7.1 },
-  { position: { x: 0, y: 12, z: -115 }, yaw: 0, radius: 7.1 },
-  { position: { x: 80, y: 17, z: -230 }, yaw: -0.48, radius: 7.1 },
-  { position: { x: 130, y: 25, z: -360 }, yaw: 0.38, radius: 7.1 },
-  { position: { x: 20, y: 22, z: -455 }, yaw: 1.51, radius: 7.1 },
-  { position: { x: -120, y: 18, z: -395 }, yaw: 2.5, radius: 7.1 },
-  { position: { x: -145, y: 14, z: -205 }, yaw: -2.94, radius: 7.1 },
-  { position: { x: -60, y: 12, z: -55 }, yaw: -2.51, radius: 7.1 },
-];
+export { CHECKPOINTS } from './courses.ts';
 
 export interface WorldObstacle {
   x: number;
@@ -70,7 +63,8 @@ export interface PanoramaOptions {
   maxAnisotropy?: number;
 }
 
-export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaOptions: PanoramaOptions = {}) {
+export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaOptions: PanoramaOptions = {}, mapId: MapId = DEFAULT_MAP_ID) {
+  if (mapId !== 'valley') return createUrbanWorld(runtime, kernel, getMapSpec(mapId), panoramaOptions);
   const groundHeight = (x: number, z: number) => kernel.groundHeight(x, z);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#adcadf');

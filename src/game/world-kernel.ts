@@ -1,5 +1,8 @@
 import { LAKES, RIVER_SAMPLES, WATER_LEVEL } from './landscape.ts';
 import { BRIDGES, CABINS, PASTURES } from './rural-layout.ts';
+import { getMapLayout } from './map-layout.ts';
+import type { UrbanBox } from './map-layout.ts';
+import type { MapId } from './map-catalog.ts';
 import type { Vec3 } from './flight.ts';
 import type { WorldObstacle } from './world.ts';
 import type { RustRuntime } from './rust-runtime.ts';
@@ -13,6 +16,7 @@ export interface WorldKernel {
   flightSurfaceHeight(x: number, z: number, fromY?: number): number;
   clearance(x: number, z: number, padding?: number): boolean;
   setObstacles(obstacles: readonly WorldObstacle[]): void;
+  setBoxes(boxes: readonly UrbanBox[]): void;
   intersectsObstacle(position: Vec3): boolean;
   /** Packed x,z pairs; heights/distances match Three.js Float32 attributes. */
   sampleTerrain(points: Float32Array | Float64Array): { heights: Float32Array; waterDistances: Float32Array };
@@ -20,7 +24,7 @@ export interface WorldKernel {
 }
 
 /** Upload scene geometry once; all numeric queries use the shared Rust instance. */
-export function createWorldKernel(runtime: RustRuntime): WorldKernel {
+export function createWorldKernel(runtime: RustRuntime, mapId: MapId = 'valley'): WorldKernel {
   const configuration = new Float64Array([
     WATER_LEVEL, RIVER_SAMPLES.length, LAKES.length, CABINS.length, BRIDGES.length, PASTURES.length,
     ...RIVER_SAMPLES.flatMap(sample => [sample.x, sample.z, sample.halfWidth]),
@@ -34,6 +38,9 @@ export function createWorldKernel(runtime: RustRuntime): WorldKernel {
   try {
     runtime.view(runtime.call('world_config_ptr', handle), configuration.length).set(configuration);
     if (runtime.call('world_configure', handle) !== 1) throw new Error('World geometry configuration is invalid');
+    if (runtime.call('world_set_map_kind', handle, mapId === 'factory' ? 1 : mapId === 'harbor' ? 2 : 0) !== 1) {
+      throw new Error('World map configuration is invalid');
+    }
   } catch (error) { runtime.call('world_free', handle); throw error; }
   const queryPointer = runtime.call('world_query_ptr', handle);
   const batchCapacity = runtime.call('world_batch_capacity');
@@ -47,7 +54,7 @@ export function createWorldKernel(runtime: RustRuntime): WorldKernel {
     buffer[0] = x; buffer[1] = z; buffer[2] = parameter;
     return runtime.call('world_query', handle, kind);
   };
-  return {
+  const world: WorldKernel = {
     get handle() { live(); return handle; },
     groundHeight: (x, z) => query(0, x, z),
     waterDistance: (x, z) => query(1, x, z),
@@ -66,6 +73,16 @@ export function createWorldKernel(runtime: RustRuntime): WorldKernel {
       ], index * 6));
       if (runtime.call('world_set_obstacles', handle, obstacles.length) !== 1) throw new Error('World obstacles are invalid');
     },
+    setBoxes(boxes) {
+      live();
+      const pointer = runtime.call('world_boxes_alloc', handle, boxes.length);
+      if (!pointer) throw new Error('World box allocation failed');
+      const buffer = runtime.view(pointer, boxes.length * 7);
+      boxes.forEach((box, index) => buffer.set([
+        box.x, box.z, box.width, box.depth, box.base, box.height, box.yaw ?? 0,
+      ], index * 7));
+      if (runtime.call('world_set_boxes', handle, boxes.length) !== 1) throw new Error('World boxes are invalid');
+    },
     sampleTerrain(points) {
       live();
       if (points.length % 2 !== 0) throw new Error('Terrain samples require packed x,z pairs');
@@ -83,4 +100,8 @@ export function createWorldKernel(runtime: RustRuntime): WorldKernel {
     },
     dispose() { if (disposed) return; disposed = true; runtime.call('world_free', handle); },
   };
+  try {
+    if (mapId !== 'valley') world.setBoxes(getMapLayout(mapId).boxes);
+  } catch (error) { world.dispose(); throw error; }
+  return world;
 }
