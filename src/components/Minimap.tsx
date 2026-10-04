@@ -8,6 +8,7 @@ import { getMapLayout, HARBOR_PIERS, HARBOR_SHORE_X } from '../game/map-layout';
 import type { UrbanBox } from '../game/map-layout';
 import { getUrbanRoadNetwork } from '../game/urban-roads';
 import { BRIDGES, CABINS, FISH_SCHOOLS } from '../game/rural-layout';
+import { useI18n } from '../i18n/context';
 import { beginMapDrag, centerMapBounds, clamp, createProjection, formatMapSpan, getMapBounds, getMapCenter, isOutsideBounds, panMapBounds, ZOOM_LEVELS } from './minimap-view.ts';
 import type { MapBounds, MapPoint, MapPosition, MapView, MapViewportSize } from './minimap-view.ts';
 import './Minimap.css';
@@ -74,6 +75,7 @@ function stopMapInteraction(event: SyntheticEvent) {
 }
 
 export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
+  const { t } = useI18n();
   const selectedMap = getMapSpec(mapId);
   const worldBounds = selectedMap.bounds;
   const layout = getMapLayout(mapId);
@@ -224,17 +226,32 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
   const followLabel = cameraMode === 'manual' || outsideView ? '回到无人机' : cameraMode === 'follow' ? '跟随中' : '跟随';
   const { wind } = telemetry;
   const calm = wind.speed < 0.1;
-  const windLabel = calm ? '无风' : `${wind.directionLabel}风`;
+  const windLabel = calm ? t('无风') : t('{direction}风', { direction: t(wind.directionLabel) });
   const geographyLabel = isValley ? '蓝色为河流湖泊，浅蓝鱼形标记为鱼群，米色为小屋和桥'
     : mapId === 'factory' ? '深灰为道路，白色条带为斑马线，灰色为厂房和工业设施，金色为堆箱，圆点为厂房和储罐地标'
       : '蓝色为海面，深灰为道路，白色条带为斑马线，米色为码头，灰色为仓库和货轮，金色为堆箱，圆点为桥吊和灯塔地标';
+  const landscapeLabel = isValley ? '河流、湖泊、小屋、小桥、鱼群' : mapId === 'factory' ? '厂房、储罐、烟囱、堆箱' : '海岸、码头、仓库、堆箱、桥吊、货轮';
+  const landmarkLabel = (label: string) => {
+    const numbered = label.match(/^(储罐|桥吊) (\d+)$/);
+    if (numbered) return t(numbered[1] === '储罐' ? '储罐 {number}' : '桥吊 {number}', { number: numbered[2] });
+    const ship = label.match(/^货轮 (.+)$/);
+    if (ship) return t('货轮 {name}', { name: t(ship[1]) });
+    const industrial = label.match(/^(NORTH|SOUTH) (WORKS|TERMINAL) (\d+)$/);
+    if (industrial) return t(`${industrial[1]} ${industrial[2]} {number}`, { number: industrial[3] });
+    return t(label);
+  };
+  const overviewLabel = t('{name}{view}，{zoom} 倍，{camera}，{geography}，橙色为未命中靶标', {
+    name: t(selectedMap.name), view: t(isWorld ? '全域地图' : '航线地图'), zoom,
+    camera: t(cameraMode === 'follow' ? '跟随无人机' : cameraMode === 'manual' ? '自由浏览' : '预设总览'),
+    geography: t(geographyLabel),
+  });
 
   return (
-    <div className={`minimap geographic-minimap${isWorld ? ' minimap-world' : ''}`} aria-label={`${selectedMap.name}小地图，${isValley ? '河流、湖泊、小屋、小桥、鱼群' : mapId === 'factory' ? '厂房、储罐、烟囱、堆箱' : '海岸、码头、仓库、堆箱、桥吊、货轮'}、当前位置、检查点与投弹靶标`} data-map-mode={cameraMode} data-map-id={mapId}
+    <div className={`minimap geographic-minimap${isWorld ? ' minimap-world' : ''}`} aria-label={t('{name}小地图，{landscape}、当前位置、检查点与投弹靶标', { name: t(selectedMap.name), landscape: t(landscapeLabel) })} data-map-mode={cameraMode} data-map-id={mapId}
       onClick={stopMapInteraction} onDoubleClick={stopMapInteraction} onPointerDown={stopMapInteraction} onKeyDown={stopMapInteraction}>
       <div className={`minimap-wind${calm ? ' is-calm' : ''}`} role="img"
-        aria-label={`风向：${windLabel}，${wind.speed.toFixed(1)} 米每秒${calm ? '' : '；箭头表示风吹向，地图上方为北'}`}>
-        <span className="minimap-wind-caption">{calm ? '风向' : '风吹向'}</span>
+        aria-label={t(calm ? '风向：{direction}，{speed} 米每秒' : '风向：{direction}，{speed} 米每秒；箭头表示风吹向，地图上方为北', { direction: windLabel, speed: wind.speed.toFixed(1) })}>
+        <span className="minimap-wind-caption">{t(calm ? '风向' : '风吹向')}</span>
         <div className="minimap-wind-compass" aria-hidden="true">
           <span>N</span>
           {calm ? <i className="minimap-wind-calm" /> : <svg className="minimap-wind-arrow" viewBox="0 0 24 24"
@@ -246,22 +263,22 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
       </div>
       <div className="map-heading">
         <div className="minimap-heading-controls">
-          <div className="minimap-modes" role="group" aria-label="地图范围">
-            <button type="button" aria-pressed={isWorld} onClick={() => selectView('world')} title="恢复全域总览，1 倍">全域</button>
-            <button type="button" aria-pressed={!isWorld} onClick={() => selectView('route')} title="恢复航线总览，1 倍">航线</button>
+          <div className="minimap-modes" role="group" aria-label={t('地图范围')}>
+            <button type="button" aria-pressed={isWorld} onClick={() => selectView('world')} title={t('恢复全域总览，1 倍')}>{t('全域')}</button>
+            <button type="button" aria-pressed={!isWorld} onClick={() => selectView('route')} title={t('恢复航线总览，1 倍')}>{t('航线')}</button>
           </div>
           <button className="minimap-follow" type="button" aria-pressed={cameraMode === 'follow'}
-            onClick={followDrone} aria-label="回到无人机并自动跟随" title={cameraMode === 'follow' ? '正在跟随无人机；拖动可自由浏览' : '回到无人机并自动跟随'}>
-            <span className="minimap-follow-full">{followLabel}</span><span className="minimap-follow-short">跟随</span>
+            onClick={followDrone} aria-label={t('回到无人机并自动跟随')} title={t(cameraMode === 'follow' ? '正在跟随无人机；拖动可自由浏览' : '回到无人机并自动跟随')}>
+            <span className="minimap-follow-full">{t(followLabel)}</span><span className="minimap-follow-short">{t('跟随')}</span>
           </button>
         </div>
         <span>N ↑</span>
       </div>
       <svg className={`minimap-pan-surface${canPan ? ' can-pan' : ''}${dragging ? ' is-dragging' : ''}`} viewBox="0 0 180 150" role="img" tabIndex={0}
-        aria-describedby={panHelpId} aria-label={`${selectedMap.name}${isWorld ? '全域地图' : '航线地图'}，${zoom} 倍，${cameraMode === 'follow' ? '跟随无人机' : cameraMode === 'manual' ? '自由浏览' : '预设总览'}，${geographyLabel}，橙色为未命中靶标${outsideView ? '；无人机在当前视窗外，点击回到无人机查看' : ''}`}
+        aria-describedby={panHelpId} aria-label={outsideView ? t('{overview}；无人机在当前视窗外，点击回到无人机查看', { overview: overviewLabel }) : overviewLabel}
         data-map-center-x={center.x} data-map-center-z={center.z}
         onPointerDown={startPan} onPointerMove={movePan} onPointerUp={finishPan} onPointerCancel={finishPan} onLostPointerCapture={finishPan} onKeyDown={keyboardPan}>
-        <title>{canPan ? '拖动或使用方向键浏览；Home 回到无人机' : '全域已完整显示，放大后可拖动浏览'}</title>
+        <title>{t(canPan ? '拖动或使用方向键浏览；Home 回到无人机' : '全域已完整显示，放大后可拖动浏览')}</title>
         <defs>
           <pattern id={gridId} width="30" height="25" patternUnits="userSpaceOnUse">
             <path d="M 30 0 L 0 0 0 25" fill="none" stroke="currentColor" strokeOpacity="0.09" strokeWidth="0.6" />
@@ -274,34 +291,34 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
         <g clipPath={`url(#${clipId})`}>
           <rect width="180" height="150" fill={`url(#${gridId})`} />
           {!isValley && <>
-            {mapId === 'harbor' && <rect x={geography.shore.x} y={geography.shore.y} width={geography.seaCorner.x - geography.shore.x} height={geography.seaCorner.y - geography.shore.y} fill="#6094a8" fillOpacity="0.72"><title>海岸与港口水区</title></rect>}
-            <g aria-label="道路与十字路口">
+            {mapId === 'harbor' && <rect x={geography.shore.x} y={geography.shore.y} width={geography.seaCorner.x - geography.shore.x} height={geography.seaCorner.y - geography.shore.y} fill="#6094a8" fillOpacity="0.72"><title>{t('海岸与港口水区')}</title></rect>}
+            <g aria-label={t('道路与十字路口')}>
               {geography.roads.map((road, index) => <rect key={`road-${index}`} x={road.position.x - road.width / 2} y={road.position.y - road.depth / 2} width={road.width} height={road.depth} fill="#192524" fillOpacity="0.85" />)}
               {!compactSymbols && geography.crossings.map((crossing, index) => <rect key={`crossing-${index}`} x={crossing.position.x - crossing.width / 2} y={crossing.position.y - crossing.depth / 2} width={crossing.width} height={crossing.depth} fill="#eeeedb" fillOpacity="0.85" />)}
             </g>
             {geography.urbanBoxes.map(box => <rect key={box.key} x={-box.width / 2} y={-box.depth / 2} width={box.width} height={box.depth}
               transform={`translate(${box.position.x} ${box.position.y}) rotate(${-(box.yaw ?? 0) * 180 / Math.PI})`} fill={box.color} fillOpacity="0.72" stroke="#202f2a" strokeWidth="0.25" />)}
             {geography.ships.map(ship => <g key={ship.id} transform={`translate(${ship.position.x} ${ship.position.y})`}>
-              <title>货轮 {ship.name}</title>
+              <title>{t('货轮 {name}', { name: t(ship.name) })}</title>
               <path d={`M 0 ${-ship.length / 2} L ${ship.width / 2} ${-ship.length / 2 + ship.width / 2} L ${ship.width / 2} ${ship.length / 2} L ${-ship.width / 2} ${ship.length / 2} L ${-ship.width / 2} ${-ship.length / 2 + ship.width / 2} Z`} fill="none" stroke="#dae5df" strokeWidth="0.85" />
             </g>)}
             {geography.landmarks.map((landmark, index) => <g key={`${landmark.kind}-${index}`} transform={`translate(${landmark.position.x} ${landmark.position.y})`}>
-              <title>{landmark.label}</title>
+              <title>{landmarkLabel(landmark.label)}</title>
               {landmark.kind === 'crane' ? <path d="M -3 3 L -3 -3 L 4 -3 M 2 -3 L 2 2 M -4 3 L 4 3" fill="none" stroke="#e8daaa" strokeWidth={compactSymbols ? 0.6 : 1} /> : <circle r={compactSymbols ? 1 : 2} fill={landmark.kind === 'lighthouse' ? '#dff781' : '#e1ddbe'} stroke="#26372d" strokeWidth="0.5" />}
-              {!compactSymbols && zoom > 1 && <text x="5" y="2" fontSize="6" fill="#f1f4e9">{landmark.label}</text>}
+              {!compactSymbols && zoom > 1 && <text x="5" y="2" fontSize="6" fill="#f1f4e9">{landmarkLabel(landmark.label)}</text>}
             </g>)}
           </>}
           {isValley && <>
-          <path d={geography.riverPath} fill="#6094a8" fillOpacity="0.7" stroke="#93c4d0" strokeOpacity="0.55" strokeWidth="0.65"><title>河流</title></path>
-          {geography.lakes.map(lake => <path key={lake.id} d={lake.path} fill="#6094a8" fillOpacity="0.78" stroke="#93c4d0" strokeOpacity="0.65" strokeWidth="0.65"><title>{lake.name}</title></path>)}
+          <path d={geography.riverPath} fill="#6094a8" fillOpacity="0.7" stroke="#93c4d0" strokeOpacity="0.55" strokeWidth="0.65"><title>{t('河流')}</title></path>
+          {geography.lakes.map(lake => <path key={lake.id} d={lake.path} fill="#6094a8" fillOpacity="0.78" stroke="#93c4d0" strokeOpacity="0.65" strokeWidth="0.65"><title>{t(lake.name)}</title></path>)}
           {isWorld && <g className="minimap-water-labels" fontSize="6.5" fill="#e3f3f5" textAnchor="middle">
-            {geography.lakes.map(lake => <text key={lake.id} x={lake.position.x} y={lake.position.y + 2}>{lake.name}</text>)}
-            {geography.riverLabel && <text x={geography.riverLabel.x - 6} y={geography.riverLabel.y} textAnchor="end">河流</text>}
+            {geography.lakes.map(lake => <text key={lake.id} x={lake.position.x} y={lake.position.y + 2}>{t(lake.name)}</text>)}
+            {geography.riverLabel && <text x={geography.riverLabel.x - 6} y={geography.riverLabel.y} textAnchor="end">{t('河流')}</text>}
           </g>}
           {CABINS.map(cabin => {
             const point = geography.project(cabin.x, cabin.z);
             return <g key={cabin.id} transform={`translate(${point.x} ${point.y}) scale(${compactSymbols ? 0.45 : 0.7})`}>
-              <title>{cabin.name}，乡间小屋</title>
+              <title>{t('{name}，乡间小屋', { name: t(cabin.name) })}</title>
               <path d="M -5 0 L 0 -4 L 5 0 L 5 5 L -5 5 Z" fill="#dcca9b" stroke="#243329" strokeWidth="1" />
               <path d="M -1 5 L -1 2 L 1 2 L 1 5" fill="#3c4631" />
             </g>;
@@ -309,15 +326,15 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
           {BRIDGES.map(bridge => {
             const point = geography.project(bridge.x, bridge.z);
             return <g key={bridge.id} transform={`translate(${point.x} ${point.y}) rotate(${-bridge.yaw * 180 / Math.PI}) scale(${compactSymbols ? 0.55 : 0.85})`}>
-              <title>{bridge.name}，跨河小桥</title>
+              <title>{t('{name}，跨河小桥', { name: t(bridge.name) })}</title>
               <path d="M -6 -2 L 6 -2 L 6 2 L -6 2 Z" fill="#dcca9b" stroke="#243329" strokeWidth="1" />
               <path d="M -4 -4 L -4 4 M 4 -4 L 4 4" stroke="#eddfb8" strokeWidth="1.2" />
             </g>;
           })}
           {geography.fishSchools.map(school => <g key={school.id}
             transform={`translate(${school.position.x} ${school.position.y}) scale(${compactSymbols ? 0.65 : 0.85})`}
-            role="img" aria-label={`鱼群，${school.count} 条，低空悬停并切换俯视观察`}>
-            <title>鱼群，{school.count} 条。靠近鱼标后低空悬停，按 V 切换俯视观察。</title>
+            role="img" aria-label={t('鱼群，{count} 条，低空悬停并切换俯视观察', { count: school.count })}>
+            <title>{t('鱼群，{count} 条。靠近鱼标后低空悬停，按 V 切换俯视观察。', { count: school.count })}</title>
             <path d="M -4 0 C -1 -4 3 -4 6 0 C 3 4 -1 4 -4 0 L -7 -3 L -7 3 Z" fill="#b7eefa" stroke="#213e38" strokeWidth="0.8" strokeLinejoin="round" />
             <circle cx="3" cy="-0.6" r="0.6" fill="#213e38" />
           </g>)}
@@ -331,7 +348,7 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
               <circle cx={point.x} cy={point.y} r={compactSymbols ? active ? 2.2 : 1.3 : active ? 4.4 : 3}
                 fill={active ? '#17221b' : passed ? '#c8ff5f' : '#f1f6f2'} fillOpacity={passed || active ? 1 : 0.65}
                 stroke={passed || active ? '#c8ff5f' : '#f1f6f2'} strokeWidth={active ? compactSymbols ? 0.9 : 1.8 : 0.6}>
-                <title>检查点 {index + 1}{passed ? '，已通过' : active ? '，下一个目标' : ''}</title>
+                <title>{t(passed ? '检查点 {number}，已通过' : active ? '检查点 {number}，下一个目标' : '检查点 {number}', { number: index + 1 })}</title>
               </circle>
               {!compactSymbols && <text x={point.x + 7} y={point.y + 3} fontSize="8" fill="currentColor" fillOpacity={active ? 1 : 0.5}>{index + 1}</text>}
             </g>;
@@ -341,36 +358,36 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
             const hit = telemetry.weapons.hitTargetIds.includes(target.id);
             const radius = compactSymbols ? 2.4 : 6;
             return <g key={target.id} transform={`translate(${point.x} ${point.y})`}>
-              <title>{hit ? '已命中靶标' : '投弹靶标'}</title>
+              <title>{t(hit ? '已命中靶标' : '投弹靶标')}</title>
               <path d={`M 0 ${-radius} L ${radius} 0 L 0 ${radius} L ${-radius} 0 Z`} fill={hit ? '#dff781' : '#ec9b60'} fillOpacity={hit ? 0.45 : 0.9} stroke="#243329" strokeWidth={compactSymbols ? 0.5 : 1} />
             </g>;
           })}
         </g>
         {!outsideView && <g transform={`translate(${drone.x} ${drone.y}) rotate(${-telemetry.yaw * 180 / Math.PI})`}>
-          <title>无人机当前位置</title>
+          <title>{t('无人机当前位置')}</title>
           <circle r="9" fill="#c8ff5f" fillOpacity="0.12" />
           <path d="M 0 -7 L 5 5 L 0 3 L -5 5 Z" fill="#c8ff5f" stroke="#17221b" strokeWidth="1" />
         </g>}
-        {outsideView && <text x="90" y="147" textAnchor="middle" fontSize="7" fill="#e5dcae">无人机在视窗外</text>}
+        {outsideView && <text x="90" y="147" textAnchor="middle" fontSize="7" fill="#e5dcae">{t('无人机在视窗外')}</text>}
       </svg>
-      <span id={panHelpId} className="minimap-pan-help">{canPan ? '拖动地图或使用方向键平移；拖动后暂停跟随，Home 或跟随按钮回到无人机。' : '全域已完整显示，点击加号放大后可拖动。'}加减键缩放，点击倍率或预设恢复总览。</span>
-      <div className="minimap-zoom" role="group" aria-label="地图缩放">
+      <span id={panHelpId} className="minimap-pan-help">{t(canPan ? '拖动地图或使用方向键平移；拖动后暂停跟随，Home 或跟随按钮回到无人机。加减键缩放，点击倍率或预设恢复总览。' : '全域已完整显示，点击加号放大后可拖动。加减键缩放，点击倍率或预设恢复总览。')}</span>
+      <div className="minimap-zoom" role="group" aria-label={t('地图缩放')}>
         <button type="button" disabled={zoomIndex === 0} onClick={() => changeZoom(-1)}
-          aria-label="缩小地图" title="缩小地图">−</button>
+          aria-label={t('缩小地图')} title={t('缩小地图')}>−</button>
         <button type="button" className="minimap-zoom-factor" onClick={() => selectView(mapView)}
-          aria-label={`当前 ${zoom} 倍，点击恢复 1 倍总览`} title="恢复 1× 总览">
+          aria-label={t('当前 {zoom} 倍，点击恢复 1 倍总览', { zoom })} title={t('恢复 1× 总览')}>
           <span aria-live="polite" aria-atomic="true">{zoom}×</span>
         </button>
         <button type="button" disabled={zoomIndex === ZOOM_LEVELS.length - 1} onClick={() => changeZoom(1)}
-          aria-label="放大地图" title="放大地图">+</button>
+          aria-label={t('放大地图')} title={t('放大地图')}>+</button>
       </div>
       <div className="map-distance">
-        <span>{outsideView ? '视窗外' : mode === 'free' ? cameraMode === 'manual' ? '浏览范围' : zoom > 1 ? '跟随范围' : '探索范围' : target ? '下个检查点' : '航线完成'}</span>
+        <span>{t(outsideView ? '视窗外' : mode === 'free' ? cameraMode === 'manual' ? '浏览范围' : zoom > 1 ? '跟随范围' : '探索范围' : target ? '下个检查点' : '航线完成')}</span>
         <strong>{mode === 'race' && target ? `${distance} m` : mode === 'race' ? `${selectedMap.checkpoints.length} / ${selectedMap.checkpoints.length}` : formatMapSpan(bounds)}</strong>
       </div>
-      <div className="map-discovery" aria-label={isValley ? '浅蓝鱼形标记是鱼群，沿河飞到木桥下游，低空悬停，按 V 或手机视角按钮切换俯视观察' : `${selectedMap.name}地标，${mapId === 'factory' ? '厂房、储罐、烟囱和堆箱' : '码头、桥吊、堆箱、货轮和灯塔'}；放大地图查看位置，按 V 切换俯视观察`}>
+      <div className="map-discovery" aria-label={isValley ? t('浅蓝鱼形标记是鱼群，沿河飞到木桥下游，低空悬停，按 V 或手机视角按钮切换俯视观察') : t('{name}地标，{landmarks}；放大地图查看位置，按 V 切换俯视观察', { name: t(selectedMap.name), landmarks: t(mapId === 'factory' ? '厂房、储罐、烟囱和堆箱' : '码头、桥吊、堆箱、货轮和灯塔') })}>
         <svg viewBox="-8 -4 15 8" aria-hidden="true">{isValley ? <path d="M -4 0 C -1 -4 3 -4 6 0 C 3 4 -1 4 -4 0 L -7 -3 L -7 3 Z" fill="currentColor" /> : <path d="M -6 3 L -6 -1 L -2 -3 L -2 -1 L 2 -3 L 2 3 Z M 3 3 L 3 -4 L 5 -4 L 5 3 Z" fill="currentColor" />}</svg>
-        <span>{isValley ? '鱼群 · V 俯视' : mapId === 'factory' ? '厂房 · 储罐 · 烟囱' : '码头 · 桥吊 · 货轮'}</span>
+        <span>{t(isValley ? '鱼群 · V 俯视' : mapId === 'factory' ? '厂房 · 储罐 · 烟囱' : '码头 · 桥吊 · 货轮')}</span>
       </div>
     </div>
   );

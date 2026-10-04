@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { NoticeMessage } from '../i18n/locale';
 import { createFlightState, crossesCheckpoint } from './flight';
 import { createWorld } from './world';
 import { WATER_LEVEL } from './landscape';
@@ -33,7 +34,7 @@ import type { LoadingMetrics } from './loading-metrics';
 export interface EngineEvents {
   telemetry: (value: Telemetry) => void;
   status: (value: Status) => void;
-  notice: (value: string) => void;
+  notice: (value: NoticeMessage) => void;
   finish: (seconds: number) => void;
   cameraMode: (value: CameraMode) => void;
 }
@@ -293,6 +294,8 @@ export class FlightEngine {
     this.weaponVisuals.update(this.weapons, 0);
     return true;
   }
+  /** Accessibility text changes independently of the scene and numerical simulation. */
+  setAccessibleLabel(label: string) { this.renderer.domElement.setAttribute('aria-label', label); }
   private initialState() {
     const state = createFlightState();
     state.position = { ...this.mapSpec.spawn };
@@ -365,7 +368,7 @@ export class FlightEngine {
       this.world.scene.add(next.model);
     }
     this.reset();
-    this.events.notice(`已选择 ${getDroneSpec(id).name} · 参考参数可在机库查看`);
+    this.events.notice({ key: '已选择 {name} · 参考参数可在机库查看', params: { name: getDroneSpec(id).name } });
     return true;
   }
   setTouch(axis: keyof typeof this.touch, value: number) { this.touch[axis] = value; }
@@ -435,7 +438,7 @@ export class FlightEngine {
             this.collisionCooldown = 1.5;
             if (this.mode === 'race') this.elapsed += 3;
             const contact = groundHit && this.state.position.y < WATER_LEVEL + 3 && this.worldKernel.isWater(this.state.position.x, this.state.position.z) ? '触水' : '碰撞';
-            this.events.notice(this.mode === 'race' ? `${contact} · 已稳住机身，计时增加 3 秒` : `${contact} · 已稳住机身，请升高或避开障碍`);
+            this.events.notice({ key: this.mode === 'race' ? '{contact} · 已稳住机身，计时增加 3 秒' : '{contact} · 已稳住机身，请升高或避开障碍', params: { contact } });
           }
         }
       }
@@ -447,15 +450,15 @@ export class FlightEngine {
       }
       if (weaponEvents.hits > 0) {
         this.events.notice(this.weapons.hitTargetIds.length === this.mapSpec.targets.length
-          ? `全部靶标命中 · 总得分 ${this.weapons.score} · R 重新挑战`
-          : `命中靶标 +${weaponEvents.hits * 100} · ${this.weapons.hitTargetIds.length} / ${this.mapSpec.targets.length}`);
+          ? { key: '全部靶标命中 · 总得分 {score} · R 重新挑战', params: { score: this.weapons.score } }
+          : { key: '命中靶标 +{points} · {hits} / {total}', params: { points: weaponEvents.hits * 100, hits: this.weapons.hitTargetIds.length, total: this.mapSpec.targets.length } });
       }
       if (this.mode === 'race' && this.checkpoint < this.mapSpec.checkpoints.length && crossesCheckpoint(previous, this.state.position, this.mapSpec.checkpoints[this.checkpoint])) {
         this.checkpoint++; this.audio.checkpoint();
         if (this.checkpoint === this.mapSpec.checkpoints.length) {
           this.setStatus('finished'); this.events.finish(this.elapsed);
           if (document.pointerLockElement) document.exitPointerLock();
-        } else this.events.notice(`检查点 ${String(this.checkpoint).padStart(2, '0')} / 08 · 继续前往下一个飞行环`);
+        } else this.events.notice({ key: '检查点 {number} / {total} · 继续前往下一个飞行环', params: { number: String(this.checkpoint).padStart(2, '0'), total: this.mapSpec.checkpoints.length } });
       }
     }
     const { position, velocity, yaw, pitch, roll } = this.state;
