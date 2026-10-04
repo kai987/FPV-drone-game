@@ -41,9 +41,9 @@ export const GUIDE_MESSAGES = {
     'Click the flight view to enable mouse look. Esc releases the mouse and pauses. On phones, use the direction buttons on both sides; multiple directions can be held together. Use the bomb button on the left to drop a bomb and the view button at the top right to select top-down aim.',
   ],
   '迎着风，修正航迹': ['風の中で航跡を修正する', 'Correct your flight path in the wind'],
-  '点击画面左上角的风况按钮，选择无风、微风、中等风或强风，以及八个来风方向。风向按“从哪里吹来”标注，例如北风从北向南吹；机头转向后，仪表会重新显示迎风、顺风或左右前后侧风。阵风随时间、位置和高度平滑变化。': [
-    '画面左上の風設定ボタンから、無風、そよ風、中程度の風、強風と、8 方向の風向を選べます。風向は「吹いてくる方向」で表し、北風なら北から南へ吹きます。機首が変わると、計器の表示も向かい風、追い風、左右前後からの横風へ更新されます。突風は時間、場所、高度によって滑らかに変化します。',
-    'Use the wind button at the top left to select calm, breeze, moderate or strong wind and one of eight directions. Direction means where the wind comes from: a north wind blows north to south. Turning the aircraft updates the instrument to headwind, tailwind or a crosswind from the front, rear, left or right. Gusts vary smoothly with time, position and altitude.',
+  '点击画面左上角的风况按钮，选择无风、微风、中等风或强风，以及八个基准来风方向。风向表示“从哪里吹来”，例如北风从北向南吹。起飞后实际来向会随时间平滑偏转；实时度数表示来向，小地图箭头表示吹向，暂停时冻结。机头转向后，仪表会重新显示迎风、顺风或左右前后侧风。风速也随时间、位置和高度变化。': [
+    '画面左上の風設定ボタンから、無風、そよ風、中程度の風、強風と、8方向の基準風向を選べます。風向は「吹いてくる方向」で、北風なら北から南へ吹きます。離陸後は実際の風向が時間とともに滑らかに変化します。リアルタイムの角度は風が来る方向、ミニマップの矢印は吹いていく方向を示し、一時停止中は止まります。機首が変わると、計器は向かい風、追い風、左右前後からの横風を表示します。風速も時間、位置、高度によって変化します。',
+    'Use the wind button at the top left to select Calm, Breeze, Moderate or Strong wind and one of eight base directions. Direction means where wind comes from: a north wind blows north to south. After takeoff, the actual direction shifts smoothly over time. Live degrees show its origin; the minimap arrow shows its destination. Both freeze while paused. Turning updates the instrument to headwind, tailwind or a crosswind from the front, rear, left or right. Wind speed also varies with time, position and altitude.',
   ],
   '迎风时地速下降，顺风时地速提高；侧风会把无人机推离航线，用 A/D 或触屏平移修正。辅助模式减轻风偏，运动模式保留更多风的影响。下方速度表显示地速，鼠标悬停可查看空速；机库速度是无风参考。打开风况设置会暂停，应用后保留位置，关闭后可继续；飞行中改变风况的这一轮不计入个人最佳。': [
     '向かい風で対地速度が下がり、追い風で上がります。横風で航路から流されたら、A/D またはタッチ操作の平行移動で修正します。アシストモードは風の影響を軽減し、スポーツモードは影響をより強く残します。下の速度計は対地速度で、マウスを合わせると対気速度を確認できます。ハンガーの速度は無風時の参考値です。風設定を開くと一時停止し、適用後も位置を保持します。閉じてから再開できます。飛行中に風を変更した場合、そのフライトは自己ベストに記録されません。',

@@ -53,6 +53,7 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
   const sphereGeometry = ownGeometry(new THREE.SphereGeometry(1, 12, 8));
   const batches = new Map<string, { geometry: THREE.BufferGeometry; material: THREE.Material; poses: InstancePose[]; shadow: boolean; detail: boolean }>();
   const detailChunks: THREE.InstancedMesh[] = [];
+  const buildingSigns: THREE.Mesh[] = [];
   const detailView = new THREE.Vector3();
   let detailing = false;
   const temporary = new THREE.Object3D();
@@ -179,7 +180,7 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
     land(cream, x, 24, 0.1, 15, 2.07); land(cream, x + 3.5, 24, 6.9, 0.1, 2.07);
   }
 
-  function sign(text: string, color: string, width: number, height: number, position: THREE.Vector3, yaw = 0) {
+  function sign(text: string, color: string, width: number, height: number, position: THREE.Vector3, yaw = 0, buildingDetail = false) {
     const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 128;
     const context = canvas.getContext('2d')!;
     context.fillStyle = color; context.fillRect(0, 0, 512, 128);
@@ -188,6 +189,7 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; textures.add(texture);
     const mesh = new THREE.Mesh(ownGeometry(new THREE.PlaneGeometry(width, height)), ownMaterial(new THREE.MeshStandardMaterial({ map: texture, roughness: 0.85, side: THREE.DoubleSide })));
     mesh.position.copy(position); mesh.rotation.y = yaw; scene.add(mesh);
+    if (buildingDetail) { mesh.name = 'Warehouse sign'; buildingSigns.push(mesh); }
   }
 
   function warehouse(spec: WarehouseSpec) {
@@ -204,7 +206,8 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
     }
     for (let z = -spec.depth / 2 + 1.4; z < spec.depth / 2; z += 1.6) for (const side of [-1, 1])
       localBox(spec, rib, side * (spec.width / 2 + 0.035), spec.height / 2, z, 0.08, spec.height - 1, 0.12);
-    detailing = false;
+    // Windows and loading-door trim share the regional detail batches with
+    // corrugation, keeping the denser districts inexpensive in distant views.
     for (const side of [-1, 1]) {
       for (let x = -spec.width / 2 + 8; x < spec.width / 2 - 7; x += 10) {
         localBox(spec, darkSteel, x, spec.height - 3.7, side * (spec.depth / 2 + 0.08), 6.6, 2.7, 0.14);
@@ -219,6 +222,7 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
         for (const edge of [-1, 1]) localBox(spec, yellow, x + edge * 5.3, 2.5, side * (spec.depth / 2 + 0.4), 0.4, 5, 0.15);
       }
     }
+    detailing = false;
     for (const x of [-spec.width * 0.3, spec.width * 0.3]) {
       const point = local(spec, x, spec.height + 0.8, -spec.depth * 0.2);
       box(steel, point.x, point.y, point.z, 4.5, 1.6, 5.5);
@@ -226,7 +230,7 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
       cylinder(silver, point.x, point.y + 2.1, point.z + 9, 0.65, 4.1);
       cylinder(darkSteel, point.x, point.y + 4.2, point.z + 9, 1.1, 0.2);
     }
-    sign(spec.label, '#314b51', 19, 3.8, local(spec, 0, spec.height - 7.6, spec.depth / 2 + 0.22), spec.yaw ?? 0);
+    sign(spec.label, '#314b51', 19, 3.8, local(spec, 0, spec.height - 7.6, spec.depth / 2 + 0.22), spec.yaw ?? 0, true);
   }
   layout.warehouses.forEach(warehouse);
 
@@ -546,6 +550,7 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
           const sphere = chunk.boundingSphere!;
           chunk.visible = detailView.distanceToSquared(sphere.center) < (sphere.radius + 450) ** 2;
         }
+        for (const sign of buildingSigns) sign.visible = detailView.distanceToSquared(sign.position) < 460 ** 2;
       }
       if (focus) {
         const nearby = night ? lampSites.filter(site => (site.x - focus.x) ** 2 + (site.z - focus.z) ** 2 < 130 ** 2)

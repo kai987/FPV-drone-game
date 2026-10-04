@@ -11,13 +11,15 @@ const COMPASS_POINTS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 export default function WindPanel({ wind, airSpeed, onOpen }: { wind: Telemetry['wind']; airSpeed: number; onOpen: () => void }) {
   const { t } = useI18n();
-  return <button className="wind-hud" type="button" aria-label={t('风况设置，{direction}，{speed} 米每秒，{relative}', { direction: t(wind.directionLabel), speed: wind.speed.toFixed(1), relative: t(wind.relativeLabel) })}
-    title={t('风向按来向标注 · 空速 {speed} km/h · 点击调整风况', { speed: airSpeed.toFixed(0) })}
+  const calm = wind.speed < 0.1;
+  const bearing = Math.round(wind.fromDegrees) % 360;
+  return <button className="wind-hud" type="button" aria-label={t(calm ? '风况设置，{direction}，{speed} 米每秒，{relative}' : '动态风况设置，实时来风方向 {degrees} 度，{direction}，{speed} 米每秒，{relative}', { direction: t(wind.directionLabel), speed: wind.speed.toFixed(1), relative: t(wind.relativeLabel), degrees: bearing })}
+    title={t(calm ? '空速 {speed} km/h · 点击调整风况' : '实际风向随时间平滑偏转 · 空速 {speed} km/h · 点击调整基准风况', { speed: airSpeed.toFixed(0) })}
     onClick={event => { event.stopPropagation(); event.currentTarget.focus({ preventScroll: true }); onOpen(); }}
     onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
     <Wind size={17} aria-hidden="true" />
-    <span className="wind-hud-readout"><strong>{wind.speed < 0.1 ? t('无风') : t('{direction}风', { direction: t(wind.directionLabel) })} <b>{wind.speed.toFixed(1)}</b><small>m/s</small></strong>
-      <span>{t(wind.relativeLabel)}<i />{t('调整风况')}</span></span>
+    <span className="wind-hud-readout"><strong>{calm ? t('无风') : t('{direction}风', { direction: t(wind.directionLabel) })} <b>{wind.speed.toFixed(1)}</b><small>m/s</small></strong>
+      <span>{!calm && <><span className="wind-hud-bearing">{bearing}°</span><span>{t('动态')}</span><i /></>}{t(wind.relativeLabel)}{calm && <><i />{t('调整风况')}</>}</span></span>
     <Settings2 size={13} aria-hidden="true" />
   </button>;
 }
@@ -50,13 +52,14 @@ export function WindSettingsDialog({ settings, activeFlight, onApply, onClose }:
           <strong>{t(preset.label)}</strong><span>{preset.baseSpeed} m/s</span>
         </button>)}
     </div></fieldset>
-    <fieldset disabled={calm}><legend>{t('来风方向')} <small>{t('北风表示从北向南吹')}</small></legend><div className="wind-direction-control">
+    <fieldset disabled={calm}><legend>{t('基准来风方向')} <small>{t('实际风向会平滑偏转')}</small></legend><div className="wind-direction-control">
       <div className={`wind-compass${calm ? ' is-calm' : ''}`} aria-hidden="true"><span>N</span><span>E</span><span>S</span><span>W</span>
         <ArrowDown style={{ transform: `rotate(${draft.direction}deg)` }} size={58} strokeWidth={1.2} /></div>
-      <div className="wind-directions">{DIRECTIONS.map((name, index) => <button key={name} type="button" aria-label={t('{direction}风，从{direction}方吹来', { direction: t(name) })}
+      <div className="wind-directions">{DIRECTIONS.map((name, index) => <button key={name} type="button" aria-label={t('{direction}基准风，从{direction}方吹来', { direction: t(name) })}
         aria-pressed={draft.direction === index * 45} onClick={() => setDraft(current => ({ ...current, direction: index * 45 }))}>{locale === 'en' ? COMPASS_POINTS[index] : t(name)}</button>)}</div>
     </div></fieldset>
-    <p className="wind-context">{t(activeFlight ? '飞行已暂停。应用后保留位置与进度；本轮若改变风况，将不计入个人最佳。关闭后可继续飞行。' : '起飞后风会随时间、位置和高度轻微变化。个人最佳按机型、飞行模式及风况分别记录。')}</p>
+    <p className="wind-direction-note">{t('基准风向表示来向，例如北风从北向南吹。起飞后实际来向会平滑偏转；仪表度数与地图箭头实时更新，暂停时冻结。')}</p>
+    <p className="wind-context">{t(activeFlight ? '飞行已暂停。应用后保留位置与进度；手动修改基准风况的这一轮不计入个人最佳，自动风向变化仍可记录。关闭后可继续飞行。' : '风速随时间、位置和高度轻微变化。个人最佳按机型、飞行模式及基准风况分别记录。')}</p>
     <button className="primary-button wind-apply" type="button" onClick={() => onApply(draft)}>{t('应用风况')} <Wind size={17} /></button>
   </dialog>;
 }

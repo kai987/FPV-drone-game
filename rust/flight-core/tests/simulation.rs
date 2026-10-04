@@ -683,12 +683,12 @@ fn sampled_wind_and_position_are_consistent_after_midpoint_tick() {
 }
 
 #[test]
-fn moving_gusts_keep_travel_within_centimetres_across_frame_rates() {
+fn a_full_directional_weather_cycle_keeps_travel_within_centimetres_across_frame_rates() {
     let mut states = Vec::new();
     for fps in [30, 60, 120] {
         let mut state = FlightState::default();
         let mut clock = 0.0;
-        for _ in 0..12 * fps {
+        for _ in 0..64 * fps {
             let result = simulate(
                 &mut state,
                 TickParameters {
@@ -704,7 +704,7 @@ fn moving_gusts_keep_travel_within_centimetres_across_frame_rates() {
             );
             clock = result.clock;
         }
-        near(clock, 12.0, 1e-10);
+        near(clock, 64.0, 1e-10);
         states.push(state);
     }
     for state in &states[1..] {

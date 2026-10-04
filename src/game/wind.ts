@@ -4,7 +4,7 @@ export type WindStrength = 'calm' | 'breeze' | 'windy' | 'strong';
 
 export interface WindSettings {
   strength: WindStrength;
-  /** Meteorological origin in degrees: 0 north (-Z), 90 east (+X). */
+  /** Baseline meteorological origin: 0 north (-Z), 90 east (+X). */
   direction: number;
 }
 
@@ -40,6 +40,8 @@ const degrees = (value: number) => ((value % 360) + 360) % 360;
  * and numeric wind descriptions come from the Rust flight core.
  * Deterministic, continuous game wind rather than a weather forecast. Smooth
  * gusts share a spatial field and strengthen slightly away from the ground.
+ * The baseline bearing slowly meanders within 40 degrees, including a small
+ * directional gust. A smooth onset keeps the chosen bearing exact at time zero.
  * An engine can freeze elapsed time while paused; sampling itself has no state.
  */
 export function sampleWind(settings: WindSettings, elapsed: number, position: Vec3): Vec3 {
@@ -54,7 +56,10 @@ export function sampleWind(settings: WindSettings, elapsed: number, position: Ve
     + 0.035 * Math.sin(time * 0.19 - phase * 0.6);
   const altitudeFactor = 0.78 + 0.22 * (1 - Math.exp(-altitude / 60));
   const speed = preset.baseSpeed * altitudeFactor * gust;
-  const bearing = degrees(settings.direction) * Math.PI / 180;
+  const directionOffset = (27 * Math.sin(time * (TAU / 64) + phase * 0.6)
+    + 9 * Math.sin(time * (TAU / 37) + phase * 0.35)
+    + 4 * Math.sin(time * (TAU / 12) + phase * 1.1)) * (1 - Math.exp(-time / 6));
+  const bearing = (degrees(settings.direction) + directionOffset) * Math.PI / 180;
   return {
     x: -Math.sin(bearing) * speed,
     y: preset.baseSpeed * altitudeFactor * 0.025 * Math.sin(time * 0.61 + phase * 0.8),

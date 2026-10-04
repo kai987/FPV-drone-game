@@ -226,6 +226,7 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
   const followLabel = cameraMode === 'manual' || outsideView ? '回到无人机' : cameraMode === 'follow' ? '跟随中' : '跟随';
   const { wind } = telemetry;
   const calm = wind.speed < 0.1;
+  const windBearing = Math.round(wind.fromDegrees) % 360;
   const windLabel = calm ? t('无风') : t('{direction}风', { direction: t(wind.directionLabel) });
   const geographyLabel = isValley ? '蓝色为河流湖泊，浅蓝鱼形标记为鱼群，米色为小屋和桥'
     : mapId === 'factory' ? '深灰为道路，白色条带为斑马线，灰色为厂房和工业设施，金色为堆箱，圆点为厂房和储罐地标'
@@ -250,8 +251,8 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
     <div className={`minimap geographic-minimap${isWorld ? ' minimap-world' : ''}`} aria-label={t('{name}小地图，{landscape}、当前位置、检查点与投弹靶标', { name: t(selectedMap.name), landscape: t(landscapeLabel) })} data-map-mode={cameraMode} data-map-id={mapId}
       onClick={stopMapInteraction} onDoubleClick={stopMapInteraction} onPointerDown={stopMapInteraction} onKeyDown={stopMapInteraction}>
       <div className={`minimap-wind${calm ? ' is-calm' : ''}`} role="img"
-        aria-label={t(calm ? '风向：{direction}，{speed} 米每秒' : '风向：{direction}，{speed} 米每秒；箭头表示风吹向，地图上方为北', { direction: windLabel, speed: wind.speed.toFixed(1) })}>
-        <span className="minimap-wind-caption">{t(calm ? '风向' : '风吹向')}</span>
+        aria-label={t(calm ? '风向：{direction}，{speed} 米每秒' : '动态风向：{direction}，实时来向 {degrees} 度，{speed} 米每秒；箭头表示风吹向，地图上方为北', { direction: windLabel, speed: wind.speed.toFixed(1), degrees: windBearing })}>
+        <span className="minimap-wind-caption">{t(calm ? '风向' : '动态风')}</span>
         <div className="minimap-wind-compass" aria-hidden="true">
           <span>N</span>
           {calm ? <i className="minimap-wind-calm" /> : <svg className="minimap-wind-arrow" viewBox="0 0 24 24"
@@ -259,7 +260,7 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
             <path d="M12 4v16M6 14l6 6 6-6" />
           </svg>}
         </div>
-        <strong>{windLabel}</strong>
+        <strong title={calm ? t('无风') : t('实时来风方向 {degrees}°，{direction}；箭头表示风吹向', { degrees: windBearing, direction: windLabel })}>{calm ? windLabel : `${windBearing}°`}</strong>
       </div>
       <div className="map-heading">
         <div className="minimap-heading-controls">

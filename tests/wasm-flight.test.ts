@@ -58,8 +58,9 @@ test('real WASM matches TS for six aircraft, both modes, four wind strengths, ei
   }
 });
 
-test('constant-wind WASM integration is frame-rate independent and agrees with the TS integrator', () => {
+test('explicit constant wind overrides dynamic weather and remains frame-rate independent in WASM', () => {
   const wind = { x: -6, y: 0.2, z: 3 };
+  const settings: WindSettings = { strength: 'strong', direction: 315 };
   const input = { ...forward, forward: 0.73, strafe: 0.26, climb: 0.05 };
   for (const spec of DRONES) for (const mode of modes) {
     const endpoints: FlightState[] = [];
@@ -68,10 +69,10 @@ test('constant-wind WASM integration is frame-rate independent and agrees with t
       for (const fps of frameRates) {
         const expected = createFlightState({ x: 0, y: 80, z: 55 }, 0.4); expected.pitch = 0.22;
         const actual = structuredClone(expected);
-        let clock = 0;
+        let clock = 32;
         for (let frame = 0; frame < 4 * fps; frame++) {
-          const expectedResult = stepReference(expected, input, 1 / fps, mode, spec.flight, calm, clock, flatGround, undefined, undefined, wind);
-          const result = simulation.step(actual, input, 1 / fps, mode, spec.flight, calm, clock, undefined, wind);
+          const expectedResult = stepReference(expected, input, 1 / fps, mode, spec.flight, settings, clock, flatGround, undefined, undefined, wind);
+          const result = simulation.step(actual, input, 1 / fps, mode, spec.flight, settings, clock, undefined, wind);
           clock = result.windClock;
           assertResultClose(result, expectedResult, `${spec.id}/${mode}/${fps}fps`);
         }
@@ -81,6 +82,69 @@ test('constant-wind WASM integration is frame-rate independent and agrees with t
       for (const endpoint of endpoints.slice(1)) assertStateClose(endpoint, endpoints[0], `${spec.id}/${mode}/frame-rate invariance`);
     } finally { simulation.dispose(); }
   }
+});
+
+test('real WASM wind bearings match TS over a weather cycle and pause/reset repeat the same field', () => {
+  const profile = getDroneSpec('freestyle').flight;
+  const simulation = createFlightSimulation(wasmModule, flatGround);
+  const difference = (actual: number, expected: number) => ((actual - expected + 540) % 360) - 180;
+  try {
+    for (const direction of [0, 315, -45, 765]) for (const position of [
+      { x: 0, y: 12, z: 55 }, { x: 1500, y: 200, z: -400 },
+    ]) {
+      const settings: WindSettings = { strength: 'strong', direction };
+      const state = createFlightState(position, 0.7);
+      const before = structuredClone(state);
+      const baseline = ((direction % 360) + 360) % 360;
+      const initial = simulation.step(state, idle, 0, 'sport', profile, settings, 0);
+      near(difference(initial.wind.fromDegrees, baseline), 0, 'selected initial bearing');
+      let greatestOffset = 0;
+      for (const elapsed of [0, 6, 12, 20, 32, 50, 64, 80, 120]) {
+        const expected = stepReference(structuredClone(before), idle, 0, 'sport', profile, settings, elapsed, flatGround);
+        const actual = simulation.step(state, idle, 0, 'sport', profile, settings, elapsed);
+        assertResultClose(actual, expected, `bearing ${direction}, clock ${elapsed}`);
+        assert.deepEqual(state, before, 'sampling paused telemetry must not move the aircraft');
+        assert.deepEqual(simulation.step(state, idle, 0, 'sport', profile, settings, elapsed), actual,
+          'the same frozen clock and position reproduce wind telemetry');
+        const offset = Math.abs(difference(actual.wind.fromDegrees, baseline));
+        assert.ok(offset <= 40 + 1e-10, 'weather remains near the selected baseline');
+        greatestOffset = Math.max(greatestOffset, offset);
+      }
+      assert.ok(greatestOffset > 20, 'WASM must change the actual horizontal wind vector appreciably');
+      assert.deepEqual(simulation.step(state, idle, 0, 'sport', profile, settings, 0), initial,
+        'resetting the clock reproduces the selected initial wind');
+    }
+  } finally { simulation.dispose(); }
+});
+
+test('a full directional weather cycle matches TS in WASM with centimetre-level frame-rate stability', () => {
+  const profile = getDroneSpec('freestyle').flight;
+  const settings: WindSettings = { strength: 'strong', direction: 315 };
+  const simulation = createFlightSimulation(wasmModule, flatGround);
+  try {
+    for (const mode of modes) {
+      const endpoints: FlightState[] = [];
+      for (const fps of frameRates) {
+        const expected = createFlightState(), actual = structuredClone(expected);
+        let clock = 0;
+        for (let frame = 0; frame < 64 * fps; frame++) {
+          const expectedResult = stepReference(expected, forward, 1 / fps, mode, profile, settings, clock, flatGround);
+          const result = simulation.step(actual, forward, 1 / fps, mode, profile, settings, clock);
+          assertStateClose(actual, expected, `${mode}/${fps}fps/frame${frame}`);
+          assertResultClose(result, expectedResult, `${mode}/${fps}fps/frame${frame}`);
+          clock = result.windClock;
+        }
+        near(clock, 64, `${mode}/${fps}fps weather clock`);
+        endpoints.push(actual);
+      }
+      for (const endpoint of endpoints.slice(1)) {
+        for (const axis of ['x', 'y', 'z'] as const) {
+          near(endpoint.position[axis], endpoints[0].position[axis], `${mode}/frame-rate position.${axis}`, 0.03);
+          near(endpoint.velocity[axis], endpoints[0].velocity[axis], `${mode}/frame-rate velocity.${axis}`, 0.01);
+        }
+      }
+    }
+  } finally { simulation.dispose(); }
 });
 
 test('paused or invalid dt preserves state and clock without terrain/obstacle queries but refreshes wind telemetry', () => {

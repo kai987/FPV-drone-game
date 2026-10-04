@@ -13,6 +13,7 @@ const idle: FlightInput = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
 const forward: FlightInput = { ...idle, forward: 1 };
 const modes: FlightMode[] = ['assisted', 'sport'];
 const near = (actual: number, expected: number, tolerance = 1e-8) => assert.ok(Math.abs(actual - expected) < tolerance, `${actual} differs from ${expected}`);
+const angleDifference = (actual: number, expected: number) => ((actual - expected + 540) % 360) - 180;
 
 function run(id: DroneId, mode: FlightMode, input: FlightInput, wind: Vec3, seconds = 10, fps = 60, state = createFlightState()): FlightState {
   for (let frame = 0; frame < seconds * fps; frame++) stepFlight(state, input, 1 / fps, mode, () => 0, getDroneSpec(id).flight, wind);
@@ -52,9 +53,34 @@ test('headwind and crosswind projections follow the aircraft heading with the ri
   near(describeWind(westerly, Math.PI / 2).headwind, 6);
   near(describeWind(easterly, Math.PI / 2).headwind, -6);
   assert.equal(describeWind(easterly, Math.PI / 2).relativeLabel, '顺风');
-  const facingNorthwest = describeWind(sampleWind(DEFAULT_WIND_SETTINGS, 3, origin), Math.PI / 4);
+  const facingNorthwest = describeWind(sampleWind(DEFAULT_WIND_SETTINGS, 0, origin), Math.PI / 4);
   assert.equal(facingNorthwest.relativeLabel, '迎风');
   near(facingNorthwest.crosswind, 0);
+});
+
+test('natural wind starts on the selected bearing then meanders smoothly within forty degrees', () => {
+  const positions = [origin, { x: 0, y: 12, z: 55 }, { x: 1500, y: 200, z: -400 }];
+  for (const strength of ['breeze', 'windy', 'strong'] as const) for (const position of positions) {
+    for (const direction of [0, 45, 90, 135, 180, 225, 270, 315]) {
+      const initial = describeWind(sampleWind({ strength, direction }, 0, position), 0);
+      near(angleDifference(initial.fromDegrees, direction), 0);
+    }
+    const settings = { strength, direction: 315 };
+    let previous = 315;
+    for (let frame = 0; frame <= 120 * 20; frame++) {
+      const bearing = describeWind(sampleWind(settings, frame / 20, position), 0).fromDegrees;
+      assert.ok(Math.abs(angleDifference(bearing, settings.direction)) <= 40 + 1e-8);
+      // At a fixed position the analytic derivative is bounded by 6.67 deg/s.
+      assert.ok(Math.abs(angleDifference(bearing, previous)) <= 0.334);
+      previous = bearing;
+    }
+  }
+  const settings = { strength: 'breeze', direction: 315 } as const;
+  const offsets = Array.from({ length: 121 }, (_, time) => angleDifference(describeWind(sampleWind(settings, time, positions[1]), 0).fromDegrees, 315));
+  assert.ok(Math.min(...offsets) < -20 && Math.max(...offsets) > 20, 'direction changes must be perceptible in both directions');
+  const bearing = (time: number, position: Vec3) => describeWind(sampleWind(settings, time, position), 0).fromDegrees;
+  assert.ok(Math.abs(angleDifference(bearing(12, positions[1]), bearing(12, positions[2]))) > 1, 'horizontal position also affects weather phase');
+  near(angleDifference(bearing(12, { ...positions[1], y: 0 }), bearing(12, { ...positions[1], y: 300 })), 0);
 });
 
 test('wind gusts are deterministic, smooth, spatially varied and stronger above sheltered ground', () => {
@@ -128,11 +154,11 @@ test('constant wind flight remains stable at 30, 60 and 120 frames per second', 
   }
 });
 
-test('sampling moving gusts at 30, 60 and 120 fps keeps accumulated travel within centimetres', () => {
+test('a full directional weather cycle at 30, 60 and 120 fps keeps accumulated travel within centimetres', () => {
   const states = [30, 60, 120].map(fps => {
     const state = createFlightState();
-    for (let frame = 0; frame < 12 * fps; frame++) {
-      const wind = sampleWind({ strength: 'strong', direction: 315 }, frame / fps, state.position);
+    for (let frame = 0; frame < 64 * fps; frame++) {
+      const wind = sampleWind({ strength: 'strong', direction: 315 }, (frame + 0.5) / fps, state.position);
       stepFlight(state, forward, 1 / fps, 'sport', () => 0, getDroneSpec('freestyle').flight, wind);
     }
     return state;

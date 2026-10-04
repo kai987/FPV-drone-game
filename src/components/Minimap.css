@@ -33,7 +33,7 @@
   border-radius: 50%;
 }
 .geographic-minimap .minimap-wind-compass > span { position: absolute; top: -5px; padding: 0 3px; background: #253329; color: #d4dec8; font-size: 7px; line-height: 10px; }
-.geographic-minimap .minimap-wind-arrow { width: 28px; height: 28px; transition: transform .25s ease; }
+.geographic-minimap .minimap-wind-arrow { width: 28px; height: 28px; }
 .geographic-minimap .minimap-wind-calm { width: 5px; height: 5px; border-radius: 50%; background: #bac8b2; }
 .geographic-minimap .minimap-wind.is-calm { color: #bac8b2; }
 
@@ -205,10 +205,6 @@
   .geographic-minimap .minimap-water-labels {
     display: none;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .geographic-minimap .minimap-wind-arrow { transition: none; }
 }
 
 @media (max-width: 800px) and (max-height: 740px) {
