@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { PointerEvent } from 'react';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, ChevronUp, RotateCcw, RotateCw } from 'lucide-react';
+import { useI18n } from '../i18n/context';
 
 type Axis = 'forward' | 'strafe' | 'climb' | 'yaw';
 interface TouchControlsProps {
@@ -20,6 +21,7 @@ const CONTROLS = [
 ] as const;
 
 export default function TouchControls({ onAxis }: TouchControlsProps) {
+  const { t } = useI18n();
   const pressed = useRef(new Map<number, { axis: Axis; value: number }>());
   const published = useRef<Record<Axis, number>>({ forward: 0, strafe: 0, climb: 0, yaw: 0 });
   const onAxisRef = useRef(onAxis);
@@ -80,8 +82,8 @@ export default function TouchControls({ onAxis }: TouchControlsProps) {
         key={label}
         type="button"
         className={`touch-direction ${className}`}
-        aria-label={label}
-        title={label}
+        aria-label={t(label)}
+        title={t(label)}
         onPointerDown={(event) => press(event, axis, value)}
         onPointerUp={(event) => release(event.pointerId)}
         onPointerCancel={(event) => release(event.pointerId)}
@@ -107,14 +109,14 @@ export default function TouchControls({ onAxis }: TouchControlsProps) {
   }
 
   return (
-    <div className="touch-controls" aria-label="触屏飞行控制">
-      <div className="touch-pad" role="group" aria-label="前进与平移">
+    <div className="touch-controls" aria-label={t('触屏飞行控制')}>
+      <div className="touch-pad" role="group" aria-label={t('前进与平移')}>
         {[0, 1, 2, 3].map(renderControl)}
-        <span className="touch-center" aria-hidden="true">移动</span>
+        <span className="touch-center" aria-hidden="true">{t('移动')}</span>
       </div>
-      <div className="touch-pad touch-altitude" role="group" aria-label="高度与转向">
+      <div className="touch-pad touch-altitude" role="group" aria-label={t('高度与转向')}>
         {[4, 5, 6, 7].map(renderControl)}
-        <span className="touch-center" aria-hidden="true">姿态</span>
+        <span className="touch-center" aria-hidden="true">{t('姿态')}</span>
       </div>
     </div>
   );

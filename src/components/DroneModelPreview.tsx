@@ -7,6 +7,7 @@ import { getDroneSpec } from '../game/drone-catalog.ts';
 import type { DroneId } from '../game/drone-catalog.ts';
 import { createDroneStudio, fitDroneCamera } from './drone-preview-stage.ts';
 import './DroneModelPreview.css';
+import { useI18n } from '../i18n/context';
 
 export interface DroneModelPreviewProps { droneId: DroneId; className?: string }
 interface PreviewRuntime {
@@ -19,6 +20,7 @@ interface PreviewRuntime {
 
 /** A single, interactive renderer. No animation loop is needed for a parked drone. */
 export function DroneModelPreview({ droneId, className = '' }: DroneModelPreviewProps) {
+  const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
   const runtime = useRef<PreviewRuntime | null>(null);
   const currentId = useRef(droneId);
@@ -26,6 +28,9 @@ export function DroneModelPreview({ droneId, className = '' }: DroneModelPreview
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const spec = getDroneSpec(droneId);
+  const canvasLabel = t('{name}三维模型。拖动或方向键旋转，滚轮或加减键缩放，Home 复位。', { name: t(spec.name) });
+  const canvasLabelRef = useRef(canvasLabel);
+  canvasLabelRef.current = canvasLabel;
 
   useEffect(() => {
     const element = host.current;
@@ -73,7 +78,7 @@ export function DroneModelPreview({ droneId, className = '' }: DroneModelPreview
           try {
             drone = createDrone(id); drone.update(0, false, 0); loadedId = id;
             studio.scene.add(drone.model);
-            renderer.domElement.setAttribute('aria-label', `${getDroneSpec(id).name}三维模型。拖动或方向键旋转，滚轮或加减键缩放，Home 复位。`);
+            renderer.domElement.setAttribute('aria-label', canvasLabelRef.current);
             fit(); setReady(true); setFailed(false);
           } catch {
             if (active) { setFailed(true); setReady(false); }
@@ -126,6 +131,8 @@ export function DroneModelPreview({ droneId, className = '' }: DroneModelPreview
   }, [descriptionId]);
 
   useEffect(() => { currentId.current = droneId; runtime.current?.setModel(droneId); }, [droneId]);
+  // Language updates accessible copy without rebuilding the renderer or resetting OrbitControls.
+  useEffect(() => { host.current?.querySelector('canvas')?.setAttribute('aria-label', canvasLabel); }, [canvasLabel]);
 
   const keyboard = (event: KeyboardEvent<HTMLDivElement>) => {
     event.stopPropagation();
@@ -136,17 +143,17 @@ export function DroneModelPreview({ droneId, className = '' }: DroneModelPreview
     else if (event.key === '-') { event.preventDefault(); runtime.current?.zoom(1.14); }
   };
 
-  return <section className={`drone-model-preview ${className}`} aria-label={`${spec.name}三维模型预览`}
+  return <section className={`drone-model-preview ${className}`} aria-label={t('{name}三维模型预览', { name: t(spec.name) })}
     onKeyDown={keyboard} onClick={event => event.stopPropagation()}>
     <div ref={host} className="drone-preview-canvas" aria-busy={!ready && !failed}>
-      {!ready && <p className="drone-preview-status" role="status">{failed ? '当前设备暂时无法显示 3D 模型。' : '准备模型…'}</p>}
+      {!ready && <p className="drone-preview-status" role="status">{t(failed ? '当前设备暂时无法显示 3D 模型。' : '准备模型…')}</p>}
     </div>
     <div className="drone-preview-toolbar">
-      <span id={descriptionId} className="drone-preview-hint">拖动旋转 · 滚轮缩放</span>
-      <div role="group" aria-label="模型观察视角">
-        <button type="button" disabled={!ready} onClick={() => runtime.current?.rotate(-Math.PI / 6)} aria-label="向左旋转模型" title="向左旋转">↶</button>
-        <button type="button" disabled={!ready} onClick={() => runtime.current?.reset()} aria-label="复位模型视角与缩放" title="恢复完整模型视角">复位</button>
-        <button type="button" disabled={!ready} onClick={() => runtime.current?.rotate(Math.PI / 6)} aria-label="向右旋转模型" title="向右旋转">↷</button>
+      <span id={descriptionId} className="drone-preview-hint">{t('拖动旋转 · 滚轮缩放')}</span>
+      <div role="group" aria-label={t('模型观察视角')}>
+        <button type="button" disabled={!ready} onClick={() => runtime.current?.rotate(-Math.PI / 6)} aria-label={t('向左旋转模型')} title={t('向左旋转')}>↶</button>
+        <button type="button" disabled={!ready} onClick={() => runtime.current?.reset()} aria-label={t('复位模型视角与缩放')} title={t('恢复完整模型视角')}>{t('复位')}</button>
+        <button type="button" disabled={!ready} onClick={() => runtime.current?.rotate(Math.PI / 6)} aria-label={t('向右旋转模型')} title={t('向右旋转')}>↷</button>
       </div>
     </div>
   </section>;
