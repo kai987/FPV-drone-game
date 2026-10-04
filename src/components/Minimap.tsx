@@ -181,6 +181,9 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
   const geography = useMemo(() => {
     const projection = createProjection(bounds);
     const riverLabel = RIVER_SAMPLES[Math.floor(RIVER_SAMPLES.length / 2)];
+    const intersectsView = (rect: { x: number; z: number; width: number; depth: number }) =>
+      rect.x + rect.width / 2 >= bounds.minX && rect.x - rect.width / 2 <= bounds.maxX
+      && rect.z + rect.depth / 2 >= bounds.minZ && rect.z - rect.depth / 2 <= bounds.maxZ;
     return {
       ...projection,
       riverPath: isValley ? closedPath(riverOutline.map(point => projection.project(point.x, point.z))) : '',
@@ -196,12 +199,12 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
         const radius = Math.hypot(box.width, box.depth) / 2;
         return box.x + radius >= bounds.minX && box.x - radius <= bounds.maxX && box.z + radius >= bounds.minZ && box.z - radius <= bounds.maxZ;
       }).map(box => ({ ...box, position: projection.project(box.x, box.z), width: box.width * projection.scale, depth: box.depth * projection.scale })),
-      roads: roads.surfaces.map(road => ({ ...road, position: projection.project(road.x, road.z), width: road.width * projection.scale, depth: road.depth * projection.scale })),
-      crossings: roads.markings.filter(marking => marking.kind === 'zebra').map(marking => ({ ...marking, position: projection.project(marking.x, marking.z), width: marking.width * projection.scale, depth: marking.depth * projection.scale })),
-      landmarks: layout.landmarks.map(landmark => ({ ...landmark, position: projection.project(landmark.x, landmark.z) })),
+      roads: roads.surfaces.filter(intersectsView).map(road => ({ ...road, position: projection.project(road.x, road.z), width: road.width * projection.scale, depth: road.depth * projection.scale })),
+      crossings: roads.markings.filter(marking => marking.kind === 'zebra' && intersectsView(marking)).map(marking => ({ ...marking, position: projection.project(marking.x, marking.z), width: marking.width * projection.scale, depth: marking.depth * projection.scale })),
+      landmarks: layout.landmarks.filter(landmark => !isOutsideBounds(landmark, bounds)).map(landmark => ({ ...landmark, position: projection.project(landmark.x, landmark.z) })),
       shore: projection.project(HARBOR_SHORE_X, worldBounds.minZ),
       seaCorner: projection.project(worldBounds.maxX, worldBounds.maxZ),
-      ship: layout.ship ? { ...layout.ship, position: projection.project(layout.ship.x, layout.ship.z), width: layout.ship.width * projection.scale, length: layout.ship.length * projection.scale } : null,
+      ships: layout.ships.filter(ship => intersectsView({ ...ship, depth: ship.length })).map(ship => ({ ...ship, position: projection.project(ship.x, ship.z), width: ship.width * projection.scale, length: ship.length * projection.scale })),
     };
   }, [bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ, mapId, isValley, layout, roads, worldBounds]);
 
@@ -278,10 +281,10 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
             </g>
             {geography.urbanBoxes.map(box => <rect key={box.key} x={-box.width / 2} y={-box.depth / 2} width={box.width} height={box.depth}
               transform={`translate(${box.position.x} ${box.position.y}) rotate(${-(box.yaw ?? 0) * 180 / Math.PI})`} fill={box.color} fillOpacity="0.72" stroke="#202f2a" strokeWidth="0.25" />)}
-            {geography.ship && <g transform={`translate(${geography.ship.position.x} ${geography.ship.position.y})`}>
-              <title>货轮 MERIDIAN</title>
-              <path d={`M 0 ${-geography.ship.length / 2} L ${geography.ship.width / 2} ${-geography.ship.length / 2 + geography.ship.width / 2} L ${geography.ship.width / 2} ${geography.ship.length / 2} L ${-geography.ship.width / 2} ${geography.ship.length / 2} L ${-geography.ship.width / 2} ${-geography.ship.length / 2 + geography.ship.width / 2} Z`} fill="none" stroke="#dae5df" strokeWidth="0.85" />
-            </g>}
+            {geography.ships.map(ship => <g key={ship.id} transform={`translate(${ship.position.x} ${ship.position.y})`}>
+              <title>货轮 {ship.name}</title>
+              <path d={`M 0 ${-ship.length / 2} L ${ship.width / 2} ${-ship.length / 2 + ship.width / 2} L ${ship.width / 2} ${ship.length / 2} L ${-ship.width / 2} ${ship.length / 2} L ${-ship.width / 2} ${-ship.length / 2 + ship.width / 2} Z`} fill="none" stroke="#dae5df" strokeWidth="0.85" />
+            </g>)}
             {geography.landmarks.map((landmark, index) => <g key={`${landmark.kind}-${index}`} transform={`translate(${landmark.position.x} ${landmark.position.y})`}>
               <title>{landmark.label}</title>
               {landmark.kind === 'crane' ? <path d="M -3 3 L -3 -3 L 4 -3 M 2 -3 L 2 2 M -4 3 L 4 3" fill="none" stroke="#e8daaa" strokeWidth={compactSymbols ? 0.6 : 1} /> : <circle r={compactSymbols ? 1 : 2} fill={landmark.kind === 'lighthouse' ? '#dff781' : '#e1ddbe'} stroke="#26372d" strokeWidth="0.5" />}
