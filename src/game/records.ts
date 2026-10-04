@@ -6,14 +6,14 @@ import type { MapId } from './map-catalog.ts';
 
 export function bestTimeKey(drone: DroneId, mode: FlightMode, wind: WindSettings, mapId: MapId = 'valley') {
   const weather = wind.strength === 'calm' ? 'calm' : `${wind.strength}:${((wind.direction % 360) + 360) % 360}`;
-  if (mapId !== 'valley') return `aeroflow:v4:best:${mapId}:${drone}:${mode}:${weather}`;
-  return `aeroflow:v3:best:${drone}:${mode}:${weather}`;
+  return `aeroflow:v5:best:${mapId}:${drone}:${mode}:${weather}`;
 }
 
-/** Pre-wind records are comparable only to calm flights. Storage is optional. */
+/** Dynamic wind and denser urban maps need fresh records. Calm valley flights remain comparable. */
 export function readBestTime(storage: Pick<Storage, 'getItem'>, drone: DroneId, mode: FlightMode, wind: WindSettings, mapId: MapId = 'valley'): number | null {
   const keys = [bestTimeKey(drone, mode, wind, mapId)];
   if (mapId === 'valley' && wind.strength === 'calm') {
+    keys.push(`aeroflow:v3:best:${drone}:${mode}:calm`);
     keys.push(`aeroflow:v2:best:${drone}:${mode}`);
     if (drone === DEFAULT_DRONE_ID) keys.push(`aeroflow:v1:best:${mode}`);
   }

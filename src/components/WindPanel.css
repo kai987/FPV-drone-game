@@ -7,12 +7,14 @@
 .wind-hud-readout small { margin-left: 3px; font-size: 9px; color: #c5d3b9; }
 .wind-hud-readout > span { display: flex; align-items: center; gap: 6px; font-size: 9px; color: #d1debf; }
 .wind-hud-readout i { width: 2px; height: 2px; border-radius: 50%; background: currentColor; }
+.wind-hud-bearing { color: #dff781; font-variant-numeric: tabular-nums; }
 .wind-hud:focus-visible { outline: 2px solid #dff781; outline-offset: 2px; }
 .wind-dialog { color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 20px; width: min(510px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 28px; overflow: auto; }
 .wind-dialog::backdrop { background: #142a1f66; backdrop-filter: blur(5px); }
 .wind-dialog-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .wind-dialog h2 { margin: 9px 0 14px; font-size: 25px; font-weight: 600; letter-spacing: -.7px; }
 .wind-intro, .wind-context { font-size: 12px; line-height: 1.85; color: var(--muted); }
+.wind-direction-note { margin: 12px 0 0; font-size: 11px; line-height: 1.7; color: var(--muted); }
 .wind-dialog fieldset { border: 0; margin: 22px 0 0; padding: 0; min-width: 0; }
 .wind-dialog legend { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
 .wind-dialog legend small { font-size: 10px; font-weight: 400; color: var(--muted); margin-left: 8px; }

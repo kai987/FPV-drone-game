@@ -2,6 +2,10 @@ import type { MessageCatalog } from './locale';
 
 export const PANEL_MESSAGES = {
   '风况设置，{direction}，{speed} 米每秒，{relative}': ['風の設定、{direction}、毎秒{speed}メートル、{relative}', 'Wind settings, {direction}, {speed} meters per second, {relative}'],
+  '动态风况设置，实时来风方向 {degrees} 度，{direction}，{speed} 米每秒，{relative}': ['変動する風の設定、現在の風向{degrees}度、{direction}、毎秒{speed}メートル、{relative}', 'Dynamic wind settings, current wind from {degrees} degrees, {direction}, {speed} meters per second, {relative}'],
+  '实际风向随时间平滑偏转 · 空速 {speed} km/h · 点击调整基准风况': ['風向は時間とともに滑らかに変化 · 対気速度 {speed} km/h · クリックで基準の風を調整', 'Wind direction shifts smoothly over time · Airspeed {speed} km/h · Click to adjust base wind'],
+  '空速 {speed} km/h · 点击调整风况': ['対気速度 {speed} km/h · クリックで風を調整', 'Airspeed {speed} km/h · Click to adjust wind'],
+  '动态': ['変動', 'Dynamic'],
   '风向按来向标注 · 空速 {speed} km/h · 点击调整风况': ['風向は吹いてくる方向 · 対気速度 {speed} km/h · クリックで風を調整', 'Wind direction shows where it comes from · Airspeed {speed} km/h · Click to adjust wind'],
   '{direction}风': ['{direction}風', '{direction} wind'],
   '调整风况': ['風を調整', 'Adjust wind'],
@@ -15,11 +19,26 @@ export const PANEL_MESSAGES = {
   '风力': ['風の強さ', 'Wind strength'],
   '基准风速 · 阵风会平滑变化': ['基準風速 · 突風は滑らかに変化', 'Base speed · Gusts change smoothly'],
   '来风方向': ['吹いてくる方向', 'Wind from'],
+  '基准来风方向': ['基準の風向', 'Base wind direction'],
+  '实际风向会平滑偏转': ['実際の風向は滑らかに変化', 'Actual direction shifts smoothly'],
   '北风表示从北向南吹': ['北風は北から南へ吹く風', 'A north wind blows from north to south'],
   '{direction}风，从{direction}方吹来': ['{direction}風、{direction}から吹く風', '{direction} wind, blowing from the {direction}'],
+  '{direction}基准风，从{direction}方吹来': ['基準の{direction}風、{direction}から吹く風', 'Base {direction} wind, blowing from the {direction}'],
+  '基准风向表示来向，例如北风从北向南吹。起飞后实际来向会平滑偏转；仪表度数与地图箭头实时更新，暂停时冻结。': [
+    '基準の風向は風が吹いてくる方向です。例えば北風は北から南へ吹きます。離陸後は実際の風向が滑らかに変化します。計器の角度とマップの矢印はリアルタイムで更新され、一時停止中は止まります。',
+    'Base direction is where wind comes from: a north wind blows north to south. After takeoff the actual direction shifts smoothly. Instrument degrees and the map arrow update live and freeze while paused.',
+  ],
+  '风速随时间、位置和高度轻微变化。个人最佳按机型、飞行模式及基准风况分别记录。': [
+    '風速は時間、位置、高度によって少し変化します。自己ベストは機体、フライトモード、基準の風設定ごとに記録されます。',
+    'Wind speed varies slightly with time, position and altitude. Personal bests are recorded separately for each aircraft, flight mode and base wind setting.',
+  ],
   '飞行已暂停。应用后保留位置与进度；本轮若改变风况，将不计入个人最佳。关闭后可继续飞行。': [
     '飛行を一時停止しました。適用しても位置と進捗は保持されます。このフライトで風を変更すると、自己ベストには記録されません。閉じた後に飛行を再開できます。',
     'Flight is paused. Applying wind preserves your position and progress. Changing wind during this flight excludes it from personal bests. After closing, you can resume flight.',
+  ],
+  '飞行已暂停。应用后保留位置与进度；手动修改基准风况的这一轮不计入个人最佳，自动风向变化仍可记录。关闭后可继续飞行。': [
+    '飛行を一時停止しました。適用しても位置と進捗は保持されます。基準の風設定を手動で変えたフライトは自己ベストに記録されませんが、自動の風向変化は記録対象のままです。閉じた後に飛行を再開できます。',
+    'Flight is paused. Applying wind preserves your position and progress. Manually changing the base wind excludes this flight from personal bests; automatic direction shifts still count. After closing, you can resume flight.',
   ],
   '起飞后风会随时间、位置和高度轻微变化。个人最佳按机型、飞行模式及风况分别记录。': [
     '離陸後は時間、位置、高度によって風が少し変化します。自己ベストは機体、フライトモード、風の設定ごとに記録されます。',

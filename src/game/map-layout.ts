@@ -1,4 +1,5 @@
-import { isUrbanRoadArea } from './urban-roads.ts';
+import { getMapSpec } from './map-catalog.ts';
+import { getUrbanRoadNetwork, isUrbanRoadArea } from './urban-roads.ts';
 
 /** Metres, shared by the renderer, Rust collision geometry and minimap. */
 export interface UrbanBox {
@@ -62,6 +63,84 @@ export interface UrbanMapLayout {
 }
 
 const CONTAINER_COLORS = ['#b4513d', '#c7a543', '#3e6f86', '#527565', '#d0c5ad', '#945c42'];
+
+function warehouseRoof(building: WarehouseSpec, boxes: UrbanBox[]): void {
+  boxes.push({ x: building.x, z: building.z, width: building.width + 1.4, depth: building.depth + 1.4,
+    base: building.base + building.height, height: 0.34 });
+  for (const side of [-1, 1]) {
+    const x = building.x + side * building.width * 0.3, z = building.z - building.depth * 0.2;
+    boxes.push({ x, z, width: 4.5, depth: 5.5, base: building.base + building.height, height: 1.6 });
+    boxes.push({ x, z: z + 9, width: 2.2, depth: 2.2, base: building.base + building.height + 0.8, height: 4.3 });
+  }
+}
+
+interface Footprint { minX: number; maxX: number; minZ: number; maxZ: number; }
+
+function footprint(box: Pick<UrbanBox, 'x' | 'z' | 'width' | 'depth' | 'yaw'>, clearance = 0): Footprint {
+  const c = Math.abs(Math.cos(box.yaw ?? 0)), s = Math.abs(Math.sin(box.yaw ?? 0));
+  const halfX = (box.width * c + box.depth * s) / 2 + clearance;
+  const halfZ = (box.depth * c + box.width * s) / 2 + clearance;
+  return { minX: box.x - halfX, maxX: box.x + halfX, minZ: box.z - halfZ, maxZ: box.z + halfZ };
+}
+
+function intersectsFootprint(a: Footprint, b: Footprint): boolean {
+  return a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
+}
+
+function crossesFootprint(from: { x: number; z: number }, to: { x: number; z: number }, area: Footprint): boolean {
+  let start = 0, end = 1;
+  for (const [origin, delta, min, max] of [
+    [from.x, to.x - from.x, area.minX, area.maxX],
+    [from.z, to.z - from.z, area.minZ, area.maxZ],
+  ]) {
+    if (Math.abs(delta) < 1e-8) { if (origin < min || origin > max) return false; }
+    else {
+      const a = (min - origin) / delta, b = (max - origin) / delta;
+      start = Math.max(start, Math.min(a, b)); end = Math.min(end, Math.max(a, b));
+      if (start > end) return false;
+    }
+  }
+  return true;
+}
+
+/** Fill existing street blocks, keeping loading aprons and the original training course open. */
+function infillWarehouses(mapId: 'factory' | 'harbor', warehouses: WarehouseSpec[], boxes: UrbanBox[]): void {
+  const map = getMapSpec(mapId), roads = getUrbanRoadNetwork(mapId);
+  // Sixteen metres cover roof overhangs, doors and the ten-metre loading apron.
+  const occupied = [...boxes.map(box => footprint(box)), ...warehouses.map(building => footprint(building, 16))];
+  const streets = roads.surfaces.map(road => footprint(road, 8));
+  const route = [map.spawn, ...map.checkpoints.map(gate => gate.position)];
+  const colors = mapId === 'factory'
+    ? ['#627880', '#986a56', '#83917d', '#617f89', '#aa8b65', '#777e91']
+    : ['#6f8a91', '#a69579', '#7c8874', '#9d725c', '#637c92', '#8e8980'];
+  const target = mapId === 'factory' ? 190 : 125;
+  const coreX = mapId === 'factory'
+    ? [-1140, -940, -740, -540, -340, -180, 180, 340, 540, 740, 940, 1140]
+    : [-1080, -900, -720, -540, -360, -180, 84];
+  const outerX = mapId === 'factory'
+    ? [-3040, -2720, -2400, -2080, -1760, -1120, -800, -480, 480, 800, 1120, 1760, 2080, 2400, 2720, 3040]
+    : [-3070, -2780, -2140, -1850, -1560, -940, -650, -360, 84];
+  const candidates = [
+    ...[270, 450, 90, -80, -310, -640, -1080, -1320, -1550].flatMap(z => coreX.map(x => ({ x, z }))),
+    ...[-3500, 2450, -2700, 1850, -2000, 1050, -3800, 780, -3000, 1220, -2150, 1570, -1950, 2590]
+      .flatMap(z => outerX.map(x => ({ x, z }))),
+  ];
+  for (const [index, position] of candidates.entries()) {
+    if (warehouses.length >= target) break;
+    const building: WarehouseSpec = { ...position, width: 64 + index % 4 * 15, depth: 82 + index * 3 % 4 * 19,
+      base: 2, height: 12 + index * 5 % 6 * 4, color: colors[index % colors.length],
+      label: `${position.z < -700 ? 'NORTH' : 'SOUTH'} ${mapId === 'factory' ? 'WORKS' : 'TERMINAL'} ${String(warehouses.length + 1).padStart(2, '0')}` };
+    const area = footprint(building, 16);
+    if (area.minX < map.bounds.minX || area.maxX > (mapId === 'harbor' ? HARBOR_SHORE_X : map.bounds.maxX)
+      || area.minZ < map.bounds.minZ || area.maxZ > map.bounds.maxZ) continue;
+    if (streets.some(street => intersectsFootprint(area, street)) || occupied.some(solid => intersectsFootprint(area, solid))) continue;
+    const flightArea = footprint(building, 76);
+    if (route.slice(1).some((point, segment) => crossesFootprint(route[segment], point, flightArea))) continue;
+    if ([map.spawn, ...map.targets.map(target => target.position)].some(point =>
+      point.x >= area.minX - 24 && point.x <= area.maxX + 24 && point.z >= area.minZ - 24 && point.z <= area.maxZ + 24)) continue;
+    warehouses.push(building); boxes.push(building); warehouseRoof(building, boxes); occupied.push(area);
+  }
+}
 
 function containerStacks(x: number, z: number, columns: number, rows: number, maxStack: number, yaw = 0): ContainerSpec[] {
   const containers: ContainerSpec[] = [];
@@ -152,14 +231,7 @@ function factoryLayout(): UrbanMapLayout {
     ...tanks.map(tank => ({ x: tank.x, z: tank.z, width: tank.radius * 2, depth: tank.radius * 2, base: 2, height: tank.height })),
     ...chimneys.map(chimney => ({ x: chimney.x, z: chimney.z, width: chimney.radius * 2, depth: chimney.radius * 2, base: 2, height: chimney.height })),
   ];
-  for (const building of warehouses) {
-    boxes.push({ x: building.x, z: building.z, width: building.width + 1.4, depth: building.depth + 1.4, base: 2 + building.height, height: 0.34 });
-    for (const side of [-1, 1]) {
-      const x = building.x + side * building.width * 0.3, z = building.z - building.depth * 0.2;
-      boxes.push({ x, z, width: 4.5, depth: 5.5, base: 2 + building.height, height: 1.6 });
-      boxes.push({ x, z: z + 9, width: 2.2, depth: 2.2, base: 2 + building.height + 0.8, height: 4.3 });
-    }
-  }
+  for (const building of warehouses) warehouseRoof(building, boxes);
   for (const pipe of pipes) boxes.push({
     x: (pipe.from[0] + pipe.to[0]) / 2, z: (pipe.from[2] + pipe.to[2]) / 2,
     width: Math.abs(pipe.to[0] - pipe.from[0]) + pipe.radius * 2,
@@ -175,6 +247,7 @@ function factoryLayout(): UrbanMapLayout {
       boxes.push({ x, z, width: 0.34, depth: 0.34, base: 2, height: pipe.from[1] - pipe.radius - 2 });
     }
   }
+  infillWarehouses('factory', warehouses, boxes);
   return { boxes, warehouses, containers, tanks, chimneys, cranes: [], trucks, pipes, ships: [],
     landmarks: [
       ...warehouses.map(building => ({ x: building.x, z: building.z, label: building.label, kind: 'warehouse' as const })),
@@ -242,14 +315,7 @@ function harborLayout(): UrbanMapLayout {
     trucks.push({ x: 112, z: pier.z + 90, width: 2.7, depth: 14, base: 2, height: 4.2, color: '#dfa647' });
   }
   const boxes: UrbanBox[] = [...HARBOR_PIERS, ...HARBOR_BREAKWATERS, ...warehouses, ...containers, ...trucks];
-  for (const building of warehouses) {
-    boxes.push({ x: building.x, z: building.z, width: building.width + 1.4, depth: building.depth + 1.4, base: 2 + building.height, height: 0.34 });
-    for (const side of [-1, 1]) {
-      const x = building.x + side * building.width * 0.3, z = building.z - building.depth * 0.2;
-      boxes.push({ x, z, width: 4.5, depth: 5.5, base: 2 + building.height, height: 1.6 });
-      boxes.push({ x, z: z + 9, width: 2.2, depth: 2.2, base: 2 + building.height + 0.8, height: 4.3 });
-    }
-  }
+  for (const building of warehouses) warehouseRoof(building, boxes);
   for (const crane of cranes) {
     for (const side of [-1, 1]) for (const end of [-1, 1]) boxes.push({
       x: crane.x + end * 31, z: crane.z + side * crane.span / 2,
@@ -296,6 +362,7 @@ function harborLayout(): UrbanMapLayout {
   boxes.push({ x: 108, z: -962, width: 12.4, depth: 12.4, base: 41.9, height: 0.8 });
   boxes.push({ x: 108, z: -962, width: 7, depth: 7, base: 42.7, height: 2.8 });
   boxes.push({ x: 108, z: -962, width: 9.6, depth: 9.6, base: 45.6, height: 0.8 });
+  infillWarehouses('harbor', warehouses, boxes);
   return { boxes, warehouses, containers, tanks: [], chimneys: [], cranes, trucks, pipes: [], ships, ship,
     landmarks: [
       ...warehouses.map(building => ({ x: building.x, z: building.z, label: building.label, kind: 'warehouse' as const })),

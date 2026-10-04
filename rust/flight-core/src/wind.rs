@@ -24,7 +24,7 @@ impl WindStrength {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WindSettings {
     pub strength: WindStrength,
-    /// Meteorological origin: 0 north (-Z), 90 east (+X).
+    /// Baseline meteorological origin: 0 north (-Z), 90 east (+X).
     pub direction: f64,
 }
 
@@ -57,8 +57,9 @@ fn degrees(value: f64) -> f64 {
     ((value % 360.0) + 360.0) % 360.0
 }
 
-/// Continuous deterministic game gusts. Callers own the elapsed simulation time
-/// so pausing freezes the field without changing positions or weather settings.
+/// Continuous deterministic game gusts with a slowly meandering bearing.
+/// Callers own elapsed simulation time, so pausing freezes the field without
+/// changing positions or settings; a reset reproduces the same weather.
 pub fn sample_wind(settings: WindSettings, elapsed: f64, position: Vec3) -> Vec3 {
     sample_wind_speed(
         settings.strength.base_speed(),
@@ -84,7 +85,14 @@ pub fn sample_wind_speed(base_speed: f64, direction: f64, elapsed: f64, position
         + 0.035 * (time * 0.19 - phase * 0.6).sin();
     let altitude_factor = 0.78 + 0.22 * (1.0 - (-altitude / 60.0).exp());
     let speed = base_speed * altitude_factor * gust;
-    let bearing = degrees(direction) * PI / 180.0;
+    // Match the TypeScript reference's operation order. Two slow weather waves
+    // and a small directional gust stay within 40 degrees of the baseline.
+    // The smooth onset makes every position start at the selected direction.
+    let direction_offset = (27.0 * (time * (TAU / 64.0) + phase * 0.6).sin()
+        + 9.0 * (time * (TAU / 37.0) + phase * 0.35).sin()
+        + 4.0 * (time * (TAU / 12.0) + phase * 1.1).sin())
+        * (1.0 - (-time / 6.0).exp());
+    let bearing = (degrees(direction) + direction_offset) * PI / 180.0;
     Vec3 {
         x: -bearing.sin() * speed,
         y: base_speed * altitude_factor * 0.025 * (time * 0.61 + phase * 0.8).sin(),

@@ -8,22 +8,29 @@ for (const mapId of ['factory', 'harbor'] as const) {
   test(`${mapId} remote district detail appears when approached, with a bounded night light pool`, () => {
     const { scenery, dispose } = urbanWorldFixture(mapId);
     try {
-      const chunks: THREE.InstancedMesh[] = [], lights: THREE.PointLight[] = [];
+      const chunks: THREE.InstancedMesh[] = [], lights: THREE.PointLight[] = [], signs: THREE.Mesh[] = [];
       scenery.scene.traverse(object => {
         if (object instanceof THREE.InstancedMesh && object.name === 'Industrial surface details') chunks.push(object);
         if (object instanceof THREE.PointLight) lights.push(object);
+        if (object instanceof THREE.Mesh && object.name === 'Warehouse sign') signs.push(object);
       });
       assert.ok(chunks.length > 10, 'districts have independently cullable detail geometry');
+      assert.equal(signs.length, getMapLayout(mapId).warehouses.length);
+      assert.ok(chunks.some(chunk => chunk.material instanceof THREE.MeshStandardMaterial
+        && chunk.material.emissive.getHexString() === 'ffd890'), 'warehouse windows use regional detail batches');
       assert.equal(lights.length, mapId === 'harbor' ? 9 : 8, 'larger street grids cannot multiply shader lights');
       scenery.setNight(true);
       scenery.update(0, 0, { x: 0, y: 12, z: 55 }, { x: 0, y: 14, z: 62 });
       const hidden = chunks.filter(chunk => !chunk.visible);
       assert.ok(hidden.length > chunks.length / 2, 'remote detail is not submitted from the start area');
+      const hiddenSigns = signs.filter(sign => !sign.visible);
+      assert.ok(hiddenSigns.length > signs.length / 2, 'unreadable remote signs do not multiply visible draws');
       const remoteWarehouse = getMapLayout(mapId).warehouses.find(warehouse => warehouse.z < -2500)!;
       assert.ok(remoteWarehouse);
       const position = { x: remoteWarehouse.x, y: remoteWarehouse.base + remoteWarehouse.height + 15, z: remoteWarehouse.z };
       scenery.update(1, 0, position, position);
       assert.ok(hidden.some(chunk => chunk.visible), 'travelling beyond the former boundary reveals the regional details');
+      assert.ok(hiddenSigns.some(sign => sign.visible), 'nearby warehouse signage appears in remote districts');
       scenery.setNight(false); scenery.update(2, 0, position, position);
       assert.ok(lights.every(light => light.intensity === 0), 'daytime disables the local street and lighthouse lights');
     } finally { dispose(); }
