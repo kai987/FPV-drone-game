@@ -1,0 +1,62 @@
+name: Deploy game to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install Rust and WebAssembly target
+        run: rustup toolchain install 1.93.0 --profile minimal --target wasm32-unknown-unknown
+      - uses: actions/cache@v4
+        with:
+          path: rust/flight-core/target
+          key: ${{ runner.os }}-${{ runner.arch }}-flight-core-${{ hashFiles('rust-toolchain.toml', 'rust/flight-core/Cargo.toml', 'rust/flight-core/Cargo.lock', 'rust/flight-core/src/**/*.rs') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-flight-core-
+      - name: Install dependencies
+        run: npm ci
+      - name: Test game and check TypeScript
+        run: npm run check
+      - name: Build Rust/WASM and Vite site
+        run: npm run build
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload built site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./dist
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy built site
+        id: deployment
+        uses: actions/deploy-pages@v4
