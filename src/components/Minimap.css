@@ -1,0 +1,237 @@
+.geographic-minimap.minimap {
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.geographic-minimap .minimap-wind {
+  position: absolute;
+  right: calc(100% + 10px);
+  bottom: 0;
+  width: 62px;
+  padding: 8px 5px;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  border: 1px solid #e1e6d456;
+  border-radius: 12px;
+  background: #19261dc9;
+  backdrop-filter: blur(8px);
+  color: #dff781;
+  pointer-events: none;
+}
+
+.geographic-minimap .minimap-wind-caption { color: #cfdbc1; font-size: 8px; letter-spacing: 1px; }
+.geographic-minimap .minimap-wind strong { color: #edf4e4; font-size: 10px; font-weight: 500; white-space: nowrap; }
+.geographic-minimap .minimap-wind-compass {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dff78135;
+  border-radius: 50%;
+}
+.geographic-minimap .minimap-wind-compass > span { position: absolute; top: -5px; padding: 0 3px; background: #253329; color: #d4dec8; font-size: 7px; line-height: 10px; }
+.geographic-minimap .minimap-wind-arrow { width: 28px; height: 28px; transition: transform .25s ease; }
+.geographic-minimap .minimap-wind-calm { width: 5px; height: 5px; border-radius: 50%; background: #bac8b2; }
+.geographic-minimap .minimap-wind.is-calm { color: #bac8b2; }
+
+.geographic-minimap .map-heading {
+  align-items: center;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.geographic-minimap .map-heading > span {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.geographic-minimap .minimap-modes {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.geographic-minimap .minimap-heading-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.geographic-minimap .minimap-follow {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0 2px;
+  border: 1px solid #c2d2ac35;
+  border-radius: 3px;
+  background: #e1ead009;
+  color: #dce6cb;
+  font-size: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+
+.geographic-minimap .minimap-follow[aria-pressed='true'] { color: #dff781; background: #dff78120; }
+.geographic-minimap .minimap-follow:hover { background: #dff78130; filter: none; }
+.geographic-minimap .minimap-follow-short { display: none; }
+
+.geographic-minimap .minimap-pan-surface {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.geographic-minimap .minimap-pan-surface.can-pan { cursor: grab; }
+.geographic-minimap .minimap-pan-surface.is-dragging { cursor: grabbing; }
+.geographic-minimap .minimap-pan-surface:focus-visible { outline: 1px solid #dff781; outline-offset: -2px; border-radius: 3px; }
+
+.geographic-minimap .minimap-pan-help {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.geographic-minimap .minimap-modes button {
+  display: block;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0 2px;
+  border-radius: 3px;
+  background: transparent;
+  color: #bac8b2;
+  font-size: inherit;
+  font-weight: 500;
+  line-height: inherit;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.geographic-minimap .minimap-modes button[aria-pressed='true'] {
+  background: #dff78120;
+  color: #dff781;
+}
+
+.geographic-minimap .minimap-modes button:hover:not(:disabled) {
+  background: #dff78130;
+  filter: none;
+}
+
+.geographic-minimap .minimap-modes button:focus-visible,
+.geographic-minimap .minimap-follow:focus-visible,
+.geographic-minimap .minimap-zoom button:focus-visible {
+  outline: 1px solid #dff781;
+  outline-offset: 2px;
+}
+
+.geographic-minimap .minimap-zoom {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1fr;
+  gap: 4px;
+  margin: 1px 0 7px;
+}
+
+.geographic-minimap .minimap-zoom button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid #c2d2ac30;
+  border-radius: 5px;
+  background: #e1ead00a;
+  color: #e2edcd;
+  font-size: 17px;
+  line-height: 1;
+  pointer-events: auto;
+  touch-action: manipulation;
+  font-variant-numeric: tabular-nums;
+}
+
+.geographic-minimap .minimap-zoom .minimap-zoom-factor {
+  color: #dff781;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.geographic-minimap .minimap-zoom button:hover:not(:disabled) {
+  background: #dff78126;
+  border-color: #dff78180;
+  filter: none;
+}
+
+.geographic-minimap .minimap-zoom button:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+@media (max-width: 800px) {
+  .geographic-minimap .minimap-wind { width: 52px; right: calc(100% + 7px); padding: 6px 4px; gap: 4px; border-radius: 9px; }
+  .geographic-minimap .minimap-wind-compass { width: 34px; height: 34px; }
+  .geographic-minimap .minimap-wind-arrow { width: 23px; height: 23px; }
+  .geographic-minimap .minimap-wind strong { font-size: 9px; }
+  .geographic-minimap .minimap-wind-caption { font-size: 7px; letter-spacing: .5px; }
+  .app-shell .geographic-minimap.minimap {
+    width: 126px;
+  }
+
+  .geographic-minimap .map-heading,
+  .geographic-minimap .map-distance {
+    font-size: 8px;
+  }
+
+  .geographic-minimap .minimap-follow-full { display: none; }
+  .geographic-minimap .minimap-follow-short { display: inline; }
+
+  .geographic-minimap .minimap-heading-controls { gap: 2px; }
+
+  .geographic-minimap .minimap-zoom {
+    margin-bottom: 5px;
+  }
+
+  .geographic-minimap .minimap-zoom button {
+    min-height: 30px;
+  }
+
+  .geographic-minimap .minimap-water-labels {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geographic-minimap .minimap-wind-arrow { transition: none; }
+}
+
+@media (max-width: 800px) and (max-height: 740px) {
+  .app-shell .geographic-minimap.minimap {
+    width: 104px;
+    padding: 6px;
+  }
+
+  .geographic-minimap .minimap-zoom {
+    gap: 3px;
+    margin-bottom: 4px;
+  }
+
+  .geographic-minimap .minimap-zoom button {
+    min-height: 26px;
+  }
+
+  .geographic-minimap .minimap-zoom .minimap-zoom-factor {
+    font-size: 10px;
+  }
+
+  .geographic-minimap .map-distance {
+    gap: 3px;
+    font-size: 7px;
+  }
+}

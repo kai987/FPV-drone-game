@@ -1,0 +1,28 @@
+{
+  "name": "aeroflow-fpv",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "dev": "npm run build:wasm && vite --host 127.0.0.1",
+    "build": "npm run build:wasm && tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "npm run build:wasm && cargo test --locked --manifest-path rust/flight-core/Cargo.toml && node --experimental-strip-types --test tests/*.test.ts",
+    "check": "npm test && tsc -b"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "^0.183.0",
+    "lucide-react": "^0.577.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.183.0",
+    "@vitejs/plugin-react": "^5.1.4",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  }
+}
