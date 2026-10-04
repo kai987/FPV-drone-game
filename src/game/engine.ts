@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { createFlightState, crossesCheckpoint } from './flight';
-import { CHECKPOINTS, createWorld } from './world';
-import { WORLD_BOUNDS, WATER_LEVEL } from './landscape';
+import { createWorld } from './world';
+import { WATER_LEVEL } from './landscape';
+import { DEFAULT_MAP_ID, getMapSpec } from './map-catalog';
+import type { MapId, MapSpec } from './map-catalog';
 import { FlightAudio } from './audio';
 import { createDrone } from './drone';
 import { DEFAULT_DRONE_ID, DRONES, getDroneSpec } from './drone-catalog';
 import type { DroneId } from './drone-catalog';
-import { TARGETS } from './weapons';
 import type { WeaponState } from './weapons';
 import { createWeaponSimulation } from './weapon-simulation';
 import type { WeaponSimulation } from './weapon-simulation';
@@ -36,6 +37,7 @@ export class FlightEngine {
   private world: ReturnType<typeof createWorld>;
   private readonly runtime: RustRuntime;
   private readonly worldKernel: WorldKernel;
+  private readonly mapSpec: MapSpec;
   private readonly weaponSimulation: WeaponSimulation;
   private camera = new THREE.PerspectiveCamera(68, 1, 0.2, 10000);
   private drone = createDrone();
@@ -73,25 +75,28 @@ export class FlightEngine {
   get windSettings(): Readonly<WindSettings> { return this.currentWind; }
   get recordEligible(): boolean { return this.unchangedWind; }
 
-  constructor(private host: HTMLDivElement, private events: EngineEvents, flightCore: WebAssembly.Module) {
+  constructor(private host: HTMLDivElement, private events: EngineEvents, flightCore: WebAssembly.Module, readonly mapId: MapId = DEFAULT_MAP_ID) {
+    this.mapSpec = getMapSpec(mapId);
+    this.state = this.initialState();
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     const panoramaResolution = host.getBoundingClientRect().width * this.renderer.getPixelRatio() > 900
       && this.renderer.capabilities.maxTextureSize >= 7096 ? 7096 : 3548;
     try {
       this.runtime = createRustRuntime(flightCore);
-      this.worldKernel = createWorldKernel(this.runtime);
+      this.worldKernel = createWorldKernel(this.runtime, mapId);
       this.world = createWorld(this.runtime, this.worldKernel, {
         resolution: panoramaResolution,
         maxAnisotropy: this.renderer.capabilities.getMaxAnisotropy(),
-      });
+      }, mapId);
       this.worldKernel.setObstacles(this.world.obstacles);
       this.simulation = createWorldFlightSimulation(this.runtime, this.worldKernel.handle);
-      this.weaponSimulation = createWeaponSimulation(this.runtime, this.worldKernel);
+      this.weaponSimulation = createWeaponSimulation(this.runtime, this.worldKernel, this.mapSpec.targets);
       this.weapons = this.weaponSimulation.state;
-      this.weaponVisuals = createWeaponVisuals(this.runtime, this.worldKernel);
+      this.weaponVisuals = createWeaponVisuals(this.runtime, this.worldKernel, this.mapSpec.targets);
     } catch (error) {
       this.renderer.dispose();
+      this.renderer.forceContextLoss();
       throw error;
     }
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -99,10 +104,11 @@ export class FlightEngine {
     this.renderer.toneMappingExposure = 1.2;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    this.renderer.domElement.setAttribute('aria-label', '三维山谷飞行画面，飞行时点击可启用鼠标视角');
+    this.renderer.domElement.setAttribute('aria-label', `三维${this.mapSpec.name}飞行画面，飞行时点击可启用鼠标视角`);
     this.renderer.domElement.dataset.flightCore = 'rust-wasm';
     this.renderer.domElement.dataset.numericServices = 'world,weapons,scene,particles,ecology';
-    this.renderer.domElement.dataset.textureResolution = String(panoramaResolution);
+    this.renderer.domElement.dataset.textureResolution = mapId === 'valley' ? String(panoramaResolution) : 'procedural';
+    this.renderer.domElement.dataset.mapId = mapId;
     this.renderer.domElement.tabIndex = 0;
     host.appendChild(this.renderer.domElement);
     this.camera.rotation.order = 'YXZ';
@@ -123,6 +129,12 @@ export class FlightEngine {
     document.addEventListener('pointerlockchange', this.pointerlockchange);
     this.renderer.domElement.addEventListener('click', this.lockPointer);
     this.refreshWind(); this.resize(); this.tick(0);
+  }
+  private initialState() {
+    const state = createFlightState();
+    state.position = { ...this.mapSpec.spawn };
+    state.yaw = this.mapSpec.spawnYaw;
+    return state;
   }
   private resize = () => {
     const { width, height } = this.host.getBoundingClientRect();
@@ -206,7 +218,7 @@ export class FlightEngine {
   }
   private setStatus(status: Status) { this.status = status; this.events.status(status); }
   start() {
-    this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
+    this.state = this.initialState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
     this.windClock = 0; this.unchangedWind = true;
     this.refreshWind();
     this.weapons = this.weaponSimulation.reset();
@@ -222,7 +234,7 @@ export class FlightEngine {
   }
   togglePause() { if (this.status === 'flying') this.pause(); else if (this.status === 'paused') this.setStatus('flying'); }
   reset() {
-    this.setStatus('ready'); this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
+    this.setStatus('ready'); this.state = this.initialState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
     this.windClock = 0; this.unchangedWind = true;
     this.refreshWind();
     this.weapons = this.weaponSimulation.reset();
@@ -242,7 +254,7 @@ export class FlightEngine {
         climb: pressed('Space') - Math.max(pressed('ShiftLeft'), pressed('ShiftRight')) + this.touch.climb,
         yaw: pressed('KeyQ') + pressed('ArrowLeft') - pressed('KeyE') - pressed('ArrowRight') + this.touch.yaw,
         lookPitch: pressed('ArrowUp') - pressed('ArrowDown'),
-      }, dt, this.flightMode, getDroneSpec(this.selectedDroneId).flight, this.currentWind, this.windClock, WORLD_BOUNDS);
+      }, dt, this.flightMode, getDroneSpec(this.selectedDroneId).flight, this.currentWind, this.windClock, this.mapSpec.bounds);
       this.windClock = result.windClock; this.wind = result.wind;
       this.elapsed += elapsedDelta; this.collisionCooldown -= dt;
       if (result.boundaryContact) {
@@ -266,13 +278,13 @@ export class FlightEngine {
         this.audio.explosion(Boolean(impact && impact.position.y < WATER_LEVEL + 0.3 && this.worldKernel.isWater(impact.position.x, impact.position.z)));
       }
       if (weaponEvents.hits > 0) {
-        this.events.notice(this.weapons.hitTargetIds.length === TARGETS.length
+        this.events.notice(this.weapons.hitTargetIds.length === this.mapSpec.targets.length
           ? `全部靶标命中 · 总得分 ${this.weapons.score} · R 重新挑战`
-          : `命中靶标 +${weaponEvents.hits * 100} · ${this.weapons.hitTargetIds.length} / ${TARGETS.length}`);
+          : `命中靶标 +${weaponEvents.hits * 100} · ${this.weapons.hitTargetIds.length} / ${this.mapSpec.targets.length}`);
       }
-      if (this.mode === 'race' && this.checkpoint < CHECKPOINTS.length && crossesCheckpoint(previous, this.state.position, CHECKPOINTS[this.checkpoint])) {
+      if (this.mode === 'race' && this.checkpoint < this.mapSpec.checkpoints.length && crossesCheckpoint(previous, this.state.position, this.mapSpec.checkpoints[this.checkpoint])) {
         this.checkpoint++; this.audio.checkpoint();
-        if (this.checkpoint === CHECKPOINTS.length) {
+        if (this.checkpoint === this.mapSpec.checkpoints.length) {
           this.setStatus('finished'); this.events.finish(this.elapsed);
           if (document.pointerLockElement) document.exitPointerLock();
         } else this.events.notice(`检查点 ${String(this.checkpoint).padStart(2, '0')} / 08 · 继续前往下一个飞行环`);
@@ -353,6 +365,7 @@ export class FlightEngine {
     document.removeEventListener('mousemove', this.mousemove); document.removeEventListener('pointerlockchange', this.pointerlockchange);
     this.renderer.domElement.removeEventListener('click', this.lockPointer);
     if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
-    this.simulation.dispose(); this.weaponSimulation.dispose(); this.headlight.dispose(); this.audio.dispose(); this.drone.dispose(); this.weaponVisuals.dispose(); this.world.dispose(); this.worldKernel.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
+    this.simulation.dispose(); this.weaponSimulation.dispose(); this.headlight.dispose(); this.audio.dispose(); this.drone.dispose(); this.weaponVisuals.dispose(); this.world.dispose(); this.worldKernel.dispose();
+    this.renderer.dispose(); this.renderer.forceContextLoss(); this.renderer.domElement.remove();
   }
 }

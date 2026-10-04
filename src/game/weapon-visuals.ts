@@ -4,6 +4,7 @@ import {
   BLAST_RADIUS, EXPLOSION_LIFETIME, MAX_ACTIVE_BOMBS, MAX_ACTIVE_EXPLOSIONS, TARGETS,
 } from './weapons.ts';
 import type { WeaponState } from './weapons.ts';
+import type { Target } from './weapons.ts';
 import { groundHeight } from './world.ts';
 import { isWater, WATER_LEVEL } from './landscape.ts';
 import type { RustRuntime } from './rust-runtime.ts';
@@ -12,8 +13,9 @@ import { createExplosionSimulation } from './effect-simulation.ts';
 import type { EffectFieldLayout } from './effect-simulation.ts';
 
 /** Geometry, target feedback and pooled effects for the fictional practice game. */
-export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel) {
-  const sampleGround = world ? world.groundHeight : groundHeight;
+export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel, targets: readonly Target[] = TARGETS) {
+  const sampleGround = world ? world.flightSurfaceHeight : groundHeight;
+  const waterAt = world ? world.isWater : isWater;
   const group = new THREE.Group();
   group.name = 'Training targets and game effects';
   const geometries = new Set<THREE.BufferGeometry>();
@@ -52,14 +54,14 @@ export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel) 
 
   // Instancing keeps all five layered bull's-eyes, crates and marker poles cheap.
   const padLayers = Array.from({ length: 4 }, () => {
-    const layer = new THREE.InstancedMesh(unitCylinder, targetMaterial, TARGETS.length);
+    const layer = new THREE.InstancedMesh(unitCylinder, targetMaterial, targets.length);
     layer.receiveShadow = true;
     group.add(layer);
     return layer;
   });
   const rimGeometry = ownGeometry(new THREE.RingGeometry(0.97, 1.03, 48));
   rimGeometry.rotateX(-Math.PI / 2);
-  const rims = new THREE.InstancedMesh(rimGeometry, rimMaterial, TARGETS.length);
+  const rims = new THREE.InstancedMesh(rimGeometry, rimMaterial, targets.length);
   group.add(rims);
   const checkShape = new THREE.Shape();
   checkShape.moveTo(-0.67, -0.01);
@@ -71,15 +73,15 @@ export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel) 
   checkShape.closePath();
   const checkGeometry = ownGeometry(new THREE.ShapeGeometry(checkShape));
   checkGeometry.rotateX(-Math.PI / 2);
-  const checks = new THREE.InstancedMesh(checkGeometry, checkMaterial, TARGETS.length);
+  const checks = new THREE.InstancedMesh(checkGeometry, checkMaterial, targets.length);
   group.add(checks);
-  const crates = new THREE.InstancedMesh(roundedBox, targetMaterial, TARGETS.length * 2);
-  const crateStraps = new THREE.InstancedMesh(unitBox, creamMaterial, TARGETS.length * 2);
+  const crates = new THREE.InstancedMesh(roundedBox, targetMaterial, targets.length * 2);
+  const crateStraps = new THREE.InstancedMesh(unitBox, creamMaterial, targets.length * 2);
   crates.castShadow = true;
   crates.receiveShadow = true;
   group.add(crates, crateStraps);
   const poleGeometry = ownGeometry(new THREE.CylinderGeometry(0.035, 0.049, 1.8, 8));
-  const poles = new THREE.InstancedMesh(poleGeometry, poleMaterial, TARGETS.length);
+  const poles = new THREE.InstancedMesh(poleGeometry, poleMaterial, targets.length);
   poles.castShadow = true;
   group.add(poles);
   const flagGeometry = ownGeometry(new THREE.PlaneGeometry(1.18, 0.72, 6, 2));
@@ -89,11 +91,11 @@ export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel) 
   }
   flagGeometry.computeVertexNormals();
   const flagMaterials: THREE.MeshStandardMaterial[] = [];
-  const targetHeights = TARGETS.map(target => sampleGround(target.position.x, target.position.z));
-  const hitStates = TARGETS.map(() => false);
+  const targetHeights = targets.map(target => sampleGround(target.position.x, target.position.z));
+  const hitStates = targets.map(() => false);
   const radiusScales = [1, 0.76, 0.48, 0.2];
 
-  TARGETS.forEach((target, index) => {
+  targets.forEach((target, index) => {
     const { x, z } = target.position;
     const y = targetHeights[index];
     padLayers.forEach((layer, layerIndex) => {
@@ -414,7 +416,7 @@ export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel) 
       if (disposed) return;
       const delta = THREE.MathUtils.clamp(time - previousTime, 0, 0.06); previousTime = time;
       const hitIds = new Set(state.hitTargetIds);
-      TARGETS.forEach((target, index) => {
+      targets.forEach((target, index) => {
         const hit = hitIds.has(target.id);
         const { x, z } = target.position;
         const y = targetHeights[index];
@@ -488,7 +490,7 @@ export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel) 
         const age = THREE.MathUtils.clamp(explosion.age, 0, EXPLOSION_LIFETIME);
         if (age >= EXPLOSION_LIFETIME) continue;
         const p = explosion.position;
-        const waterImpact = isWater(p.x, p.z) && p.y <= WATER_LEVEL + 0.35;
+        const waterImpact = waterAt(p.x, p.z) && p.y <= WATER_LEVEL + 0.35;
         const lateFade = 1 - ease(2.5, EXPLOSION_LIFETIME, age);
         if (age < 0.2 && lightCount < flashLights.length) {
           const light = flashLights[lightCount++];

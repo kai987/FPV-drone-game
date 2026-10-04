@@ -31,7 +31,7 @@ svg { flex-shrink: 0; }
 .game-layout { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); height: calc(100% - var(--header)); }
 .sidebar { padding: 38px 26px 20px 32px; border-right: 1px solid var(--line); display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; }
 .intro h1 { font-size: 45px; font-weight: 800; letter-spacing: -2px; line-height: 1.43; margin: 0; }
-.intro p { font-size: 14px; line-height: 1.8; margin: 10px 0 0; color: #73776f; white-space: nowrap; }
+.intro p { font-size: 14px; line-height: 1.8; margin: 10px 0 0; color: #73776f; }
 .course-settings { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 21px; }
 .course-settings h2 { font-size: 23px; font-weight: 700; margin: 0 0 12px; letter-spacing: -.5px; }
 .course-settings h2 span { font-family: 'Manrope', sans-serif; margin-right: 3px; }
@@ -41,6 +41,8 @@ svg { flex-shrink: 0; }
 .segment-control button { flex: 1; min-width: 0; border-radius: 8px; font-size: 13px; font-weight: 500; background: transparent; }
 .segment-control button.active { background: #263128; color: #f7f8f3; box-shadow: 0 1px 3px #16231915; }
 .segment-control button:disabled:not(.active) { opacity: .5; }
+.map-selector { margin-bottom: 18px; }
+.map-switch-help { margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .setting-label { font-size: 13px; font-weight: 500; margin: 25px 0 10px; }
 .primary-button { display: flex; align-items: center; justify-content: center; gap: 15px; width: 100%; min-height: 52px; padding: 13px 20px; background: #253128; color: #fafbf6; border-radius: 11px; font-size: 16px; font-weight: 600; }
 .primary-button svg { color: var(--lime); }
@@ -151,6 +153,8 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
   .course-meta { display: none; }
   .segment-control { height: 34px; border-radius: 7px; }
   .segment-control button { font-size: 10px; border-radius: 5px; }
+  .map-selector { margin-bottom: 7px; }
+  .map-switch-help { margin-top: 3px; font-size: 9px; }
   .setting-label { display: none; }
   .segment-control + .setting-label + .segment-control { margin-top: 6px; }
   .launch-button { min-height: 39px; padding: 9px 10px; font-size: 12px; border-radius: 7px; margin-top: 8px; gap: 8px; }
@@ -199,6 +203,9 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
   .sidebar { display: block; padding: 9px 14px; }
   .intro, .course-settings h2, .personal-best { display: none; }
   .course-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; }
+  .map-selector { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin-bottom: 0; }
+  .map-selector .segment-control { flex: 1; }
+  .map-switch-help { margin: 0; white-space: nowrap; }
   .segment-control { height: 32px; }
   .segment-control + .setting-label + .segment-control { margin-top: 0; }
   .launch-button { min-height: 32px; height: 32px; margin-top: 0; padding: 5px 10px; font-size: 11px; }

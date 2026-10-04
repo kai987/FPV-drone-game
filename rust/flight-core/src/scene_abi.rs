@@ -1,5 +1,8 @@
 //! Initialization-only scene generation and reusable batches.
-use crate::scene::{LakeEdge, Point, RiverPoint, SceneConfig, ripple_texture, terrain_color};
+use crate::scene::{
+    LakeEdge, Placements, Point, RiverPoint, SceneConfig, ripple_texture, terrain_color,
+};
+use crate::world::MapKind;
 use crate::world_abi::world_from_handle;
 const BATCH: usize = 512;
 struct SceneBuffers {
@@ -123,7 +126,18 @@ pub unsafe extern "C" fn scene_generate(handle: usize, world_handle: usize) -> i
     let Some(config) = parse(&buffers.config_input) else {
         return 0;
     };
-    let data = config.generate(world);
+    let data = if world.map_kind == MapKind::Valley {
+        config.generate(world)
+    } else {
+        // Urban scenery has its own authored layout, while this handle still
+        // provides shared terrain/water batches and procedural ripple textures.
+        Placements {
+            trees: Vec::new(),
+            rocks: Vec::new(),
+            banks: Vec::new(),
+            shrubs: Vec::new(),
+        }
+    };
     buffers.output = vec![
         (data.trees.len() / 7) as f64,
         (data.rocks.len() / 12) as f64,
@@ -191,7 +205,7 @@ pub unsafe extern "C" fn scene_water(
     for index in 0..count {
         let p = index * 3;
         let depth = water_level - world.ground_height(b.input[p], b.input[p + 1]);
-        let current = if depth > -6.0 {
+        let current = if world.map_kind == MapKind::Valley && depth > -6.0 {
             config.current(Point {
                 x: b.input[p],
                 z: b.input[p + 1],

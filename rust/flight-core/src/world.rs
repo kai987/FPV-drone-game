@@ -58,6 +58,92 @@ pub struct Obstacle {
     pub base: f64,
     pub roof: bool,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapKind {
+    Valley,
+    Factory,
+    Harbor,
+}
+/// A solid scene-authored cuboid. Dimensions and base are world-space metres;
+/// yaw follows Three.js's positive rotation around Y.
+#[derive(Clone, Copy, Debug)]
+pub struct UrbanBox {
+    pub x: f64,
+    pub z: f64,
+    pub width: f64,
+    pub depth: f64,
+    pub base: f64,
+    pub height: f64,
+    pub yaw: f64,
+}
+
+impl UrbanBox {
+    fn local_position(self, x: f64, z: f64) -> (f64, f64) {
+        let dx = x - self.x;
+        let dz = z - self.z;
+        (
+            dx * self.yaw.cos() - dz * self.yaw.sin(),
+            dx * self.yaw.sin() + dz * self.yaw.cos(),
+        )
+    }
+    fn contains(self, x: f64, z: f64) -> bool {
+        let (x, z) = self.local_position(x, z);
+        x.abs() <= self.width / 2.0 && z.abs() <= self.depth / 2.0
+    }
+    fn distance(self, x: f64, z: f64) -> f64 {
+        let (x, z) = self.local_position(x, z);
+        (x.abs() - self.width / 2.0)
+            .max(0.0)
+            .hypot((z.abs() - self.depth / 2.0).max(0.0))
+    }
+    fn top(self) -> f64 {
+        self.base + self.height
+    }
+}
+
+pub const HARBOR_SHORE_X: f64 = 140.0;
+/// East edge, minimum Z, maximum Z. These land piers touch the west shoreline.
+pub const HARBOR_PIERS: [(f64, f64, f64); 3] = [
+    (380.0, -155.0, -85.0),
+    (430.0, -465.0, -395.0),
+    (350.0, -785.0, -715.0),
+];
+
+fn segment_distance(x: f64, z: f64, ax: f64, az: f64, bx: f64, bz: f64) -> f64 {
+    let dx = bx - ax;
+    let dz = bz - az;
+    let t = (((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)).clamp(0.0, 1.0);
+    (x - ax - t * dx).hypot(z - az - t * dz)
+}
+
+/// Signed distance to the actual shore/pier union boundary. Buried pier west
+/// edges never count as coastline, including at the connection to the shore.
+fn harbor_water_distance(x: f64, z: f64) -> f64 {
+    let dry = x <= HARBOR_SHORE_X
+        || HARBOR_PIERS
+            .iter()
+            .any(|&(east, min_z, max_z)| x <= east && z >= min_z && z <= max_z);
+    let shoreline_z = HARBOR_PIERS
+        .iter()
+        .find(|&&(_, min_z, max_z)| z > min_z && z < max_z)
+        .map_or(
+            z,
+            |&(_, min_z, max_z)| {
+                if z - min_z < max_z - z { min_z } else { max_z }
+            },
+        );
+    let mut distance = (x - HARBOR_SHORE_X).hypot(z - shoreline_z);
+    for &(east, min_z, max_z) in &HARBOR_PIERS {
+        for (ax, az, bx, bz) in [
+            (HARBOR_SHORE_X, min_z, east, min_z),
+            (east, min_z, east, max_z),
+            (east, max_z, HARBOR_SHORE_X, max_z),
+        ] {
+            distance = distance.min(segment_distance(x, z, ax, az, bx, bz));
+        }
+    }
+    if dry { distance } else { -distance }
+}
 #[derive(Clone, Copy, Debug)]
 struct Segment {
     ax: f64,
@@ -159,10 +245,13 @@ pub struct World {
     pub cabins: Vec<Cabin>,
     pub bridges: Vec<Bridge>,
     pub pastures: Vec<Pasture>,
+    pub map_kind: MapKind,
     river: RiverNode,
     obstacles: Vec<Obstacle>,
     obstacle_tops: Vec<f64>,
     grid: HashMap<(i32, i32), Vec<usize>>,
+    boxes: Vec<UrbanBox>,
+    box_grid: HashMap<(i32, i32), Vec<usize>>,
 }
 
 impl World {
@@ -193,11 +282,23 @@ impl World {
             cabins,
             bridges,
             pastures,
+            map_kind: MapKind::Valley,
             river: RiverNode::build(segments),
             obstacles: Vec::new(),
             obstacle_tops: Vec::new(),
             grid: HashMap::new(),
+            boxes: Vec::new(),
+            box_grid: HashMap::new(),
         }
+    }
+    pub fn set_map_kind(&mut self, kind: u32) -> bool {
+        self.map_kind = match kind {
+            0 => MapKind::Valley,
+            1 => MapKind::Factory,
+            2 => MapKind::Harbor,
+            _ => return false,
+        };
+        true
     }
     /// Header: water level, river/lake/cabin/bridge/pasture counts, then rows of
     /// 3/6/8/10/3 f64 values in that order. Counts and geometry must be finite.
@@ -312,6 +413,11 @@ impl World {
         (normalized_radius - shape) * radial_scale
     }
     pub fn water_distance(&self, x: f64, z: f64) -> f64 {
+        match self.map_kind {
+            MapKind::Factory => return f64::INFINITY,
+            MapKind::Harbor => return harbor_water_distance(x, z),
+            MapKind::Valley => {}
+        }
         let mut best = f64::INFINITY;
         self.river.search(x, z, &mut best);
         for lake in &self.lakes {
@@ -323,6 +429,18 @@ impl World {
         self.water_distance(x, z) < 0.0
     }
     pub fn ground_height(&self, x: f64, z: f64) -> f64 {
+        match self.map_kind {
+            MapKind::Factory => return 2.0,
+            MapKind::Harbor => {
+                let distance = self.water_distance(x, z);
+                return if distance >= 0.0 {
+                    2.0
+                } else {
+                    self.water_level - 16.0 * smoothstep(0.0, 110.0, -distance)
+                };
+            }
+            MapKind::Valley => {}
+        }
         let warped_x = x + (z * 0.0028).sin() * 90.0;
         let warped_z = z + (x * 0.0031).sin() * 70.0;
         let rolling = 22.0
@@ -350,7 +468,7 @@ impl World {
             + ((self.water_level + 0.02).max(dry_terrain) - self.water_level)
                 * smoothstep(0.0, 80.0, distance)
     }
-    pub fn surface_height(&self, x: f64, z: f64) -> f64 {
+    fn terrain_surface_height(&self, x: f64, z: f64) -> f64 {
         let ground = self.ground_height(x, z);
         if ground < self.water_level && self.is_water(x, z) {
             self.water_level
@@ -358,7 +476,16 @@ impl World {
             ground
         }
     }
+    pub fn surface_height(&self, x: f64, z: f64) -> f64 {
+        self.box_surface_height(x, z, f64::INFINITY).map_or_else(
+            || self.terrain_surface_height(x, z),
+            |height| height.max(self.terrain_surface_height(x, z)),
+        )
+    }
     pub fn rural_surface_height(&self, x: f64, z: f64) -> Option<f64> {
+        if self.map_kind != MapKind::Valley {
+            return None;
+        }
         let mut height = None;
         for b in &self.bridges {
             let dx = x - b.x;
@@ -391,13 +518,25 @@ impl World {
         height
     }
     pub fn flight_surface_height(&self, x: f64, z: f64, from_y: f64) -> f64 {
-        let terrain = self.surface_height(x, z);
-        match self.rural_surface_height(x, z) {
+        let terrain = self.terrain_surface_height(x, z);
+        let rural = match self.rural_surface_height(x, z) {
             Some(structure) if from_y >= structure - 0.05 => terrain.max(structure),
             _ => terrain,
-        }
+        };
+        self.box_surface_height(x, z, from_y)
+            .map_or(rural, |height| rural.max(height))
     }
     pub fn clearance(&self, x: f64, z: f64, padding: f64) -> bool {
+        if self
+            .boxes
+            .iter()
+            .any(|b| b.distance(x, z) <= padding.max(0.0))
+        {
+            return false;
+        }
+        if self.map_kind != MapKind::Valley {
+            return true;
+        }
         for c in &self.cabins {
             let dx = x - c.x;
             let dz = z - c.z;
@@ -425,6 +564,43 @@ impl World {
         }
         true
     }
+    /// Replacing scene boxes rebuilds a small static spatial index. Runtime
+    /// collision and roof queries allocate nothing, even for stacked cargo.
+    pub fn set_boxes(&mut self, boxes: Vec<UrbanBox>) {
+        self.box_grid.clear();
+        for (index, b) in boxes.iter().enumerate() {
+            let cosine = b.yaw.cos().abs();
+            let sine = b.yaw.sin().abs();
+            let extent_x = b.width / 2.0 * cosine + b.depth / 2.0 * sine + 0.55;
+            let extent_z = b.width / 2.0 * sine + b.depth / 2.0 * cosine + 0.55;
+            for x in
+                ((b.x - extent_x) / 64.0).floor() as i32..=((b.x + extent_x) / 64.0).floor() as i32
+            {
+                for z in ((b.z - extent_z) / 64.0).floor() as i32
+                    ..=((b.z + extent_z) / 64.0).floor() as i32
+                {
+                    self.box_grid.entry((x, z)).or_default().push(index);
+                }
+            }
+        }
+        self.boxes = boxes;
+    }
+    fn nearby_boxes(&self, x: f64, z: f64) -> &[usize] {
+        self.box_grid
+            .get(&((x / 64.0).floor() as i32, (z / 64.0).floor() as i32))
+            .map_or(&[], Vec::as_slice)
+    }
+    fn box_surface_height(&self, x: f64, z: f64, from_y: f64) -> Option<f64> {
+        let mut height: Option<f64> = None;
+        for &index in self.nearby_boxes(x, z) {
+            let b = self.boxes[index];
+            let top = b.top();
+            if b.contains(x, z) && from_y >= top - 0.05 {
+                height = Some(height.map_or(top, |height| height.max(top)));
+            }
+        }
+        height
+    }
     pub fn set_obstacles(&mut self, obstacles: Vec<Obstacle>) {
         self.obstacle_tops = obstacles
             .iter()
@@ -445,6 +621,18 @@ impl World {
         self.obstacles = obstacles;
     }
     pub fn intersects_obstacle(&self, position: Vec3) -> bool {
+        if self
+            .nearby_boxes(position.x, position.z)
+            .iter()
+            .any(|&index| {
+                let b = self.boxes[index];
+                b.distance(position.x, position.z) < 0.55
+                    && position.y < b.top() + 0.45
+                    && position.y > b.base - 0.45
+            })
+        {
+            return true;
+        }
         let Some(nearby) = self.grid.get(&(
             ((position.x / 64.0).floor() as i32),
             ((position.z / 64.0).floor() as i32),

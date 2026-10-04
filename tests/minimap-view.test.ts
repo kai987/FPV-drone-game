@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { WORLD_BOUNDS } from '../src/game/landscape.ts';
+import { getMapSpec } from '../src/game/map-catalog.ts';
 import {
   ZOOM_LEVELS, ROUTE_BOUNDS, MAP_PADDING, MAP_WIDTH, MAP_HEIGHT,
   beginMapDrag, centerMapBounds, createProjection, getMapBounds, getMapCenter, hasPanGesture, isOutsideBounds, formatMapSpan, panMapBounds,
@@ -153,4 +154,25 @@ test('diagonal drag starts at the threshold without moving the current view back
   assert.ok(Math.abs(beginning.start.x - 12.4) < 1e-9);
   assert.ok(Math.abs(beginning.start.y - 23.2) < 1e-9);
   assert.deepEqual(panMapBounds(beginning.bounds, 0, 0, { width: 90, height: 75 }, WORLD_BOUNDS), bounds);
+});
+
+test('factory and harbor route overviews cover their own course, with independent zoom and following', () => {
+  for (const id of ['factory', 'harbor'] as const) {
+    const map = getMapSpec(id);
+    const options = { routeBounds: map.routeBounds };
+    const overview = getMapBounds('route', 1, { x: 1700, z: 900 }, map.bounds, options);
+    assert.deepEqual(overview, map.routeBounds);
+    assert.notDeepEqual(overview, ROUTE_BOUNDS);
+    for (const checkpoint of map.checkpoints) assert.equal(isOutsideBounds(checkpoint.position, overview), false);
+    const position = { x: -1400, z: -2000 };
+    const zoomed = getMapBounds('route', 4, position, map.bounds, options);
+    assert.equal(zoomed.maxX - zoomed.minX, (map.routeBounds.maxX - map.routeBounds.minX) / 4);
+    assert.equal(zoomed.maxZ - zoomed.minZ, (map.routeBounds.maxZ - map.routeBounds.minZ) / 4);
+    assert.deepEqual(getMapCenter(zoomed), position);
+    const manual = getMapBounds('route', 2, map.spawn, map.bounds, { ...options, center: position, follow: false });
+    assert.deepEqual(getMapCenter(manual), position);
+    assert.deepEqual(getMapBounds('world', 1, position, map.bounds, options), {
+      minX: map.bounds.minX, maxX: map.bounds.maxX, minZ: map.bounds.minZ, maxZ: map.bounds.maxZ,
+    });
+  }
 });
