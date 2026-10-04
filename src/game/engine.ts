@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createFlightState, stepFlight, crossesCheckpoint } from './flight';
+import { createFlightState, crossesCheckpoint } from './flight';
 import { CHECKPOINTS, createWorld } from './world';
 import type { WorldObstacle } from './world';
 import { isWater, WORLD_BOUNDS, WATER_LEVEL } from './landscape';
@@ -12,8 +12,11 @@ import type { DroneId } from './drone-catalog';
 import { createWeaponState, dropBomb, stepWeapons, TARGETS } from './weapons';
 import { createWeaponVisuals } from './weapon-visuals';
 import type { RaceMode, FlightMode, CameraMode, Status, Telemetry } from './types';
-import { DEFAULT_WIND_SETTINGS, sampleWind, describeWind } from './wind';
+import { EMPTY_TELEMETRY } from './types';
+import { DEFAULT_WIND_SETTINGS } from './wind';
 import type { WindSettings } from './wind';
+import { createFlightSimulation } from './flight-simulation';
+import type { FlightSimulation } from './flight-simulation';
 
 export interface EngineEvents {
   telemetry: (value: Telemetry) => void;
@@ -49,6 +52,8 @@ export class FlightEngine {
   private lastEmit = 0;
   private elapsed = 0;
   private windClock = 0;
+  private simulation: FlightSimulation;
+  private wind: Telemetry['wind'] = EMPTY_TELEMETRY.wind;
   private currentWind: WindSettings = { ...DEFAULT_WIND_SETTINGS };
   private unchangedWind = true;
   private checkpoint = 0;
@@ -62,7 +67,11 @@ export class FlightEngine {
   get windSettings(): Readonly<WindSettings> { return this.currentWind; }
   get recordEligible(): boolean { return this.unchangedWind; }
 
-  constructor(private host: HTMLDivElement, private events: EngineEvents) {
+  constructor(private host: HTMLDivElement, private events: EngineEvents, flightCore: WebAssembly.Module) {
+    this.simulation = createFlightSimulation(flightCore, flightSurfaceHeight, position => {
+      const nearby = this.obstacleGrid.get(`${Math.floor(position.x / 64)},${Math.floor(position.z / 64)}`);
+      return Boolean(nearby?.some(obstacle => intersectsObstacle(position, obstacle)));
+    });
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -71,6 +80,7 @@ export class FlightEngine {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.setAttribute('aria-label', '三维山谷飞行画面，飞行时点击可启用鼠标视角');
+    this.renderer.domElement.dataset.flightCore = 'rust-wasm';
     this.renderer.domElement.tabIndex = 0;
     host.appendChild(this.renderer.domElement);
     this.camera.rotation.order = 'YXZ';
@@ -102,7 +112,7 @@ export class FlightEngine {
     document.addEventListener('mousemove', this.mousemove);
     document.addEventListener('pointerlockchange', this.pointerlockchange);
     this.renderer.domElement.addEventListener('click', this.lockPointer);
-    this.resize(); this.tick(0);
+    this.refreshWind(); this.resize(); this.tick(0);
   }
   private resize = () => {
     const { width, height } = this.host.getBoundingClientRect();
@@ -154,6 +164,7 @@ export class FlightEngine {
     const changed = strength !== this.currentWind.strength || (strength !== 'calm' && direction !== this.currentWind.direction);
     if (changed && (this.status === 'flying' || this.status === 'paused')) this.unchangedWind = false;
     this.currentWind = { strength, direction };
+    this.refreshWind();
     this.emit();
   }
   /** A model can be changed only outside an active or paused flight. */
@@ -186,6 +197,7 @@ export class FlightEngine {
   start() {
     this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
     this.windClock = 0; this.unchangedWind = true;
+    this.refreshWind();
     this.weapons = createWeaponState();
     this.snapCamera = true;
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
@@ -201,6 +213,7 @@ export class FlightEngine {
   reset() {
     this.setStatus('ready'); this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
     this.windClock = 0; this.unchangedWind = true;
+    this.refreshWind();
     this.weapons = createWeaponState();
     this.snapCamera = true; this.events.notice('');
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
@@ -212,31 +225,21 @@ export class FlightEngine {
     if (this.status === 'flying') {
       const previous = { ...this.state.position };
       const pressed = (code: string) => this.keys.has(code) ? 1 : 0;
-      stepFlight(this.state, {
+      const result = this.simulation.step(this.state, {
         forward: pressed('KeyW') - pressed('KeyS') + this.touch.forward,
         strafe: pressed('KeyD') - pressed('KeyA') + this.touch.strafe,
         climb: pressed('Space') - Math.max(pressed('ShiftLeft'), pressed('ShiftRight')) + this.touch.climb,
         yaw: pressed('KeyQ') + pressed('ArrowLeft') - pressed('KeyE') - pressed('ArrowRight') + this.touch.yaw,
         lookPitch: pressed('ArrowUp') - pressed('ArrowDown'),
-      }, dt, this.flightMode, (x, z) => flightSurfaceHeight(x, z, previous.y), getDroneSpec(this.selectedDroneId).flight,
-      sampleWind(this.currentWind, this.windClock + dt * 0.5, previous));
-      this.windClock += dt;
+      }, dt, this.flightMode, getDroneSpec(this.selectedDroneId).flight, this.currentWind, this.windClock, WORLD_BOUNDS);
+      this.windClock = result.windClock; this.wind = result.wind;
       this.elapsed += elapsedDelta; this.collisionCooldown -= dt;
-      const p = this.state.position;
-      const x = THREE.MathUtils.clamp(p.x, WORLD_BOUNDS.minX, WORLD_BOUNDS.maxX);
-      const z = THREE.MathUtils.clamp(p.z, WORLD_BOUNDS.minZ, WORLD_BOUNDS.maxZ);
-      const floor = flightSurfaceHeight(x, z, previous.y) + 1.8;
-      const constrained = { x, z, y: THREE.MathUtils.clamp(p.y, floor, Math.max(floor, WORLD_BOUNDS.maxAltitude)) };
-      if (constrained.x !== p.x || constrained.y !== p.y || constrained.z !== p.z) {
-        this.state.position = constrained; this.state.velocity = { x: 0, y: 0, z: 0 };
+      if (result.boundaryContact) {
         if (this.collisionCooldown <= 0) { this.events.notice('已到达飞行场边界 · 转向继续探索'); this.collisionCooldown = 1.5; }
       }
       {
-        const nearby = this.obstacleGrid.get(`${Math.floor(this.state.position.x / 64)},${Math.floor(this.state.position.z / 64)}`);
-        const obstacle = nearby?.find(o => intersectsObstacle(this.state.position, o));
         const groundHit = this.state.collision;
-        if (obstacle || groundHit) {
-          if (obstacle) { this.state.position = previous; this.state.velocity = { x: 0, y: 0, z: 0 }; }
+        if (result.obstacleContact || groundHit) {
           if (this.collisionCooldown <= 0) {
             this.collisionCooldown = 1.5;
             if (this.mode === 'race') this.elapsed += 3;
@@ -309,13 +312,20 @@ export class FlightEngine {
     if (time - this.lastEmit > 90) { this.lastEmit = time; this.emit(); }
     this.frame = requestAnimationFrame(this.tick);
   };
+  private refreshWind() {
+    // Configuration/reset events refresh Rust telemetry without advancing time
+    // or contacts; normal flight still has exactly one simulate_tick per frame.
+    const result = this.simulation.step(this.state, { forward: 0, strafe: 0, climb: 0, yaw: 0 }, 0,
+      this.flightMode, getDroneSpec(this.selectedDroneId).flight, this.currentWind, this.windClock);
+    this.wind = result.wind;
+  }
   private emit() {
-    const wind = sampleWind(this.currentWind, this.windClock, this.state.position);
+    const wind = this.wind.vector;
     this.events.telemetry({
       speed: Math.hypot(this.state.velocity.x, this.state.velocity.y, this.state.velocity.z) * 3.6,
       altitude: this.state.position.y, elapsed: this.elapsed, checkpoint: this.checkpoint,
       position: { ...this.state.position }, yaw: this.state.yaw, pitch: this.state.pitch, roll: this.state.roll,
-      wind: { ...describeWind(wind, this.state.yaw), vector: wind },
+      wind: this.wind,
       airSpeed: Math.hypot(this.state.velocity.x - wind.x, this.state.velocity.y - wind.y, this.state.velocity.z - wind.z) * 3.6,
       recordEligible: this.unchangedWind,
       weapons: { ammo: this.weapons.ammo, reloadRemaining: this.weapons.reloadRemaining,
@@ -331,6 +341,6 @@ export class FlightEngine {
     document.removeEventListener('mousemove', this.mousemove); document.removeEventListener('pointerlockchange', this.pointerlockchange);
     this.renderer.domElement.removeEventListener('click', this.lockPointer);
     if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
-    this.headlight.dispose(); this.audio.dispose(); this.drone.dispose(); this.weaponVisuals.dispose(); this.world.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
+    this.simulation.dispose(); this.headlight.dispose(); this.audio.dispose(); this.drone.dispose(); this.weaponVisuals.dispose(); this.world.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
   }
 }

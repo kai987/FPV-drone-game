@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Camera, ChevronDown, Drone, Maximize, Minimize, Moon, Pause, Play, RotateCcw, Sun, Volume2, VolumeX, Trophy, Wind } from 'lucide-react';
 import { FlightEngine } from './game/engine';
+import { loadFlightCore } from './game/load-flight-core';
 import { CHECKPOINTS } from './game/world';
 import { EMPTY_TELEMETRY, formatTime } from './game/types';
 import type { CameraMode, FlightMode, RaceMode, Status } from './game/types';
@@ -54,34 +55,50 @@ export default function App() {
     noticeTimeout.current = setTimeout(() => setNotice(''), 3600);
   };
   useEffect(() => {
-    try {
-      const game = new FlightEngine(host.current!, {
-        telemetry: setTelemetry, status: setStatus, notice: notify, cameraMode: setCameraMode,
-        finish: seconds => {
-          const game = engine.current;
-          if (!game) return;
-          const currentMode = game.flightMode;
-          const currentDrone = game.droneId;
-          const weather = game.windSettings;
-          const key = bestTimeKey(currentDrone, currentMode, weather);
-          setFinishedRecordKey(key);
-          if (!game.recordEligible) return;
-          setBest(current => {
-            let previousBest: number | null = Object.hasOwn(current, key) ? current[key] : null;
-            try { previousBest ??= readBestTime(localStorage, currentDrone, currentMode, weather); } catch { /* Optional storage. */ }
-            if (previousBest !== null && previousBest <= seconds) return current;
-            try { localStorage.setItem(key, String(seconds)); } catch { /* Optional personal record. */ }
-            return { ...current, [key]: seconds };
-          });
-        },
-      });
-      engine.current = game; setLoaded(true);
-      return () => { clearTimeout(noticeTimeout.current); game.dispose(); engine.current = null; };
-    } catch {
-      setError('当前浏览器无法启动 3D 画面。请启用硬件加速，或使用支持 WebGL 2 的新版 Chrome、Edge 或 Safari。');
-    }
+    let cancelled = false;
+    let game: FlightEngine | null = null;
+    void (async () => {
+      let flightCore: WebAssembly.Module;
+      try {
+        flightCore = await loadFlightCore();
+      } catch {
+        if (!cancelled) setError('飞行模块加载失败。请刷新页面，并使用支持 WebAssembly 的新版浏览器。');
+        return;
+      }
+      if (cancelled) return;
+      try {
+        game = new FlightEngine(host.current!, {
+          telemetry: setTelemetry, status: setStatus, notice: notify, cameraMode: setCameraMode,
+          finish: seconds => {
+            const game = engine.current;
+            if (!game) return;
+            const currentMode = game.flightMode;
+            const currentDrone = game.droneId;
+            const weather = game.windSettings;
+            const key = bestTimeKey(currentDrone, currentMode, weather);
+            setFinishedRecordKey(key);
+            if (!game.recordEligible) return;
+            setBest(current => {
+              let previousBest: number | null = Object.hasOwn(current, key) ? current[key] : null;
+              try { previousBest ??= readBestTime(localStorage, currentDrone, currentMode, weather); } catch { /* Optional storage. */ }
+              if (previousBest !== null && previousBest <= seconds) return current;
+              try { localStorage.setItem(key, String(seconds)); } catch { /* Optional personal record. */ }
+              return { ...current, [key]: seconds };
+            });
+          },
+        }, flightCore);
+        engine.current = game; setLoaded(true);
+      } catch {
+        setError('当前浏览器无法启动 3D 画面。请启用硬件加速，或使用支持 WebGL 2 的新版 Chrome、Edge 或 Safari。');
+      }
+    })();
+    return () => {
+      cancelled = true; clearTimeout(noticeTimeout.current); game?.dispose();
+      if (engine.current === game) engine.current = null;
+    };
   }, []);
-  useEffect(() => { if (engine.current) { engine.current.mode = mode; engine.current.flightMode = flightMode; } }, [mode, flightMode]);
+  useEffect(() => { if (engine.current) { engine.current.mode = mode; engine.current.flightMode = flightMode; } }, [mode, flightMode, loaded]);
+  useEffect(() => { engine.current?.setWind(windSettings); }, [windSettings, loaded]);
   useEffect(() => { engine.current?.setNight(night); }, [night, loaded]);
   useEffect(() => {
     const switchDayNight = (event: KeyboardEvent) => {

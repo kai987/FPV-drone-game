@@ -36,6 +36,8 @@ const finite = (value: number) => Number.isFinite(value) ? value : 0;
 const degrees = (value: number) => ((value % 360) + 360) % 360;
 
 /**
+ * TypeScript behavior reference for Rust/WASM parity tests. Runtime sampling
+ * and numeric wind descriptions come from the Rust flight core.
  * Deterministic, continuous game wind rather than a weather forecast. Smooth
  * gusts share a spatial field and strengthen slightly away from the ground.
  * An engine can freeze elapsed time while paused; sampling itself has no state.
@@ -60,7 +62,7 @@ export function sampleWind(settings: WindSettings, elapsed: number, position: Ve
   };
 }
 
-/** World airflow projected onto a yaw-0/-Z aircraft's forward and right axes. */
+/** Test reference: airflow projected onto a yaw-0/-Z aircraft's forward/right axes. */
 export function describeWind(wind: Vec3, yaw: number): WindDescription {
   const x = finite(wind.x), y = finite(wind.y), z = finite(wind.z);
   const speed = Math.hypot(x, y, z);

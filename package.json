@@ -4,11 +4,12 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "dev": "npm run build:wasm && vite --host 127.0.0.1",
+    "build": "npm run build:wasm && tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "check": "tsc -b && npm test"
+    "test": "npm run build:wasm && cargo test --locked --manifest-path rust/flight-core/Cargo.toml && node --experimental-strip-types --test tests/*.test.ts",
+    "check": "npm test && tsc -b"
   },
   "dependencies": {
     "react": "^19.2.0",

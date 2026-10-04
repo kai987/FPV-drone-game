@@ -1,10 +1,12 @@
 # AEROFLOW · FPV Drone Game
 
-可直接在浏览器中玩的无人机飞行与投弹游戏，支持第一视角、追尾视角和俯视瞄准。使用 React、TypeScript、Vite 和 Three.js 构建，无需账号或后端。
+可直接在浏览器中玩的无人机飞行与投弹游戏，支持第一视角、追尾视角和俯视瞄准。React、TypeScript、Vite 和 Three.js 负责界面与三维场景，Rust 编译为 WebAssembly，运行飞行物理与风场。无需账号或后端。
 
 ## 本地运行
 
-需要 Node.js 22.18+（建议 Node.js 24）和 npm。
+开发与构建需要 Node.js 22.18+（建议 Node.js 24）、npm，以及通过 rustup 管理的 Rust/Cargo。仓库的 `rust-toolchain.toml` 固定 **Rust 1.93.0** 和 **`wasm32-unknown-unknown`** 目标；首次使用时，rustup 会按配置准备对应工具链和目标。
+
+网页玩家只需支持 WebGL 2 和 WebAssembly 的浏览器，不需要安装 Node.js 或 Rust。
 
 ```sh
 npm ci
@@ -14,10 +16,14 @@ npm run dev
 打开终端给出的地址，默认是 http://127.0.0.1:5173/ 。
 
 ```sh
-npm run check     # TypeScript 检查和物理/赛道测试
-npm run build     # 生成 dist/ 静态网站
-npm run preview   # 预览生产构建
+npm run build:wasm # 单独编译 Rust 并更新 WASM 产物
+npm test           # 编译 WASM，运行 Cargo 原生测试与 Node 测试
+npm run check      # npm test，再运行 TypeScript 检查
+npm run build      # 编译 WASM、检查 TypeScript，生成 dist/ 静态网站
+npm run preview    # 预览已有的 dist/ 生产构建
 ```
+
+`npm run dev`、`npm test`、`npm run check` 和 `npm run build` 都会先构建 WASM。开发服务器目前不监听 Rust 源码：修改 Rust 后需执行 `npm run build:wasm`，或重启 `npm run dev`。`src/game/generated/flight_core.wasm` 与 Cargo 的 `target/` 目录是构建产物，已加入 Git 忽略规则；全新检出会通过上述脚本生成。
 
 `dist/` 可部署到任意静态网站服务。构建采用相对资源路径，支持子目录。仓库 CI 对每次推送和 PR 运行检查与构建。无付费 API、服务器密钥或数据库依赖。
 
@@ -73,17 +79,28 @@ npm run preview   # 预览生产构建
 
 新增 **VECTOR 矢量**（运动模式 260 km/h）与 **FALCON 游隼**（360 km/h），具有不同的高速机架；FALCON 采用火箭般的长中央舱和四个平行电机舱，悬停时主轴直立，加速前进时向航向倾斜。灵感分别来自 [DRL RacerX 的 2017 年 163.5 mph 纪录（约 263 km/h）](https://www.guinnessworldrecords.com/news/commercial/2017/7/the-drone-racing-league-builds-the-worlds-fastest-racing-drone-482701) 和 [AirShaper 记载的 Peregreen V4 平均纪录约 657 km/h](https://airshaper.com/cases/peregreen-v4-fastest-drone)。机库分别显示原型纪录与无风游戏限速；这些是游戏改编机型，硬件参数不是原型实测配置。切换到「运动」飞行模式后才使用对应的更高限速。
 
-个人成绩按机型、飞行模式、风力与来风方向分别保存在当前浏览器的 localStorage 中；旧版成绩仅归入对应机型的无风条件，更旧的记录归入 FLOW 无风条件。飞行中改变风况的该轮不计入个人最佳，重新开始可正常记录；禁用本地存储仍可飞行。默认静音，声音须手动开启。三维场景需要 WebGL 2 和硬件加速，不支持时显示可读提示。
+个人成绩按机型、飞行模式、风力与来风方向分别保存在当前浏览器的 localStorage 中；旧版成绩仅归入对应机型的无风条件，更旧的记录归入 FLOW 无风条件。飞行中改变风况的该轮不计入个人最佳，重新开始可正常记录；禁用本地存储仍可飞行。默认静音，声音须手动开启。运行需要 WebAssembly、WebGL 2 和硬件加速，不支持时显示可读提示。
 
 ## 结构与验证
 
+Rust 负责逐帧飞行积分、加减速与姿态响应、阵风采样、风向数值描述，以及地形接触响应、世界边界约束和障碍碰撞回退。TypeScript 保留输入、机型配置、地图高度与障碍几何查询、穿环和投弹玩法、计时及渲染。地面、水面、桥面的支撑选择仍由场景提供，Rust 根据查询结果更新飞行状态。原有 TypeScript 飞行积分与风场数学函数保留为自动化测试的数值参考。
+
+每个活动飞行帧通过一次 `simulate_tick` 调用完成模拟，并复用固定的 Rust `f64` 输入、输出缓冲。加载器缓存编译后的 `WebAssembly.Module`；每个游戏实例拥有独立的模拟实例和内存，销毁时释放缓冲。构建后的 WASM 随静态网站一起提供。
+
 ```text
+rust-toolchain.toml         固定 Rust 1.93.0 与 WASM 编译目标
+rust/flight-core/src/       Rust 飞行、风场、接触响应及固定缓冲 WASM ABI
+rust/flight-core/tests/     Rust 原生模拟测试
+scripts/build-wasm.mjs      调用 Cargo 构建并更新生成的 WASM 文件
 src/App.tsx                  页面与游戏状态
 src/components/              仪表、小地图、指南、触屏控制与同款模型预览
-src/game/flight.ts           独立飞行物理与穿环检测
-src/game/wind.ts             确定性阵风、风向与迎顺侧风描述
+src/game/load-flight-core.ts 缓存 WASM 编译结果并处理浏览器加载
+src/game/flight-simulation.ts Rust/WASM 适配、场景查询回调与实例生命周期
+src/game/generated/         自动生成的 WASM 产物，不提交 Git
+src/game/flight.ts           飞行状态、穿环检测与测试用 TS 积分参考
+src/game/wind.ts             风况类型、预设与测试用 TS 风场参考
 src/game/records.ts          按机型、模式与风况区分的个人记录
-src/game/engine.ts           帧循环、输入、碰撞与挑战流程
+src/game/engine.ts           帧循环、输入、Rust 模拟调用与挑战流程
 src/game/drone.ts            可见四旋翼机身与螺旋桨动画
 src/game/drone-catalog.ts    六款 FPV 机型、原型来源与飞行配置
 src/game/weapons.ts          投弹、弹药、地面命中与得分模拟
@@ -103,10 +120,14 @@ src/game/collisions.ts       斜屋顶与桥下净空的障碍碰撞
 src/game/audio.ts            Web Audio 电机、穿环与投弹音效
 public/assets/               随仓库提供的游戏美术
 tests/                      飞行物理、完整赛道、投弹与地理测试
+tests/wasm-flight.test.ts    真实 WASM 数值对比、接触、生命周期与完整赛道
+tests/helpers/              独立 TS 模拟参考与普通输入赛道控制器
 docs/design.md              设计、素材与视觉验证说明
 ```
 
-测试覆盖不同帧率的稳定性、惯性、转向/视角移动、地形接触、高速穿环与方向检查，并用正常控制完成两种模式的真实 8 环赛道，没有通过传送跳过飞行过程。
+当前 `npm run check` 包含 **16 项 Cargo 原生测试、92 项 Node 测试及 TypeScript 检查**。WASM 测试直接读取生成的 `.wasm` 文件，通过 `WebAssembly.compile` 编译并实例化，覆盖 **6 机型 × 2 模式 × 4 风强 × 8 风向 × 3 帧率（30 / 60 / 120 fps）**的 1,152 组轨迹，共 **120,960 次逐帧数值对比**。
+
+测试覆盖不同帧率的稳定性、惯性、转向/视角移动、地形接触、高速穿环与方向检查。真实 Rust/WASM 核心使用普通飞行输入完成六款机型、两种模式共 12 种组合的完整 8 环赛道；另验证暂停与无效时间步、外部鼠标姿态变更、桥上/桥下支撑、边界与障碍回退后的风况、实例反复创建释放，以及回调重入保护。
 
 地理测试还覆盖河湖连通、岸线与地形一致性、连续高度、扩大后的边界、原有起点/检查点/靶标安全性，以及无人机与炸弹在水面接触。实际浏览器验证包含越过旧地图边界、抵达湖泊、地图范围切换和触水保护。
 

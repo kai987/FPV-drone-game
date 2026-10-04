@@ -69,6 +69,8 @@ export function createFlightState(
 }
 
 /**
+ * TypeScript behavior reference used by migration/regression tests. Runtime
+ * flight is integrated by Rust through flight-simulation.ts.
  * Mutates and returns the supplied state. Assisted mode brakes quickly and both
  * modes hover without input. Forward follows the camera's yaw and pitch;
  * independent climb controls remain available for precise altitude changes.
