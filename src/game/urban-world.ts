@@ -8,11 +8,15 @@ import { createNightSky } from './night-sky.ts';
 import { getMapLayout, HARBOR_PIERS, HARBOR_SHORE_X, HARBOR_BREAKWATERS } from './map-layout.ts';
 import type { UrbanBox, WarehouseSpec, ContainerSpec, CraneSpec, TruckSpec } from './map-layout.ts';
 import { getUrbanRoadNetwork, isUrbanRoadArea } from './urban-roads.ts';
+import { generateRipplePixels } from './scene-simulation.ts';
+import { createRippleTexture, createWaterMaterial, setWaterNight } from './water.ts';
+import { URBAN_SKY_GLSL } from './urban-sky.ts';
+import { WATER_LEVEL } from './landscape.ts';
 
 interface InstancePose { position: THREE.Vector3; scale: THREE.Vector3; quaternion: THREE.Quaternion; }
 
 /** Industrial architecture is metre-scaled from the same layout uploaded to Rust. */
-export function createUrbanWorld(_runtime: RustRuntime, kernel: WorldKernel, map: MapSpec, _panoramaOptions: PanoramaOptions = {}) {
+export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map: MapSpec, _panoramaOptions: PanoramaOptions = {}) {
   const harbor = map.id === 'harbor';
   const layout = getMapLayout(map.id);
   const roads = getUrbanRoadNetwork(map.id);
@@ -420,44 +424,40 @@ export function createUrbanWorld(_runtime: RustRuntime, kernel: WorldKernel, map
     uniforms: { time: { value: 0 }, night: { value: 0 }, horizon: { value: new THREE.Color(harbor ? '#a6cbd6' : '#b9cbd1') }, zenith: { value: new THREE.Color(harbor ? '#347ea9' : '#527f9f') } },
     vertexShader: `varying vec3 skyRay; void main(){ skyRay=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
     fragmentShader: `varying vec3 skyRay; uniform float time; uniform float night; uniform vec3 horizon; uniform vec3 zenith;
-      float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-      float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
-      float fbm(vec2 p){float n=0.0,a=0.5;for(int i=0;i<5;i++){n+=noise(p)*a;p=p*2.04+vec2(12.1,4.7);a*=0.5;}return n;}
-      void main(){vec3 d=normalize(skyRay);float elevation=max(d.y,0.0);vec3 sky=mix(horizon,zenith,pow(smoothstep(0.0,0.75,elevation),0.62));
-        vec2 uv=d.xz/(max(d.y,0.02)+0.22)*2.9+vec2(time*0.007,time*0.002);float coverage=fbm(uv+fbm(uv*0.5));
-        float cloud=smoothstep(0.50,0.70,coverage)*smoothstep(0.025,0.20,d.y);vec3 cloudColor=mix(vec3(0.74,0.81,0.83),vec3(0.97,0.97,0.93),smoothstep(0.5,0.75,coverage));
-        sky=mix(sky,cloudColor,cloud*(1.0-night*0.86));vec3 sunDirection=normalize(vec3(-0.5,0.75,-0.95));
-        float sun=pow(max(dot(d,sunDirection),0.0),480.0);sky+=vec3(0.95,0.82,0.60)*sun*(1.0-night)*0.42;
-        gl_FragColor=vec4(sky,1.0); #include <colorspace_fragment>
+      ${URBAN_SKY_GLSL}
+      void main(){
+        gl_FragColor=vec4(urbanSky(skyRay,horizon,zenith,time,night),1.0);
+        #include <colorspace_fragment>
       }`,
   }));
-  // Shader chunks are preprocessor directives and need their own physical line.
-  atmosphere.fragmentShader = atmosphere.fragmentShader.replace('; #include', ';\n#include');
   const skyMesh = new THREE.Mesh(ownGeometry(new THREE.SphereGeometry(5900, 48, 24)), atmosphere);
   skyMesh.renderOrder = -100; scene.add(skyMesh);
 
   let seaMaterial: THREE.ShaderMaterial | undefined;
   if (harbor) {
-    seaMaterial = ownMaterial(new THREE.ShaderMaterial({
-      uniforms: { time: { value: 0 }, night: { value: 0 }, shore: { value: HARBOR_SHORE_X }, fogDensity: { value: 0.00028 },
-        horizon: { value: new THREE.Color('#a6cbd6') }, deep: { value: new THREE.Color('#246c7d') } },
-      vertexShader: `varying vec3 seaPoint; uniform float time; void main(){ vec3 p=position;
-        p.y+=sin(p.x*0.07+p.z*0.021-time*0.85)*0.12+sin(p.z*0.09-p.x*0.017+time*0.65)*0.09;
-        seaPoint=(modelMatrix*vec4(p,1.0)).xyz;gl_Position=projectionMatrix*viewMatrix*vec4(seaPoint,1.0); }`,
-      fragmentShader: `varying vec3 seaPoint;uniform float time;uniform float night;uniform float shore;uniform float fogDensity;uniform vec3 horizon;uniform vec3 deep;
-        float wave(vec2 p){return sin(p.x*0.26+p.y*0.16-time*1.1)*0.7+sin(p.x*0.71-p.y*0.39+time*1.4)*0.3+sin(p.y*1.8+p.x*1.4-time*2.1)*0.13;}
-        void main(){vec2 p=seaPoint.xz;float e=0.4;vec3 normal=normalize(vec3((wave(p+vec2(e,0))-wave(p-vec2(e,0)))*-0.14,1.0,(wave(p+vec2(0,e))-wave(p-vec2(0,e)))*-0.14));
-          vec3 eye=normalize(cameraPosition-seaPoint);float fresnel=pow(1.0-max(dot(eye,normal),0.0),3.8);vec3 reflection=mix(horizon,vec3(0.28,0.53,0.66),0.5);
-          vec3 color=mix(deep,reflection,fresnel*0.7);float sparkle=pow(max(dot(reflect(-normalize(vec3(-0.5,0.8,0.7)),normal),eye),0.0),160.0);
-          color+=vec3(0.95,0.92,0.76)*sparkle*(1.0-night*0.8)*0.62;float crest=pow(max(wave(p)*0.59,0.0),5.0);
-          float coastal=1.0-smoothstep(0.0,7.0,abs(p.x-shore));float foam=coastal*smoothstep(0.6,1.0,sin(p.y*1.4-time*1.7))*0.34;
-          color=mix(color,vec3(0.73,0.85,0.83),clamp(crest*0.11+foam,0.0,0.33)*(1.0-night*0.75));
-          float fogDepth=distance(cameraPosition,seaPoint);float fog=1.0-exp(-fogDensity*fogDensity*fogDepth*fogDepth);color=mix(color,horizon,fog);gl_FragColor=vec4(color,1.0);
-          #include <colorspace_fragment>
-        }`,
-    }));
+    const ripples = createRippleTexture(generateRipplePixels(runtime)); textures.add(ripples);
+    seaMaterial = ownMaterial(createWaterMaterial(ripples, {
+      uniforms: { zenith: atmosphere.uniforms.zenith },
+      fragmentShader: `
+        uniform vec3 zenith;
+        ${URBAN_SKY_GLSL}
+        vec3 reflectedSky(vec3 ray) { return urbanSky(ray, skyColor, zenith, time, night); }
+      `,
+    }, { opaque: true, clipDry: false, fogDensity: [0.00028, 0.00042], skyColor: '#a6cbd6', fogAfterToneMapping: true }));
     const seaGeometry = ownGeometry(new THREE.PlaneGeometry(12200, horizonExtent, 96, 96)); seaGeometry.rotateX(-Math.PI / 2);
-    const ocean = new THREE.Mesh(seaGeometry, seaMaterial); ocean.position.set(5800, -2.0, mapCenterZ); scene.add(ocean);
+    const positions = seaGeometry.getAttribute('position');
+    const points = new Float32Array(positions.count * 2);
+    for (let i = 0; i < positions.count; i++) {
+      points[i * 2] = positions.getX(i) + 5800; points[i * 2 + 1] = positions.getZ(i) + mapCenterZ;
+    }
+    const { heights } = kernel.sampleTerrain(points);
+    // Coarse water-depth samples cannot clip narrow piers: the opaque quay and
+    // pier meshes cover the sea, avoiding interpolated holes in navigable water.
+    const depths = Float32Array.from(heights, height => Math.max(0.055, WATER_LEVEL - height));
+    seaGeometry.setAttribute('waterDepth', new THREE.BufferAttribute(depths, 1));
+    seaGeometry.setAttribute('waterCurrent', new THREE.BufferAttribute(new Float32Array(positions.count * 3), 3));
+    const ocean = new THREE.Mesh(seaGeometry, seaMaterial); ocean.name = 'Harbor water';
+    ocean.position.set(5800, WATER_LEVEL + 0.025, mapCenterZ); scene.add(ocean);
   }
 
   const ringGeometries = new Map<number, { ring: THREE.TorusGeometry; accent: THREE.TorusGeometry; highlight: THREE.TorusGeometry }>();
@@ -512,7 +512,7 @@ export function createUrbanWorld(_runtime: RustRuntime, kernel: WorldKernel, map
       ringMaterial.emissive.set(enabled ? '#596e7c' : '#000000'); ringMaterial.emissiveIntensity = enabled ? 0.7 : 0;
       atmosphere.uniforms.night.value = enabled ? 1 : 0; atmosphere.uniforms.horizon.value.set(fogColor);
       atmosphere.uniforms.zenith.value.set(enabled ? '#06101e' : harbor ? '#347ea9' : '#527f9f');
-      if (seaMaterial) { seaMaterial.uniforms.night.value = enabled ? 1 : 0; seaMaterial.uniforms.fogDensity.value = enabled ? 0.00042 : 0.00028; seaMaterial.uniforms.horizon.value.set(fogColor); seaMaterial.uniforms.deep.value.set(enabled ? '#092833' : '#246c7d'); }
+      if (seaMaterial) setWaterNight(seaMaterial, enabled, fogColor);
       nightSky.setNight(enabled);
       if (lighthouseBeam) lighthouseBeam.visible = enabled;
       if (lighthouseSpot) lighthouseSpot.intensity = enabled ? 260 : 0;
