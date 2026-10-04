@@ -74,16 +74,26 @@ export class FlightEngine {
   get recordEligible(): boolean { return this.unchangedWind; }
 
   constructor(private host: HTMLDivElement, private events: EngineEvents, flightCore: WebAssembly.Module) {
-    this.runtime = createRustRuntime(flightCore);
-    this.worldKernel = createWorldKernel(this.runtime);
-    this.world = createWorld(this.runtime, this.worldKernel);
-    this.worldKernel.setObstacles(this.world.obstacles);
-    this.simulation = createWorldFlightSimulation(this.runtime, this.worldKernel.handle);
-    this.weaponSimulation = createWeaponSimulation(this.runtime, this.worldKernel);
-    this.weapons = this.weaponSimulation.state;
-    this.weaponVisuals = createWeaponVisuals(this.runtime, this.worldKernel);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    const panoramaResolution = host.getBoundingClientRect().width * this.renderer.getPixelRatio() > 900
+      && this.renderer.capabilities.maxTextureSize >= 8192 ? 8192 : 4096;
+    try {
+      this.runtime = createRustRuntime(flightCore);
+      this.worldKernel = createWorldKernel(this.runtime);
+      this.world = createWorld(this.runtime, this.worldKernel, {
+        resolution: panoramaResolution,
+        maxAnisotropy: this.renderer.capabilities.getMaxAnisotropy(),
+      });
+      this.worldKernel.setObstacles(this.world.obstacles);
+      this.simulation = createWorldFlightSimulation(this.runtime, this.worldKernel.handle);
+      this.weaponSimulation = createWeaponSimulation(this.runtime, this.worldKernel);
+      this.weapons = this.weaponSimulation.state;
+      this.weaponVisuals = createWeaponVisuals(this.runtime, this.worldKernel);
+    } catch (error) {
+      this.renderer.dispose();
+      throw error;
+    }
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
@@ -92,6 +102,7 @@ export class FlightEngine {
     this.renderer.domElement.setAttribute('aria-label', '三维山谷飞行画面，飞行时点击可启用鼠标视角');
     this.renderer.domElement.dataset.flightCore = 'rust-wasm';
     this.renderer.domElement.dataset.numericServices = 'world,weapons,scene,particles,ecology';
+    this.renderer.domElement.dataset.textureResolution = String(panoramaResolution);
     this.renderer.domElement.tabIndex = 0;
     host.appendChild(this.renderer.domElement);
     this.camera.rotation.order = 'YXZ';

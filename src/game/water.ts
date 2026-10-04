@@ -17,7 +17,7 @@ function createRippleTexture(scene: SceneSimulation) {
 }
 
 /** A level collision surface with animated, filtered optical waves above its carved bed. */
-export function createWater(panorama: THREE.Texture, scene: SceneSimulation, points: Float32Array, heights: Float32Array) {
+export function createWater(panorama: THREE.Texture, scene: SceneSimulation, points: Float32Array, heights: Float32Array, panoramaRotation: number) {
   const group = new THREE.Group();
   group.name = 'Lakes and flowing river';
   const geometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, 300, 300);
@@ -32,6 +32,7 @@ export function createWater(panorama: THREE.Texture, scene: SceneSimulation, poi
       night: { value: 0 },
       rippleMap: { value: ripples },
       panorama: { value: panorama },
+      panoramaRotation: { value: panoramaRotation },
       deepColor: { value: new THREE.Color('#123e49') },
       shallowColor: { value: new THREE.Color('#447b69') },
       skyColor: { value: new THREE.Color('#b0c9d5') },
@@ -54,6 +55,7 @@ export function createWater(panorama: THREE.Texture, scene: SceneSimulation, poi
       uniform float night;
       uniform sampler2D rippleMap;
       uniform sampler2D panorama;
+      uniform float panoramaRotation;
       uniform vec3 deepColor;
       uniform vec3 shallowColor;
       uniform vec3 skyColor;
@@ -76,11 +78,10 @@ export function createWater(panorama: THREE.Texture, scene: SceneSimulation, poi
 
       vec3 reflectedSky(vec3 ray) {
         // Match the existing sky dome's rotation and vertical scale.
-        float rotation = PI * 0.5 + 0.13;
         vec3 localRay = normalize(vec3(
-          cos(rotation) * ray.x - sin(rotation) * ray.z,
+          cos(panoramaRotation) * ray.x - sin(panoramaRotation) * ray.z,
           max(ray.y, 0.015) / 0.72,
-          sin(rotation) * ray.x + cos(rotation) * ray.z));
+          sin(panoramaRotation) * ray.x + cos(panoramaRotation) * ray.z));
         vec2 uv = vec2(fract(atan(localRay.z, -localRay.x) / (2.0 * PI)),
           0.5 + asin(localRay.y) / PI);
         return texture2D(panorama, uv).rgb;

@@ -64,7 +64,12 @@ function numberTexture(number: number): THREE.CanvasTexture {
   return texture;
 }
 
-export function createWorld(runtime: RustRuntime, kernel: WorldKernel) {
+export interface PanoramaOptions {
+  resolution?: 4096 | 8192;
+  maxAnisotropy?: number;
+}
+
+export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaOptions: PanoramaOptions = {}) {
   const groundHeight = (x: number, z: number) => kernel.groundHeight(x, z);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#adcadf');
@@ -107,16 +112,28 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel) {
 
   // A closed sky dome keeps upward views covered and places the distant alpine
   // panorama outside the playable terrain, with no visible cylinder rim.
-  const panorama = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/alpine-panorama.jpg`);
+  const panoramaAsset = panoramaOptions.resolution === 8192 ? 'alpine-panorama-8k.webp' : 'alpine-panorama-4k.webp';
+  const panorama = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/${panoramaAsset}`, () => {
+    panoramaMesh.visible = true;
+  });
   panorama.colorSpace = THREE.SRGBColorSpace;
+  panorama.wrapS = THREE.RepeatWrapping;
+  panorama.wrapT = THREE.ClampToEdgeWrapping;
+  panorama.magFilter = THREE.LinearFilter;
+  panorama.minFilter = THREE.LinearMipmapLinearFilter;
+  panorama.generateMipmaps = true;
+  panorama.anisotropy = Math.max(1, Math.min(8, panoramaOptions.maxAnisotropy ?? 1));
   textureResources.add(panorama);
   const panoramaMesh = new THREE.Mesh(
     ownGeometry(new THREE.SphereGeometry(5400, 96, 48)),
     ownMaterial(new THREE.MeshBasicMaterial({ map: panorama, side: THREE.BackSide, fog: false, toneMapped: false })),
   );
+  const panoramaRotation = 0;
+  // Show the scene's sky colour while the larger image downloads and decodes.
+  panoramaMesh.visible = false;
   panoramaMesh.position.set(0, 0, WORLD_CENTER_Z);
   panoramaMesh.scale.y = 0.72;
-  panoramaMesh.rotation.y = Math.PI / 2 + 0.13;
+  panoramaMesh.rotation.y = panoramaRotation;
   scene.add(panoramaMesh);
   const nightSky = createNightSky();
   scene.add(nightSky.group);
@@ -177,7 +194,7 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel) {
   const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
   terrain.receiveShadow = true;
   scene.add(terrain);
-  const water = createWater(panorama, sceneData, terrainSamplePoints, heights);
+  const water = createWater(panorama, sceneData, terrainSamplePoints, heights, panoramaRotation);
   scene.add(water.group);
   const rural = createRural(runtime, kernel);
   scene.add(rural.group);

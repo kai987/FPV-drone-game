@@ -144,6 +144,6 @@ docs/design.md              设计、素材与视觉验证说明
 
 ## 美术与许可
 
-山脉、透明松树、草地与风化岩石纹理由内置 Image Gen 生成，已随仓库提供。松树用实例化交叉贴图节省 GPU 开销，地形和飞行环是原生三维几何体。HUD 与所有操作控件使用 HTML/SVG。字体为 Manrope / Noto Sans SC，可用时从 Google Fonts 加载，离线时回退到系统字体；图标使用 Lucide。
+远山与云层使用 Poly Haven 的 [Lago d’Isola](https://polyhaven.com/a/lago_disola) 真实全景摄影（Andreas Mischok，CC0），提供8K及4K WebP，按实际画面宽度和GPU能力自动选择；河湖反射共用此全景。透明松树、草地与风化岩石纹理由内置 Image Gen 生成，已随仓库提供。素材来源与许可见 [asset-licenses.md](./docs/asset-licenses.md)。松树用实例化交叉贴图节省 GPU 开销，地形和飞行环是原生三维几何体。HUD 与所有操作控件使用 HTML/SVG。字体为 Manrope / Noto Sans SC，可用时从 Google Fonts 加载，离线时回退到系统字体；图标使用 Lucide。
 
 源码采用仓库的 [MIT License](./LICENSE)。游戏运行不调用生成式 AI API。
