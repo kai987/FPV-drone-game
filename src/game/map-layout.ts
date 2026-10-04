@@ -18,7 +18,18 @@ export interface ChimneySpec { x: number; z: number; radius: number; height: num
 export interface CraneSpec { x: number; z: number; height: number; span: number; }
 export interface TruckSpec extends UrbanBox { color: string; }
 export interface PipeSpec { from: readonly [number, number, number]; to: readonly [number, number, number]; radius: number; }
-export interface ShipSpec { x: number; z: number; width: number; length: number; deckY: number; }
+export interface ShipSpec {
+  id: string;
+  name: string;
+  x: number;
+  z: number;
+  width: number;
+  length: number;
+  deckY: number;
+  mooringX: number;
+  mooringZ: number;
+  mooringSpan: number;
+}
 export interface MapLandmark { x: number; z: number; label: string; kind: 'warehouse' | 'tank' | 'crane' | 'ship' | 'lighthouse'; }
 
 export const HARBOR_SHORE_X = 140;
@@ -26,6 +37,13 @@ export const HARBOR_PIERS: readonly UrbanBox[] = Object.freeze([
   { x: 260, z: -120, width: 240, depth: 70, base: -8, height: 10 },
   { x: 285, z: -430, width: 290, depth: 70, base: -8, height: 10 },
   { x: 245, z: -750, width: 210, depth: 70, base: -8, height: 10 },
+  ...[-1800, -2800, -3650, 650, 1550, 2350].map((z, index) => ({
+    x: 620, z, width: 960, depth: index % 2 ? 140 : 120, base: -8, height: 10,
+  })),
+]);
+export const HARBOR_BREAKWATERS: readonly UrbanBox[] = Object.freeze([
+  { x: 500, z: -1030, width: 720, depth: 20, base: -8, height: 13 },
+  { x: 895, z: -4100, width: 1510, depth: 30, base: -8, height: 13 },
 ]);
 
 export interface UrbanMapLayout {
@@ -37,6 +55,8 @@ export interface UrbanMapLayout {
   cranes: readonly CraneSpec[];
   trucks: readonly TruckSpec[];
   pipes: readonly PipeSpec[];
+  ships: readonly ShipSpec[];
+  /** First berth retained for callers that refer to the original training ship. */
   ship?: ShipSpec;
   landmarks: readonly MapLandmark[];
 }
@@ -76,6 +96,17 @@ function factoryLayout(): UrbanMapLayout {
     { x: -130, z: -1380, width: 145, depth: 180, base: 2, height: 29, color: '#6c7c82', label: 'MACHINERY' },
     { x: 160, z: -1530, width: 190, depth: 130, base: 2, height: 26, color: '#8d7162', label: 'PRODUCTION' },
   ];
+  const districtWarehouses: WarehouseSpec[] = [];
+  const districtColumns = [-2850, -2050, -800, 800, 2050, 2850];
+  const districtRows = [-3650, -2800, -2100, 900, 1750, 2520];
+  const districtColors = ['#63747a', '#8c7061', '#7e8980', '#587b82', '#a28163', '#6e7484'];
+  for (const [row, z] of districtRows.entries()) for (const [column, x] of districtColumns.entries()) {
+    const index = row * districtColumns.length + column;
+    districtWarehouses.push({ x, z, width: 130 + index % 4 * 20, depth: 150 + index % 4 * 20,
+      base: 2, height: 18 + index % 5 * 3, color: districtColors[index % districtColors.length],
+      label: `${row < 3 ? 'NORTH' : 'SOUTH'} WORKS ${String(index + 13).padStart(2, '0')}` });
+  }
+  warehouses.push(...districtWarehouses);
   const tanks: TankSpec[] = [
     { x: 82, z: -520, radius: 15, height: 23 }, { x: 121, z: -530, radius: 15, height: 23 },
     { x: 164, z: -505, radius: 12, height: 28 }, { x: -76, z: -650, radius: 19, height: 29 },
@@ -103,6 +134,19 @@ function factoryLayout(): UrbanMapLayout {
     { from: [-75, 15, -472], to: [-115, 15, -472], radius: 0.75 },
     { from: [-115, 15, -472], to: [-115, 15, -374], radius: 0.75 },
   ];
+  for (const [index, building] of districtWarehouses.entries()) {
+    const cargoX = building.x + building.width / 2 + 28;
+    containers.push(...containerStacks(cargoX, building.z + 18, 4, 4, 2));
+    trucks.push({ x: building.x + building.width / 2 + 14, z: building.z + 50,
+      width: 2.7, depth: 14, base: 2, height: 4.2, color: CONTAINER_COLORS[index % CONTAINER_COLORS.length] });
+    if (index % 3 === 0) {
+      const tankX = building.x - building.width / 2 - 55;
+      for (const dz of [-55, 0, 55]) tanks.push({ x: tankX, z: building.z + dz, radius: 18, height: 23 + index % 4 * 3 });
+      chimneys.push({ x: tankX - 48, z: building.z - 45, radius: 4.1, height: 65 + index % 5 * 7 });
+      pipes.push({ from: [tankX, 13, building.z - 55], to: [tankX, 13, building.z + 55], radius: 0.9 },
+        { from: [tankX, 13, building.z + 55], to: [building.x - building.width / 2, 13, building.z + 55], radius: 0.9 });
+    }
+  }
   const boxes: UrbanBox[] = [
     ...warehouses, ...containers, ...trucks,
     ...tanks.map(tank => ({ x: tank.x, z: tank.z, width: tank.radius * 2, depth: tank.radius * 2, base: 2, height: tank.height })),
@@ -131,7 +175,7 @@ function factoryLayout(): UrbanMapLayout {
       boxes.push({ x, z, width: 0.34, depth: 0.34, base: 2, height: pipe.from[1] - pipe.radius - 2 });
     }
   }
-  return { boxes, warehouses, containers, tanks, chimneys, cranes: [], trucks, pipes,
+  return { boxes, warehouses, containers, tanks, chimneys, cranes: [], trucks, pipes, ships: [],
     landmarks: [
       ...warehouses.map(building => ({ x: building.x, z: building.z, label: building.label, kind: 'warehouse' as const })),
       ...tanks.map((tank, index) => ({ x: tank.x, z: tank.z, label: `储罐 ${index + 1}`, kind: 'tank' as const })),
@@ -145,6 +189,17 @@ function harborLayout(): UrbanMapLayout {
     { x: -150, z: -535, width: 150, depth: 112, base: 2, height: 18, color: '#788685', label: 'CUSTOMS TERMINAL' },
     { x: -265, z: -320, width: 94, depth: 172, base: 2, height: 17, color: '#a39c87', label: 'BONDED STORAGE' },
   ];
+  const districtWarehouses: WarehouseSpec[] = [];
+  const districtRows = [-3700, -2850, -2100, 900, 1750, 2520];
+  const districtColumns = [-2850, -1850, -600];
+  const districtColors = ['#748c8e', '#a39c87', '#817a68', '#687f8b', '#997361', '#7e8c7d'];
+  for (const [row, z] of districtRows.entries()) for (const [column, x] of districtColumns.entries()) {
+    const index = row * districtColumns.length + column;
+    districtWarehouses.push({ x, z, width: 150 + index % 3 * 20, depth: 180 + index % 3 * 20,
+      base: 2, height: 17 + index % 4 * 3, color: districtColors[index % districtColors.length],
+      label: `${row < 3 ? 'NORTH' : 'SOUTH'} TERMINAL ${String(index + 4).padStart(2, '0')}` });
+  }
+  warehouses.push(...districtWarehouses);
   const containers = [
     ...containerStacks(57, 4, 17, 4, 3), ...containerStacks(47, -246, 20, 8, 4),
     ...containerStacks(56, -545, 17, 6, 3), ...containerStacks(-197, -59, 10, 4, 4),
@@ -156,14 +211,37 @@ function harborLayout(): UrbanMapLayout {
     { x: 258, z: -120, height: 43, span: 44 },
     { x: 300, z: -430, height: 56, span: 44 },
     { x: 235, z: -750, height: 41, span: 44 },
+    ...HARBOR_PIERS.slice(3).map((pier, index) => ({
+      x: pier.x + pier.width / 2 - 145, z: pier.z, height: 48 + index % 3 * 6, span: 44,
+    })),
   ];
-  const ship: ShipSpec = { x: 540, z: -473, width: 67, length: 273, deckY: 6.2 };
+  const ships: ShipSpec[] = [
+    { id: 'meridian', name: 'MERIDIAN', x: 540, z: -473, width: 67, length: 273, deckY: 6.2,
+      mooringX: 415, mooringZ: -430, mooringSpan: 70 },
+    { id: 'atlantic', name: 'ATLANTIC', x: 1250, z: -1800, width: 67, length: 273, deckY: 6.2,
+      mooringX: 1085, mooringZ: -1800, mooringSpan: 120 },
+    { id: 'cascade', name: 'CASCADE', x: 1250, z: -2800, width: 67, length: 273, deckY: 6.2,
+      mooringX: 1085, mooringZ: -2800, mooringSpan: 140 },
+    { id: 'seabreeze', name: 'SEABREEZE', x: 1250, z: 1550, width: 67, length: 273, deckY: 6.2,
+      mooringX: 1085, mooringZ: 1550, mooringSpan: 120 },
+  ];
+  const ship = ships[0];
   const trucks: TruckSpec[] = [
     { x: 30, z: -175, width: 2.7, depth: 14, base: 2, height: 4.2, color: '#dfa647' },
     { x: -27, z: -335, width: 2.7, depth: 14, base: 2, height: 4.2, color: '#d9cbb2' },
     { x: 31, z: -597, width: 2.7, depth: 14, base: 2, height: 4.2, color: '#55889a' },
   ];
-  const boxes: UrbanBox[] = [...HARBOR_PIERS, ...warehouses, ...containers, ...trucks];
+  for (const [index, building] of districtWarehouses.entries()) {
+    containers.push(...containerStacks(building.x + building.width / 2 + 35, building.z + 20, 6, 3, 2));
+    trucks.push({ x: building.x - building.width / 2 - 16, z: building.z + 50,
+      width: 2.7, depth: 14, base: 2, height: 4.2, color: CONTAINER_COLORS[index % CONTAINER_COLORS.length] });
+  }
+  for (const pier of HARBOR_PIERS.slice(3)) {
+    containers.push(...containerStacks(55, pier.z + 100, 10, 3, 2),
+      ...containerStacks(195, pier.z + 45, 12, 2, 2, Math.PI / 2));
+    trucks.push({ x: 112, z: pier.z + 90, width: 2.7, depth: 14, base: 2, height: 4.2, color: '#dfa647' });
+  }
+  const boxes: UrbanBox[] = [...HARBOR_PIERS, ...HARBOR_BREAKWATERS, ...warehouses, ...containers, ...trucks];
   for (const building of warehouses) {
     boxes.push({ x: building.x, z: building.z, width: building.width + 1.4, depth: building.depth + 1.4, base: 2 + building.height, height: 0.34 });
     for (const side of [-1, 1]) {
@@ -196,28 +274,33 @@ function harborLayout(): UrbanMapLayout {
       x: crane.x + 70 + end * 4.3, z: crane.z + side * 6, width: 0.13, depth: 0.13, base: crane.height - 21.5, height: 22,
     });
   }
-  boxes.push({ x: ship.x, z: ship.z, width: ship.width, depth: ship.length - 34, base: -8, height: ship.deckY + 8 });
-  boxes.push({ x: ship.x, z: ship.z + 88, width: 35, depth: 34, base: ship.deckY, height: 26 });
-  boxes.push({ x: ship.x, z: ship.z - ship.length / 2 + 8.5, width: ship.width * 0.58, depth: 17, base: -8, height: ship.deckY + 8 });
-  boxes.push({ x: ship.x, z: ship.z + ship.length / 2 - 8, width: ship.width * 0.84, depth: 16, base: -8, height: ship.deckY + 8 });
-  boxes.push({ x: ship.x, z: ship.z + 95, width: 8.2, depth: 9.2, base: ship.deckY + 26, height: 8.85 });
-  boxes.push({ x: ship.x - 10, z: ship.z + 87, width: 0.56, depth: 0.56, base: ship.deckY + 26, height: 16 });
-  for (let column = 0; column < 12; column++) for (let row = 0; row < 11; row++) for (let level = 0; level < 3 + (column + row) % 2; level++) {
-    const container: ContainerSpec = { x: ship.x - 22 + column * 4, z: ship.z - 97 + row * 14,
-      width: 2.44, depth: 12.2, base: ship.deckY + level * 2.6, height: 2.6,
-      color: CONTAINER_COLORS[(row + column * 2 + level) % CONTAINER_COLORS.length] };
-    containers.push(container); boxes.push(container);
+  for (const [index, berthShip] of ships.entries()) {
+    boxes.push({ x: berthShip.x, z: berthShip.z, width: berthShip.width, depth: berthShip.length - 34, base: -8, height: berthShip.deckY + 8 });
+    boxes.push({ x: berthShip.x, z: berthShip.z + 88, width: 35, depth: 34, base: berthShip.deckY, height: 26 });
+    boxes.push({ x: berthShip.x, z: berthShip.z - berthShip.length / 2 + 8.5, width: berthShip.width * 0.58, depth: 17, base: -8, height: berthShip.deckY + 8 });
+    boxes.push({ x: berthShip.x, z: berthShip.z + berthShip.length / 2 - 8, width: berthShip.width * 0.84, depth: 16, base: -8, height: berthShip.deckY + 8 });
+    boxes.push({ x: berthShip.x, z: berthShip.z + 95, width: 8.2, depth: 9.2, base: berthShip.deckY + 26, height: 8.85 });
+    boxes.push({ x: berthShip.x - 10, z: berthShip.z + 87, width: 0.56, depth: 0.56, base: berthShip.deckY + 26, height: 16 });
+    const columns = index === 0 ? 12 : 6, rows = index === 0 ? 11 : 8;
+    for (let column = 0; column < columns; column++) for (let row = 0; row < rows; row++) {
+      const levels = index === 0 ? 3 + (column + row) % 2 : 1 + (column + row) % 2;
+      for (let level = 0; level < levels; level++) {
+        const container: ContainerSpec = { x: berthShip.x - 22 + column * 4, z: berthShip.z - 97 + row * 14,
+          width: 2.44, depth: 12.2, base: berthShip.deckY + level * 2.6, height: 2.6,
+          color: CONTAINER_COLORS[(row + column * 2 + level + index) % CONTAINER_COLORS.length] };
+        containers.push(container); boxes.push(container);
+      }
+    }
   }
   boxes.push({ x: 108, z: -962, width: 10, depth: 10, base: 2, height: 40 });
   boxes.push({ x: 108, z: -962, width: 12.4, depth: 12.4, base: 41.9, height: 0.8 });
   boxes.push({ x: 108, z: -962, width: 7, depth: 7, base: 42.7, height: 2.8 });
   boxes.push({ x: 108, z: -962, width: 9.6, depth: 9.6, base: 45.6, height: 0.8 });
-  boxes.push({ x: 500, z: -1030, width: 720, depth: 20, base: -8, height: 13 });
-  return { boxes, warehouses, containers, tanks: [], chimneys: [], cranes, trucks, pipes: [], ship,
+  return { boxes, warehouses, containers, tanks: [], chimneys: [], cranes, trucks, pipes: [], ships, ship,
     landmarks: [
       ...warehouses.map(building => ({ x: building.x, z: building.z, label: building.label, kind: 'warehouse' as const })),
       ...cranes.map((crane, index) => ({ x: crane.x, z: crane.z, label: `桥吊 ${index + 1}`, kind: 'crane' as const })),
-      { x: ship.x, z: ship.z, label: '货轮 MERIDIAN', kind: 'ship' },
+      ...ships.map(berthShip => ({ x: berthShip.x, z: berthShip.z, label: `货轮 ${berthShip.name}`, kind: 'ship' as const })),
       { x: 108, z: -962, label: '灯塔', kind: 'lighthouse' },
     ],
   };
@@ -225,7 +308,7 @@ function harborLayout(): UrbanMapLayout {
 
 const FACTORY_LAYOUT = factoryLayout();
 const HARBOR_LAYOUT = harborLayout();
-const EMPTY_LAYOUT: UrbanMapLayout = { boxes: [], warehouses: [], containers: [], tanks: [], chimneys: [], cranes: [], trucks: [], pipes: [], landmarks: [] };
+const EMPTY_LAYOUT: UrbanMapLayout = { boxes: [], warehouses: [], containers: [], tanks: [], chimneys: [], cranes: [], trucks: [], pipes: [], ships: [], landmarks: [] };
 
 export function getMapLayout(mapId: string): UrbanMapLayout {
   if (mapId === 'factory') return FACTORY_LAYOUT;

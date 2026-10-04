@@ -235,6 +235,81 @@ fn harbor_coast_and_piers_share_exact_dry_union_and_underwater_slope() {
 }
 
 #[test]
+fn scene_authored_harbor_regions_replace_legacy_coast_and_preserve_connected_union() {
+    let mut first = world();
+    let mut second = world();
+    first.set_map_kind(2);
+    second.set_map_kind(2);
+    // Geometry deliberately differs from the production scene: no second source of its dimensions.
+    let packet = [
+        200.0, 3.0, 950.0, -3050.0, -2950.0, 2.0, 750.0, 1500.0, 1600.0, 2.0, 1200.0, -4200.0,
+        -4180.0, 5.0,
+    ];
+    assert!(first.configure_harbor(&packet));
+    near(first.water_distance(200.0, -3000.0), 50.0);
+    near(first.water_distance(190.0, -3000.0), 10.0_f64.hypot(50.0));
+    near(first.water_distance(210.0, -3000.0), 50.0);
+    near(first.water_distance(950.0, -3000.0), 0.0);
+    near(first.water_distance(951.0, -3000.0), -1.0);
+    near(first.water_distance(960.0, -2940.0), -10.0_f64.hypot(10.0));
+    near(first.ground_height(1190.0, -4190.0), 5.0);
+    near(first.surface_height(1190.0, -4190.0), 5.0);
+    near(first.flight_surface_height(1190.0, -4190.0, 20.0), 5.0);
+    assert!(!first.is_water(1190.0, -4190.0));
+    assert!(
+        second.is_water(950.0, -3000.0),
+        "another handle keeps its own legacy coast"
+    );
+    assert!(
+        first.is_water(300.0, -120.0),
+        "replacement removes the legacy pier"
+    );
+    assert!(!second.is_water(300.0, -120.0));
+    assert!(first.configure_harbor(&[200.0, 0.0]));
+    near(first.water_distance(210.0, -3000.0), -10.0);
+}
+
+#[test]
+fn malformed_harbor_packets_never_mutate_live_coastline() {
+    let mut world = world();
+    world.set_map_kind(2);
+    let valid = [200.0, 1.0, 950.0, -3050.0, -2950.0, 2.0];
+    assert!(world.configure_harbor(&valid));
+    for packet in [
+        vec![],
+        vec![200.0],
+        vec![200.0, 0.5],
+        vec![200.0, 1025.0],
+        vec![f64::NAN, 0.0],
+        vec![200.0, 1.0, 950.0, -3050.0, -2950.0],
+        vec![200.0, 0.0, 950.0, -3050.0, -2950.0, 2.0],
+        vec![200.0, 1.0, 200.0, -3050.0, -2950.0, 2.0],
+        vec![200.0, 1.0, 10_201.0, -3050.0, -2950.0, 2.0],
+        vec![200.0, 1.0, 950.0, -2950.0, -3050.0, 2.0],
+        vec![200.0, 1.0, 950.0, -3050.0, -3050.0, 2.0],
+        vec![200.0, 1.0, 950.0, -3050.0, -2950.0, f64::INFINITY],
+        vec![200.0, 1.0, 950.0, -3050.0, -2950.0, 1.9],
+        vec![
+            200.0, 2.0, 950.0, -3050.0, -2950.0, 2.0, 700.0, -3000.0, -2900.0, 2.0,
+        ],
+        vec![
+            200.0, 2.0, 950.0, -3050.0, -2950.0, 2.0, 700.0, -2950.0, -2900.0, 2.0,
+        ],
+    ] {
+        assert!(
+            !world.configure_harbor(&packet),
+            "invalid packet accepted: {packet:?}"
+        );
+        near(world.water_distance(210.0, -3000.0), 50.0);
+        near(world.ground_height(210.0, -3000.0), 2.0);
+    }
+    world.set_map_kind(0);
+    let terrain = world.ground_height(900.0, -3000.0);
+    assert!(world.configure_harbor(&[100.0, 0.0]));
+    near(world.ground_height(900.0, -3000.0), terrain);
+}
+
+#[test]
 fn rotated_boxes_use_their_outline_and_keep_elevated_passages_open() {
     let mut world = world();
     world.set_map_kind(1);

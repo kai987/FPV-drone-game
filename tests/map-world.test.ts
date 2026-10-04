@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { createRustRuntime } from '../src/game/rust-runtime.ts';
 import { createWorldKernel } from '../src/game/world-kernel.ts';
-import { HARBOR_PIERS, HARBOR_SHORE_X, getMapLayout } from '../src/game/map-layout.ts';
+import { HARBOR_BREAKWATERS, HARBOR_PIERS, HARBOR_SHORE_X, getMapLayout } from '../src/game/map-layout.ts';
 import type { UrbanBox } from '../src/game/map-layout.ts';
 import { WATER_LEVEL, WORLD_BOUNDS } from '../src/game/landscape.ts';
 import { createWeaponSimulation } from '../src/game/weapon-simulation.ts';
@@ -37,33 +37,81 @@ test('factory terrain is flat and dry for scalar and multi-chunk native batches'
   } finally { world.dispose(); }
 });
 
-test('harbor coastline and all three scene piers use one exact Rust land-water union', () => {
+test('expanded harbor coastline, all nine scene piers and both breakwaters use one exact Rust land-water union', () => {
   const world = createWorldKernel(createRustRuntime(module), 'harbor');
   try {
-    for (const pier of HARBOR_PIERS) {
+    assert.equal(HARBOR_PIERS.length, 9);
+    assert.equal(HARBOR_BREAKWATERS.length, 2);
+    for (const pier of [...HARBOR_PIERS, ...HARBOR_BREAKWATERS]) {
       near(pier.x - pier.width / 2, HARBOR_SHORE_X);
       const east = pier.x + pier.width / 2;
       for (const x of [HARBOR_SHORE_X, HARBOR_SHORE_X + 10, east]) {
         assert.equal(world.isWater(x, pier.z), false);
-        near(world.groundHeight(x, pier.z), 2);
+        near(world.groundHeight(x, pier.z), pier.base + pier.height);
       }
       near(world.waterDistance(HARBOR_SHORE_X + 10, pier.z), pier.depth / 2);
+      near(world.waterDistance(HARBOR_SHORE_X, pier.z), pier.depth / 2);
+      near(world.waterDistance(HARBOR_SHORE_X - 10, pier.z), Math.hypot(10, pier.depth / 2));
       near(world.waterDistance(east, pier.z), 0);
       assert.equal(world.isWater(east + 0.001, pier.z), true);
       near(world.waterDistance(east + 10, pier.z), -10);
+      near(world.waterDistance(east + 10, pier.z + pier.depth / 2 + 10), -Math.hypot(10, 10));
       assert.equal(world.isWater(pier.x, pier.z - pier.depth / 2 - 0.001), true);
       assert.equal(world.isWater(pier.x, pier.z + pier.depth / 2 + 0.001), true);
     }
     near(world.groundHeight(130, 80), 2);
     near(world.groundHeight(1000, 80), -18);
     near(world.surfaceHeight(1000, 80), WATER_LEVEL);
-    const points = new Float32Array([130, 80, 141, 80, 180, 80, 1000, 80, ...HARBOR_PIERS.flatMap(p => [p.x, p.z])]);
+    const points = new Float32Array([130, 80, 141, 80, 180, 80, 1000, 80,
+      ...[...HARBOR_PIERS, ...HARBOR_BREAKWATERS].flatMap(p => [p.x, p.z])]);
     const batch = world.sampleTerrain(points);
     for (let i = 0; i < points.length / 2; i++) {
       assert.equal(batch.heights[i], Math.fround(world.groundHeight(points[i * 2], points[i * 2 + 1])));
       assert.equal(batch.waterDistances[i], Math.fround(world.waterDistance(points[i * 2], points[i * 2 + 1])));
     }
   } finally { world.dispose(); }
+});
+
+test('shared-memory harbor uploads are isolated per handle, survive memory growth and reject malformed replacements atomically', () => {
+  const runtime = createRustRuntime(module);
+  const first = createWorldKernel(runtime, 'harbor'), second = createWorldKernel(runtime, 'harbor');
+  const land: UrbanBox = { x: 1020, z: 2050, width: 1160, depth: 100, base: -8, height: 13 };
+  try {
+    const secondDistance = second.waterDistance(1500, 2050);
+    first.setHarborGeometry(440, [land]);
+    near(first.waterDistance(450, 2050), 50);
+    near(first.groundHeight(1500, 2050), 5);
+    assert.equal(first.isWater(1500, 2050), false);
+    assert.equal(second.isWater(1500, 2050), true);
+    near(second.waterDistance(1500, 2050), secondDistance);
+    runtime.memory.grow(1);
+    near(first.waterDistance(1500, 2050), 50);
+    for (const invalid of [
+      { ...land, x: land.x + 1 }, { ...land, yaw: 0.1 }, { ...land, width: 0 },
+      { ...land, height: Infinity }, { ...land, height: -1 }, { ...land, height: 9.9 },
+    ]) {
+      assert.throws(() => first.setHarborGeometry(440, [invalid]), /geometry/);
+      near(first.groundHeight(1500, 2050), 5);
+    }
+    assert.throws(() => first.setHarborGeometry(440, [land, { ...land, z: land.z + 20 }]), /invalid/);
+    near(first.waterDistance(1500, 2050), 50);
+    const pointer = runtime.call('world_harbor_alloc', first.handle, 1);
+    for (const packet of [
+      [440, 0, 1600, 2000, 2100, 5], [NaN, 1, 1600, 2000, 2100, 5],
+      [440, 1, 440, 2000, 2100, 5], [440, 1, 1600, 2100, 2000, 5],
+      [440, 1, 1600, 2000, 2100, Infinity],
+    ]) {
+      runtime.view(pointer, packet.length).set(packet);
+      assert.equal(runtime.call('world_configure_harbor', first.handle, 1), 0);
+      near(first.groundHeight(1500, 2050), 5);
+    }
+    assert.equal(runtime.call('world_configure_harbor', first.handle, 2), 0, 'dimension mismatch is rejected');
+    assert.equal(runtime.call('world_harbor_alloc', first.handle, 1025), 0, 'bounded allocation rejects excessive dimensions');
+    near(first.groundHeight(1500, 2050), 5);
+    first.dispose();
+    assert.throws(() => first.setHarborGeometry(440, [land]), /disposed/);
+    near(second.waterDistance(1500, 2050), secondDistance);
+  } finally { first.dispose(); second.dispose(); }
 });
 
 test('rotated native boxes collide with true footprints while elevated openings stay flyable', () => {

@@ -109,6 +109,17 @@ pub const HARBOR_PIERS: [(f64, f64, f64); 3] = [
     (350.0, -785.0, -715.0),
 ];
 
+/// A shoreline-connected, axis-aligned land rectangle supplied by the scene.
+#[derive(Clone, Copy, Debug)]
+struct HarborLand {
+    east: f64,
+    min_z: f64,
+    max_z: f64,
+    top: f64,
+}
+
+pub const MAX_HARBOR_LAND_REGIONS: usize = 1024;
+
 fn segment_distance(x: f64, z: f64, ax: f64, az: f64, bx: f64, bz: f64) -> f64 {
     let dx = bx - ax;
     let dz = bz - az;
@@ -118,26 +129,30 @@ fn segment_distance(x: f64, z: f64, ax: f64, az: f64, bx: f64, bz: f64) -> f64 {
 
 /// Signed distance to the actual shore/pier union boundary. Buried pier west
 /// edges never count as coastline, including at the connection to the shore.
-fn harbor_water_distance(x: f64, z: f64) -> f64 {
-    let dry = x <= HARBOR_SHORE_X
-        || HARBOR_PIERS
+fn harbor_water_distance(x: f64, z: f64, shore_x: f64, lands: &[HarborLand]) -> f64 {
+    let dry = x <= shore_x
+        || lands
             .iter()
-            .any(|&(east, min_z, max_z)| x <= east && z >= min_z && z <= max_z);
-    let shoreline_z = HARBOR_PIERS
+            .any(|land| x <= land.east && z >= land.min_z && z <= land.max_z);
+    let shoreline_z = lands
         .iter()
-        .find(|&&(_, min_z, max_z)| z > min_z && z < max_z)
-        .map_or(
-            z,
-            |&(_, min_z, max_z)| {
-                if z - min_z < max_z - z { min_z } else { max_z }
-            },
-        );
-    let mut distance = (x - HARBOR_SHORE_X).hypot(z - shoreline_z);
-    for &(east, min_z, max_z) in &HARBOR_PIERS {
+        .find(|land| z > land.min_z && z < land.max_z)
+        .map_or(z, |land| {
+            if z - land.min_z < land.max_z - z {
+                land.min_z
+            } else {
+                land.max_z
+            }
+        });
+    let mut distance = (x - shore_x).hypot(z - shoreline_z);
+    for land in lands {
+        let HarborLand {
+            east, min_z, max_z, ..
+        } = *land;
         for (ax, az, bx, bz) in [
-            (HARBOR_SHORE_X, min_z, east, min_z),
+            (shore_x, min_z, east, min_z),
             (east, min_z, east, max_z),
-            (east, max_z, HARBOR_SHORE_X, max_z),
+            (east, max_z, shore_x, max_z),
         ] {
             distance = distance.min(segment_distance(x, z, ax, az, bx, bz));
         }
@@ -252,6 +267,8 @@ pub struct World {
     grid: HashMap<(i32, i32), Vec<usize>>,
     boxes: Vec<UrbanBox>,
     box_grid: HashMap<(i32, i32), Vec<usize>>,
+    harbor_shore_x: f64,
+    harbor_lands: Vec<HarborLand>,
 }
 
 impl World {
@@ -289,6 +306,17 @@ impl World {
             grid: HashMap::new(),
             boxes: Vec::new(),
             box_grid: HashMap::new(),
+            harbor_shore_x: HARBOR_SHORE_X,
+            // Legacy native callers retain the original harbor; production uploads its scene layout.
+            harbor_lands: HARBOR_PIERS
+                .iter()
+                .map(|&(east, min_z, max_z)| HarborLand {
+                    east,
+                    min_z,
+                    max_z,
+                    top: 2.0,
+                })
+                .collect(),
         }
     }
     pub fn set_map_kind(&mut self, kind: u32) -> bool {
@@ -298,6 +326,54 @@ impl World {
             2 => MapKind::Harbor,
             _ => return false,
         };
+        true
+    }
+
+    /// Header shore_x,count; rows east,min_z,max_z,top. Validation is atomic:
+    /// invalid geometry never replaces a live world's previous coastline.
+    /// Regions must connect to the shoreline and have strictly disjoint Z intervals.
+    pub fn configure_harbor(&mut self, packet: &[f64]) -> bool {
+        if packet.len() < 2
+            || !packet.iter().all(|value| value.is_finite())
+            || packet[0].abs() > 100_000.0
+            || packet[1] < 0.0
+            || packet[1].fract() != 0.0
+            || packet[1] > MAX_HARBOR_LAND_REGIONS as f64
+        {
+            return false;
+        }
+        let shore_x = packet[0];
+        let count = packet[1] as usize;
+        if packet.len() != 2 + count * 4 {
+            return false;
+        }
+        let mut lands = Vec::with_capacity(count);
+        for values in packet[2..].chunks_exact(4) {
+            let [east, min_z, max_z, top] = [values[0], values[1], values[2], values[3]];
+            if east <= shore_x
+                || east - shore_x > 10_000.0
+                || east.abs() > 100_000.0
+                || min_z >= max_z
+                || max_z - min_z > 10_000.0
+                || min_z.abs() > 100_000.0
+                || max_z.abs() > 100_000.0
+                || !(2.0..=1000.0).contains(&top)
+            {
+                return false;
+            }
+            lands.push(HarborLand {
+                east,
+                min_z,
+                max_z,
+                top,
+            });
+        }
+        lands.sort_by(|a, b| a.min_z.total_cmp(&b.min_z));
+        if lands.windows(2).any(|pair| pair[0].max_z >= pair[1].min_z) {
+            return false;
+        }
+        self.harbor_shore_x = shore_x;
+        self.harbor_lands = lands;
         true
     }
     /// Header: water level, river/lake/cabin/bridge/pasture counts, then rows of
@@ -415,7 +491,9 @@ impl World {
     pub fn water_distance(&self, x: f64, z: f64) -> f64 {
         match self.map_kind {
             MapKind::Factory => return f64::INFINITY,
-            MapKind::Harbor => return harbor_water_distance(x, z),
+            MapKind::Harbor => {
+                return harbor_water_distance(x, z, self.harbor_shore_x, &self.harbor_lands);
+            }
             MapKind::Valley => {}
         }
         let mut best = f64::INFINITY;
@@ -434,7 +512,15 @@ impl World {
             MapKind::Harbor => {
                 let distance = self.water_distance(x, z);
                 return if distance >= 0.0 {
-                    2.0
+                    self.harbor_lands
+                        .iter()
+                        .find(|land| {
+                            x >= self.harbor_shore_x
+                                && x <= land.east
+                                && z >= land.min_z
+                                && z <= land.max_z
+                        })
+                        .map_or(2.0, |land| land.top)
                 } else {
                     self.water_level - 16.0 * smoothstep(0.0, 110.0, -distance)
                 };

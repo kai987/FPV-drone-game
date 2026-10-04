@@ -1,6 +1,6 @@
 //! World ABI: one configuration upload and reusable query/batch buffers.
 use crate::flight::Vec3;
-use crate::world::{Obstacle, UrbanBox, World};
+use crate::world::{MAX_HARBOR_LAND_REGIONS, Obstacle, UrbanBox, World};
 pub const TERRAIN_BATCH_CAPACITY: usize = 1024;
 struct WorldBuffers {
     config: Vec<f64>,
@@ -10,6 +10,7 @@ struct WorldBuffers {
     batch_output: [f64; TERRAIN_BATCH_CAPACITY * 2],
     obstacle_input: Vec<f64>,
     box_input: Vec<f64>,
+    harbor_input: Vec<f64>,
 }
 
 /// # Safety
@@ -36,6 +37,7 @@ pub extern "C" fn world_new(config_len: usize) -> usize {
         batch_output: [0.0; TERRAIN_BATCH_CAPACITY * 2],
         obstacle_input: Vec::new(),
         box_input: Vec::new(),
+        harbor_input: Vec::new(),
     })) as usize
 }
 /// # Safety
@@ -64,6 +66,32 @@ pub unsafe extern "C" fn world_set_map_kind(handle: usize, kind: u32) -> u32 {
         .world
         .as_mut()
         .map_or(0, |world| u32::from(world.set_map_kind(kind)))
+}
+/// # Safety
+/// handle must be a live owned world. Returned memory is valid until another harbor allocation/free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn world_harbor_alloc(handle: usize, count: usize) -> *mut f64 {
+    if handle == 0 || count > MAX_HARBOR_LAND_REGIONS {
+        return std::ptr::null_mut();
+    }
+    let buffer = unsafe { &mut *(handle as *mut WorldBuffers) };
+    buffer.harbor_input.resize(2 + count * 4, 0.0);
+    buffer.harbor_input.as_mut_ptr()
+}
+/// # Safety
+/// handle must be live and configured; packet has shore_x,count and complete east,min_z,max_z,top rows.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn world_configure_harbor(handle: usize, count: usize) -> u32 {
+    if handle == 0 || count > MAX_HARBOR_LAND_REGIONS {
+        return 0;
+    }
+    let buffer = unsafe { &mut *(handle as *mut WorldBuffers) };
+    if buffer.harbor_input.len() != 2 + count * 4 {
+        return 0;
+    }
+    buffer.world.as_mut().map_or(0, |world| {
+        u32::from(world.configure_harbor(&buffer.harbor_input))
+    })
 }
 /// # Safety
 /// handle must be live.

@@ -1,6 +1,6 @@
 import { LAKES, RIVER_SAMPLES, WATER_LEVEL } from './landscape.ts';
 import { BRIDGES, CABINS, PASTURES } from './rural-layout.ts';
-import { getMapLayout } from './map-layout.ts';
+import { HARBOR_BREAKWATERS, HARBOR_PIERS, HARBOR_SHORE_X, getMapLayout } from './map-layout.ts';
 import type { UrbanBox } from './map-layout.ts';
 import type { MapId } from './map-catalog.ts';
 import type { Vec3 } from './flight.ts';
@@ -17,6 +17,8 @@ export interface WorldKernel {
   clearance(x: number, z: number, padding?: number): boolean;
   setObstacles(obstacles: readonly WorldObstacle[]): void;
   setBoxes(boxes: readonly UrbanBox[]): void;
+  /** Scene-authored shoreline-connected piers and breakwaters; failed uploads preserve prior geometry. */
+  setHarborGeometry(shoreX: number, lands: readonly UrbanBox[]): void;
   intersectsObstacle(position: Vec3): boolean;
   /** Packed x,z pairs; heights/distances match Three.js Float32 attributes. */
   sampleTerrain(points: Float32Array | Float64Array): { heights: Float32Array; waterDistances: Float32Array };
@@ -63,6 +65,22 @@ export function createWorldKernel(runtime: RustRuntime, mapId: MapId = 'valley')
     flightSurfaceHeight: (x, z, fromY = Infinity) => query(4, x, z, fromY),
     clearance: (x, z, padding = 0) => query(5, x, z, padding) !== 0,
     intersectsObstacle: position => query(6, position.x, position.z, position.y) !== 0,
+    setHarborGeometry(shoreX, lands) {
+      live();
+      if (!Number.isFinite(shoreX) || lands.some(land => {
+        const values = [land.x, land.z, land.width, land.depth, land.base, land.height, land.yaw ?? 0];
+        return !values.every(Number.isFinite) || land.width <= 0 || land.depth <= 0 || land.height <= 0
+          || (land.yaw ?? 0) !== 0 || Math.abs(land.x - land.width / 2 - shoreX) > 1e-7;
+      })) throw new Error('Harbor land geometry must connect to the shoreline with unrotated finite rectangles');
+      const configuration = new Float64Array([shoreX, lands.length,
+        ...lands.flatMap(land => [land.x + land.width / 2, land.z - land.depth / 2,
+          land.z + land.depth / 2, land.base + land.height]),
+      ]);
+      const pointer = runtime.call('world_harbor_alloc', handle, lands.length);
+      if (!pointer) throw new Error('Harbor land allocation failed');
+      runtime.view(pointer, configuration.length).set(configuration);
+      if (runtime.call('world_configure_harbor', handle, lands.length) !== 1) throw new Error('Harbor land geometry is invalid');
+    },
     setObstacles(obstacles) {
       live();
       const pointer = runtime.call('world_obstacles_alloc', handle, obstacles.length);
@@ -101,6 +119,7 @@ export function createWorldKernel(runtime: RustRuntime, mapId: MapId = 'valley')
     dispose() { if (disposed) return; disposed = true; runtime.call('world_free', handle); },
   };
   try {
+    if (mapId === 'harbor') world.setHarborGeometry(HARBOR_SHORE_X, [...HARBOR_PIERS, ...HARBOR_BREAKWATERS]);
     if (mapId !== 'valley') world.setBoxes(getMapLayout(mapId).boxes);
   } catch (error) { world.dispose(); throw error; }
   return world;
