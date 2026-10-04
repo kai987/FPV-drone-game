@@ -5,12 +5,15 @@ import { BRIDGES, CABINS, PASTURES, bridgeDeckY, bridgePoint } from './rural-lay
 
 import { createLivestock } from './livestock.ts';
 import { createFish } from './fish.ts';
+import type { RustRuntime } from './rust-runtime.ts';
+import type { WorldKernel } from './world-kernel.ts';
 
 type Triple = [number, number, number];
 interface RuralObstacle { x: number; z: number; radius: number; height: number; base?: number; roof?: boolean }
 interface Batch { geometry: THREE.BufferGeometry; material: THREE.Material; matrices: THREE.Matrix4[]; mesh?: THREE.InstancedMesh }
 /** Native rural geometry, batched livestock and fish; local surfaces live in rural-layout. */
-export function createRural() {
+export function createRural(runtime?: RustRuntime, world?: WorldKernel) {
+  const groundHeightAt = world ? (x: number, z: number) => world.groundHeight(x, z) : groundHeight;
   const group = new THREE.Group();
   group.name = 'River village and pasture';
   const obstacles: RuralObstacle[] = [];
@@ -54,7 +57,7 @@ export function createRural() {
   };
   const identity = new THREE.Matrix4();
   const obstacle = (x: number, z: number, radius: number, bottom: number, top: number) => {
-    obstacles.push({ x, z, radius, base: bottom, height: top - groundHeight(x, z) });
+    obstacles.push({ x, z, radius, base: bottom, height: top - groundHeightAt(x, z) });
   };
   const lamps: THREE.PointLight[] = [];
 
@@ -106,7 +109,7 @@ export function createRural() {
     const lamp = new THREE.PointLight('#ffd18c', 0, 14, 2);
     lamp.position.copy(new THREE.Vector3(0, 1.4, d / 2 + 0.9).applyMatrix4(matrix));
     group.add(lamp); lamps.push(lamp);
-    obstacles.push({ x: house.x, z: house.z, radius: Math.hypot(w, d) / 2 + 0.1, height: house.baseY + h + house.roofHeight + 0.18 - groundHeight(house.x, house.z), roof: true });
+    obstacles.push({ x: house.x, z: house.z, radius: Math.hypot(w, d) / 2 + 0.1, height: house.baseY + h + house.roofHeight + 0.18 - groundHeightAt(house.x, house.z), roof: true });
     // A woodpile and bench make the three cabins feel inhabited.
     add(woodLight, boxGeometry, matrix, [w / 2 + 1.1, 0.45, houseIndex * 0.45 - 0.8], [0.78, 0.15, 2.15]);
     for (const z of [-0.55, 0.55]) add(wood, boxGeometry, matrix, [w / 2 + 1.1, 0.2, z + houseIndex * 0.45 - 0.8], [0.14, 0.42, 0.15]);
@@ -142,7 +145,7 @@ export function createRural() {
       for (const side of [-1, 1]) {
         const z = side * bridge.width * 0.37;
         const point = bridgePoint(bridge, x, z);
-        const base = groundHeight(point.x, point.z) - 0.15;
+        const base = groundHeightAt(point.x, point.z) - 0.15;
         const top = bridge.deckY - 0.23;
         add(wood, cylinder, matrix, [x, (base + top) / 2, z], [0.28, top - base, 0.28]);
         obstacle(point.x, point.z, 0.30, base, top);
@@ -165,13 +168,13 @@ export function createRural() {
       const next = (i + 1) / posts * Math.PI * 2;
       const x = pasture.x + Math.cos(angle) * radius;
       const z = pasture.z + Math.sin(angle) * radius;
-      const y = groundHeight(x, z);
+      const y = groundHeightAt(x, z);
       add(wood, cylinder, identity, [x, y + 0.58, z], [0.075, 1.16, 0.075]);
       if (i === 5 || i === 6 || i === 7) continue;
       const bx = pasture.x + Math.cos(next) * radius;
       const bz = pasture.z + Math.sin(next) * radius;
       const length = Math.hypot(bx - x, bz - z);
-      for (const railY of [0.50, 0.92]) add(woodLight, boxGeometry, identity, [(x + bx) / 2, (y + groundHeight(bx, bz)) / 2 + railY, (z + bz) / 2], [0.08, 0.1, length], [0, Math.atan2(bx - x, bz - z), 0]);
+      for (const railY of [0.50, 0.92]) add(woodLight, boxGeometry, identity, [(x + bx) / 2, (y + groundHeightAt(bx, bz)) / 2 + railY, (z + bz) / 2], [0.08, 0.1, length], [0, Math.atan2(bx - x, bz - z), 0]);
     }
   });
 
@@ -182,8 +185,8 @@ export function createRural() {
     mesh.receiveShadow = true;
     batch.mesh = mesh; group.add(mesh);
   }
-  const livestock = createLivestock();
-  const fish = createFish();
+  const livestock = createLivestock(runtime, world);
+  const fish = createFish(runtime);
   group.add(livestock.group, fish.group);
   let disposed = false;
   return {

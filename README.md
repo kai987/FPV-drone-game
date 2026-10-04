@@ -1,6 +1,6 @@
 # AEROFLOW · FPV Drone Game
 
-可直接在浏览器中玩的无人机飞行与投弹游戏，支持第一视角、追尾视角和俯视瞄准。React、TypeScript、Vite 和 Three.js 负责界面与三维场景，Rust 编译为 WebAssembly，运行飞行物理与风场。无需账号或后端。
+可直接在浏览器中玩的无人机飞行与投弹游戏，支持第一视角、追尾视角和俯视瞄准。React、TypeScript、Vite 和 Three.js 负责界面与三维场景，Rust 编译为 WebAssembly，运行飞行、风场、地理查询、投弹及场景/动画的批量数值计算。无需账号或后端。
 
 ## 本地运行
 
@@ -83,19 +83,26 @@ npm run preview    # 预览已有的 dist/ 生产构建
 
 ## 结构与验证
 
-Rust 负责逐帧飞行积分、加减速与姿态响应、阵风采样、风向数值描述，以及地形接触响应、世界边界约束和障碍碰撞回退。TypeScript 保留输入、机型配置、地图高度与障碍几何查询、穿环和投弹玩法、计时及渲染。地面、水面、桥面的支撑选择仍由场景提供，Rust 根据查询结果更新飞行状态。原有 TypeScript 飞行积分与风场数学函数保留为自动化测试的数值参考。
+Rust 负责飞行与风场、地面/河湖/桥面/屋顶查询、障碍空间网格、投弹弹道和计分/装填，以及场景布局、水纹生成、鱼群/牛羊动画与爆炸粒子的批量计算。TypeScript 保留输入、共享场景和机型配置、穿环、计时、音效、界面与 Three.js 渲染。飞行和炸弹直接使用同一 Rust 世界，没有生产地形/障碍回调。
 
-每个活动飞行帧通过一次 `simulate_tick` 调用完成模拟，并复用固定的 Rust `f64` 输入、输出缓冲。加载器缓存编译后的 `WebAssembly.Module`；每个游戏实例拥有独立的模拟实例和内存，销毁时释放缓冲。构建后的 WASM 随静态网站一起提供。
+一个游戏共享一个 WASM 实例；每类服务拥有独立缓冲和生命周期，适配器在内存增长后重新取得视图。每个活动飞行帧通过一次 `simulate_world_tick` 完成飞行与风场，武器、鱼群、牛羊和爆炸各自一次批量更新，直接向 Three.js 复制矩阵或粒子属性。场景初始化整批生成原有种子下的树林、岩石、岸边植被、地形颜色、河流流向和水纹纹理。加载器缓存编译后的 `WebAssembly.Module`，各游戏实例的内存仍独立；销毁时先释放各服务，最后释放共享世界。
+
+原 TypeScript 数学函数、无 runtime 的模型构造路径及冻结的旧场景/爆炸方程保留为独立测试参考，游戏始终提供 Rust 服务。GPU 上的水面、烟火、植被着色器和 Three.js 模型材质继续使用现有实现。本轮不增加 Worker 或声称帧率提升；WASM 数值计算仍同步运行，提速需要单独测量。
 
 ```text
 rust-toolchain.toml         固定 Rust 1.93.0 与 WASM 编译目标
-rust/flight-core/src/       Rust 飞行、风场、接触响应及固定缓冲 WASM ABI
+rust/flight-core/src/       Rust 飞行/风场、世界查询、武器、场景和动画及批量 ABI
 rust/flight-core/tests/     Rust 原生模拟测试
 scripts/build-wasm.mjs      调用 Cargo 构建并更新生成的 WASM 文件
 src/App.tsx                  页面与游戏状态
 src/components/              仪表、小地图、指南、触屏控制与同款模型预览
 src/game/load-flight-core.ts 缓存 WASM 编译结果并处理浏览器加载
-src/game/flight-simulation.ts Rust/WASM 适配、场景查询回调与实例生命周期
+src/game/rust-runtime.ts     游戏共享的 WASM 实例、导出调用与内存视图
+src/game/flight-simulation.ts 飞行适配与原生 Rust 世界调用
+src/game/world-kernel.ts     地理配置、批量高度与障碍上传/查询
+src/game/weapon-simulation.ts Rust 武器状态、弹道、命中与装填适配
+src/game/scene-simulation.ts Rust 场景布局、地形颜色、流向与水纹适配
+src/game/effect-simulation.ts Rust 鱼群、牲畜及爆炸的矩阵/属性批量适配
 src/game/generated/         自动生成的 WASM 产物，不提交 Git
 src/game/flight.ts           飞行状态、穿环检测与测试用 TS 积分参考
 src/game/wind.ts             风况类型、预设与测试用 TS 风场参考
@@ -103,7 +110,7 @@ src/game/records.ts          按机型、模式与风况区分的个人记录
 src/game/engine.ts           帧循环、输入、Rust 模拟调用与挑战流程
 src/game/drone.ts            可见四旋翼机身与螺旋桨动画
 src/game/drone-catalog.ts    六款 FPV 机型、原型来源与飞行配置
-src/game/weapons.ts          投弹、弹药、地面命中与得分模拟
+src/game/weapons.ts          共享武器配置、类型与测试用 TS 参考
 src/game/weapon-visuals.ts   地面靶标、炸弹与爆炸三维效果
 src/game/world.ts            山谷、检查点和实例化场景
 src/game/landscape.ts        扩展地图边界、河湖轮廓与连续地形高度
@@ -115,19 +122,21 @@ src/game/fish.ts             鱼体、鳍尾与紧密鱼群的游动
 src/game/shrubs.ts           有枝条和曲面叶片的自然灌丛
 src/game/night-sky.ts        月亮与星空
 src/game/rock-material.ts    岩石三向纹理与表面起伏
-src/game/surfaces.ts         可从桥下通过的建筑/桥面支撑高度
-src/game/collisions.ts       斜屋顶与桥下净空的障碍碰撞
+src/game/surfaces.ts         测试用 TS 建筑/桥面支撑参考
+src/game/collisions.ts       测试用 TS 斜屋顶/桥下碰撞参考
 src/game/audio.ts            Web Audio 电机、穿环与投弹音效
 public/assets/               随仓库提供的游戏美术
 tests/                      飞行物理、完整赛道、投弹与地理测试
-tests/wasm-flight.test.ts    真实 WASM 数值对比、接触、生命周期与完整赛道
+tests/wasm-*.test.ts         真实 WASM 飞行、地图、武器、场景及动画对比
 tests/helpers/              独立 TS 模拟参考与普通输入赛道控制器
 docs/design.md              设计、素材与视觉验证说明
 ```
 
-当前 `npm run check` 包含 **16 项 Cargo 原生测试、92 项 Node 测试及 TypeScript 检查**。WASM 测试直接读取生成的 `.wasm` 文件，通过 `WebAssembly.compile` 编译并实例化，覆盖 **6 机型 × 2 模式 × 4 风强 × 8 风向 × 3 帧率（30 / 60 / 120 fps）**的 1,152 组轨迹，共 **120,960 次逐帧数值对比**。
+当前 `npm run check` 包含 **35 项 Cargo 原生测试、124 项 Node 测试及 TypeScript 检查**。WASM 测试直接读取生成的 `.wasm` 文件，通过 `WebAssembly.compile` 编译并实例化，覆盖 **6 机型 × 2 模式 × 4 风强 × 8 风向 × 3 帧率（30 / 60 / 120 fps）**的 1,152 组轨迹，共 **120,960 次逐帧数值对比**。
 
 测试覆盖不同帧率的稳定性、惯性、转向/视角移动、地形接触、高速穿环与方向检查。真实 Rust/WASM 核心使用普通飞行输入完成六款机型、两种模式共 12 种组合的完整 8 环赛道；另验证暂停与无效时间步、外部鼠标姿态变更、桥上/桥下支撑、边界与障碍回退后的风况、实例反复创建释放，以及回调重入保护。
+
+新增验证覆盖全域地理查询、跨格障碍、地形完整 90,601 个顶点的高度/颜色、整片树林/岩石/灌木的种子一致性、完整水纹字节与河湖流向、原生世界下的 12 组八环赛道、炸弹的完整生命周期，以及鱼群全部部件矩阵、牛羊 72 秒动作序列、陆地/水面爆炸在不同年龄和日夜下的矩阵/色彩/透明度。还覆盖各服务的共享内存增长、暂停、重置、实例隔离和资源释放。
 
 地理测试还覆盖河湖连通、岸线与地形一致性、连续高度、扩大后的边界、原有起点/检查点/靶标安全性，以及无人机与炸弹在水面接触。实际浏览器验证包含越过旧地图边界、抵达湖泊、地图范围切换和触水保护。
 

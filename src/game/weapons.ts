@@ -24,9 +24,9 @@ export const EXPLOSION_LIFETIME = 3.8;
 export const MAX_ACTIVE_BOMBS = 24;
 export const MAX_ACTIVE_EXPLOSIONS = 32;
 
-const MAX_SUBSTEP = 1 / 60;
-const MAX_SUBSTEPS = 600;
-const TIMER_EPSILON = 1e-9;
+export const MAX_SUBSTEP = 1 / 60;
+export const MAX_SUBSTEPS = 600;
+export const TIMER_EPSILON = 1e-9;
 
 export interface Bomb {
   id: number;

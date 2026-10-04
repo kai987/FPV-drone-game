@@ -2,13 +2,18 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import {
   BLAST_RADIUS, EXPLOSION_LIFETIME, MAX_ACTIVE_BOMBS, MAX_ACTIVE_EXPLOSIONS, TARGETS,
-} from './weapons';
-import type { WeaponState } from './weapons';
-import { groundHeight } from './world';
-import { isWater, WATER_LEVEL } from './landscape';
+} from './weapons.ts';
+import type { WeaponState } from './weapons.ts';
+import { groundHeight } from './world.ts';
+import { isWater, WATER_LEVEL } from './landscape.ts';
+import type { RustRuntime } from './rust-runtime.ts';
+import type { WorldKernel } from './world-kernel.ts';
+import { createExplosionSimulation } from './effect-simulation.ts';
+import type { EffectFieldLayout } from './effect-simulation.ts';
 
 /** Geometry, target feedback and pooled effects for the fictional practice game. */
-export function createWeaponVisuals() {
+export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel) {
+  const sampleGround = world ? world.groundHeight : groundHeight;
   const group = new THREE.Group();
   group.name = 'Training targets and game effects';
   const geometries = new Set<THREE.BufferGeometry>();
@@ -84,7 +89,7 @@ export function createWeaponVisuals() {
   }
   flagGeometry.computeVertexNormals();
   const flagMaterials: THREE.MeshStandardMaterial[] = [];
-  const targetHeights = TARGETS.map(target => groundHeight(target.position.x, target.position.z));
+  const targetHeights = TARGETS.map(target => sampleGround(target.position.x, target.position.z));
   const hitStates = TARGETS.map(() => false);
   const radiusScales = [1, 0.76, 0.48, 0.2];
 
@@ -111,7 +116,7 @@ export function createWeaponVisuals() {
       const crateX = x + Math.cos(offsetAngle) * (target.radius + 0.85);
       const crateZ = z + Math.sin(offsetAngle) * (target.radius + 0.85);
       const crateHeight = 0.66 + ((index + crate) % 3) * 0.18;
-      const crateGround = groundHeight(crateX, crateZ);
+      const crateGround = sampleGround(crateX, crateZ);
       transform.position.set(crateX, crateGround + crateHeight / 2, crateZ);
       transform.rotation.set(0, offsetAngle + 0.2, 0);
       transform.scale.set(0.82, crateHeight, 0.82);
@@ -126,7 +131,7 @@ export function createWeaponVisuals() {
 
     const poleX = x - target.radius * 0.74;
     const poleZ = z - target.radius * 0.74;
-    const poleGround = groundHeight(poleX, poleZ);
+    const poleGround = sampleGround(poleX, poleZ);
     transform.position.set(poleX, poleGround + 0.9, poleZ);
     transform.rotation.set(0, 0, 0);
     transform.scale.set(1, 1, 1);
@@ -303,6 +308,13 @@ export function createWeaponVisuals() {
     return {
       mesh, material,
       reset() { count = 0; },
+      load(frame: Float64Array, layout: EffectFieldLayout, nextCount: number) {
+        count = nextCount;
+        mesh.instanceMatrix.array.set(frame.subarray(layout.matrices, layout.matrices + count * 16));
+        mesh.instanceColor!.array.set(frame.subarray(layout.colors, layout.colors + count * 3));
+        opacity.array.set(frame.subarray(layout.opacity, layout.opacity + count));
+        seed.array.set(frame.subarray(layout.seed, layout.seed + count));
+      },
       write(x: number, y: number, z: number, width: number, height: number, alpha: number, tint: THREE.Color, random: number) {
         if (count >= capacity || alpha <= 0.008) return;
         transform.position.set(x, y, z); transform.rotation.set(0, 0, 0); transform.scale.set(width, height, 1);
@@ -383,6 +395,12 @@ export function createWeaponVisuals() {
   const flameColor = new THREE.Color('#ed752b');
   const warmWhite = new THREE.Color('#fff1cb');
   const ease = (start: number, end: number, value: number) => THREE.MathUtils.smoothstep(value, start, end);
+  const simulation = runtime ? createExplosionSimulation(runtime, {
+    capacity: MAX_ACTIVE_EXPLOSIONS, lifetime: EXPLOSION_LIFETIME, blastRadius: BLAST_RADIUS, waterLevel: WATER_LEVEL,
+    colors: ['#69685f', '#b19b7a', '#d9f0ee', '#ed752b', '#fff1cb', '#ffc990', '#d5edff'].flatMap(value => {
+      const color = new THREE.Color(value); return [color.r, color.g, color.b];
+    }),
+  }, world) : undefined;
 
   return {
     group,
@@ -437,6 +455,31 @@ export function createWeaponVisuals() {
         visual.quaternion.copy(pose); visual.rotateY(time * 0.65 + bomb.id * 0.81);
       }
 
+      if (simulation) {
+        const frame = simulation.update(state.explosions, time, night);
+        const layout = simulation.layout;
+        particleFields.forEach((field, index) => {
+          field.load(frame, layout.fields[index], frame[index]); field.finish(time);
+        });
+        rings.count = frame[6];
+        const ringLayout = layout.rings;
+        rings.instanceMatrix.array.set(frame.subarray(ringLayout.matrices, ringLayout.matrices + rings.count * 16));
+        rings.instanceColor!.array.set(frame.subarray(ringLayout.colors, ringLayout.colors + rings.count * 3));
+        ringOpacity.array.set(frame.subarray(ringLayout.opacity, ringLayout.opacity + rings.count));
+        ringMaterial.uniforms.effectTime.value = time;
+        if (rings.count) { rings.instanceMatrix.needsUpdate = true; rings.instanceColor!.needsUpdate = true; ringOpacity.needsUpdate = true; }
+        fragments.count = frame[7];
+        fragments.instanceMatrix.array.set(frame.subarray(layout.fragments, layout.fragments + fragments.count * 16));
+        if (fragments.count) fragments.instanceMatrix.needsUpdate = true;
+        flashLights.forEach((light, index) => {
+          if (index >= frame[8]) { light.intensity = 0; return; }
+          const offset = layout.lights + index * 7;
+          light.position.fromArray(frame, offset); light.color.fromArray(frame, offset + 3); light.intensity = frame[offset + 6];
+        });
+        return;
+      }
+
+      // Independent Three.js reference used when constructing models without a runtime.
       for (const field of particleFields) field.reset();
       let ringCount = 0; let fragmentCount = 0; let lightCount = 0;
       for (const light of flashLights) light.intensity = 0;
@@ -525,6 +568,7 @@ export function createWeaponVisuals() {
     },
     dispose() {
       if (disposed) return; disposed = true;
+      simulation?.dispose();
       group.traverse(object => { if (object instanceof THREE.InstancedMesh) object.dispose(); });
       for (const geometry of geometries) geometry.dispose();
       for (const material of materials) material.dispose();

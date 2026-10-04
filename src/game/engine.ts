@@ -1,21 +1,25 @@
 import * as THREE from 'three';
 import { createFlightState, crossesCheckpoint } from './flight';
 import { CHECKPOINTS, createWorld } from './world';
-import type { WorldObstacle } from './world';
-import { isWater, WORLD_BOUNDS, WATER_LEVEL } from './landscape';
-import { flightSurfaceHeight } from './surfaces';
-import { intersectsObstacle } from './collisions';
+import { WORLD_BOUNDS, WATER_LEVEL } from './landscape';
 import { FlightAudio } from './audio';
 import { createDrone } from './drone';
 import { DEFAULT_DRONE_ID, DRONES, getDroneSpec } from './drone-catalog';
 import type { DroneId } from './drone-catalog';
-import { createWeaponState, dropBomb, stepWeapons, TARGETS } from './weapons';
+import { TARGETS } from './weapons';
+import type { WeaponState } from './weapons';
+import { createWeaponSimulation } from './weapon-simulation';
+import type { WeaponSimulation } from './weapon-simulation';
+import { createRustRuntime } from './rust-runtime';
+import type { RustRuntime } from './rust-runtime';
+import { createWorldKernel } from './world-kernel';
+import type { WorldKernel } from './world-kernel';
 import { createWeaponVisuals } from './weapon-visuals';
 import type { RaceMode, FlightMode, CameraMode, Status, Telemetry } from './types';
 import { EMPTY_TELEMETRY } from './types';
 import { DEFAULT_WIND_SETTINGS } from './wind';
 import type { WindSettings } from './wind';
-import { createFlightSimulation } from './flight-simulation';
+import { createWorldFlightSimulation } from './flight-simulation';
 import type { FlightSimulation } from './flight-simulation';
 
 export interface EngineEvents {
@@ -29,16 +33,18 @@ export interface EngineEvents {
 export class FlightEngine {
   readonly renderer: THREE.WebGLRenderer;
   readonly audio = new FlightAudio();
-  private world = createWorld();
+  private world: ReturnType<typeof createWorld>;
+  private readonly runtime: RustRuntime;
+  private readonly worldKernel: WorldKernel;
+  private readonly weaponSimulation: WeaponSimulation;
   private camera = new THREE.PerspectiveCamera(68, 1, 0.2, 10000);
-  private obstacleGrid = new Map<string, WorldObstacle[]>();
   private drone = createDrone();
   private selectedDroneId: DroneId = DEFAULT_DRONE_ID;
   private disposed = false;
   private headlight = new THREE.SpotLight('#dcecff', 0, 85, Math.PI / 5, 0.55, 1.5);
   private headlightTarget = new THREE.Object3D();
-  private weapons = createWeaponState();
-  private weaponVisuals = createWeaponVisuals();
+  private weapons: WeaponState;
+  private weaponVisuals: ReturnType<typeof createWeaponVisuals>;
   private cameraPosition = new THREE.Vector3();
   private cameraTarget = new THREE.Vector3();
   private desiredPosition = new THREE.Vector3();
@@ -68,10 +74,14 @@ export class FlightEngine {
   get recordEligible(): boolean { return this.unchangedWind; }
 
   constructor(private host: HTMLDivElement, private events: EngineEvents, flightCore: WebAssembly.Module) {
-    this.simulation = createFlightSimulation(flightCore, flightSurfaceHeight, position => {
-      const nearby = this.obstacleGrid.get(`${Math.floor(position.x / 64)},${Math.floor(position.z / 64)}`);
-      return Boolean(nearby?.some(obstacle => intersectsObstacle(position, obstacle)));
-    });
+    this.runtime = createRustRuntime(flightCore);
+    this.worldKernel = createWorldKernel(this.runtime);
+    this.world = createWorld(this.runtime, this.worldKernel);
+    this.worldKernel.setObstacles(this.world.obstacles);
+    this.simulation = createWorldFlightSimulation(this.runtime, this.worldKernel.handle);
+    this.weaponSimulation = createWeaponSimulation(this.runtime, this.worldKernel);
+    this.weapons = this.weaponSimulation.state;
+    this.weaponVisuals = createWeaponVisuals(this.runtime, this.worldKernel);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -81,6 +91,7 @@ export class FlightEngine {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.setAttribute('aria-label', '三维山谷飞行画面，飞行时点击可启用鼠标视角');
     this.renderer.domElement.dataset.flightCore = 'rust-wasm';
+    this.renderer.domElement.dataset.numericServices = 'world,weapons,scene,particles,ecology';
     this.renderer.domElement.tabIndex = 0;
     host.appendChild(this.renderer.domElement);
     this.camera.rotation.order = 'YXZ';
@@ -91,18 +102,6 @@ export class FlightEngine {
     this.headlight.target = this.headlightTarget;
     // Keep lights outside the hidden FPV model, so first-person flight is illuminated too.
     this.world.scene.add(this.headlight, this.headlightTarget);
-    // Index static obstacles once; a larger forest should not require scanning
-    // thousands of distant trunks on every animation frame.
-    for (const obstacle of this.world.obstacles) {
-      const radius = obstacle.radius + 0.55;
-      for (let x = Math.floor((obstacle.x - radius) / 64); x <= Math.floor((obstacle.x + radius) / 64); x++) {
-        for (let z = Math.floor((obstacle.z - radius) / 64); z <= Math.floor((obstacle.z + radius) / 64); z++) {
-          const key = `${x},${z}`;
-          const cell = this.obstacleGrid.get(key) ?? [];
-          cell.push(obstacle); this.obstacleGrid.set(key, cell);
-        }
-      }
-    }
     this.resizeObserver = new ResizeObserver(this.resize);
     this.resizeObserver.observe(host);
     window.addEventListener('keydown', this.keydown);
@@ -188,7 +187,8 @@ export class FlightEngine {
   cycleCameraMode() { this.setCameraMode(this.cameraMode === 'chase' ? 'bomb' : this.cameraMode === 'bomb' ? 'fpv' : 'chase'); }
   dropBomb() {
     if (this.status !== 'flying') return;
-    if (dropBomb(this.weapons, this.state.position, this.state.velocity)) {
+    if (this.weaponSimulation.drop(this.state.position, this.state.velocity)) {
+      this.weapons = this.weaponSimulation.state;
       this.audio.drop(); this.emit();
       if (this.weapons.ammo === 0) this.events.notice('弹药已投完 · 3 秒后自动补充');
     }
@@ -198,7 +198,7 @@ export class FlightEngine {
     this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
     this.windClock = 0; this.unchangedWind = true;
     this.refreshWind();
-    this.weapons = createWeaponState();
+    this.weapons = this.weaponSimulation.reset();
     this.snapCamera = true;
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
     this.collisionCooldown = 0; this.setStatus('flying'); this.emit();
@@ -214,7 +214,7 @@ export class FlightEngine {
     this.setStatus('ready'); this.state = createFlightState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
     this.windClock = 0; this.unchangedWind = true;
     this.refreshWind();
-    this.weapons = createWeaponState();
+    this.weapons = this.weaponSimulation.reset();
     this.snapCamera = true; this.events.notice('');
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
     if (document.pointerLockElement) document.exitPointerLock(); this.emit();
@@ -243,15 +243,16 @@ export class FlightEngine {
           if (this.collisionCooldown <= 0) {
             this.collisionCooldown = 1.5;
             if (this.mode === 'race') this.elapsed += 3;
-            const contact = groundHit && this.state.position.y < WATER_LEVEL + 3 && isWater(this.state.position.x, this.state.position.z) ? '触水' : '碰撞';
+            const contact = groundHit && this.state.position.y < WATER_LEVEL + 3 && this.worldKernel.isWater(this.state.position.x, this.state.position.z) ? '触水' : '碰撞';
             this.events.notice(this.mode === 'race' ? `${contact} · 已稳住机身，计时增加 3 秒` : `${contact} · 已稳住机身，请升高或避开障碍`);
           }
         }
       }
-      const weaponEvents = stepWeapons(this.weapons, elapsedDelta, flightSurfaceHeight);
+      const weaponEvents = this.weaponSimulation.step(elapsedDelta);
+      this.weapons = weaponEvents.state;
       if (weaponEvents.impacts > 0) {
         const impact = this.weapons.explosions.at(-1);
-        this.audio.explosion(Boolean(impact && impact.position.y < WATER_LEVEL + 0.3 && isWater(impact.position.x, impact.position.z)));
+        this.audio.explosion(Boolean(impact && impact.position.y < WATER_LEVEL + 0.3 && this.worldKernel.isWater(impact.position.x, impact.position.z)));
       }
       if (weaponEvents.hits > 0) {
         this.events.notice(this.weapons.hitTargetIds.length === TARGETS.length
@@ -288,12 +289,12 @@ export class FlightEngine {
     } else {
       // Follow yaw rather than bank/pitch so turns show the aircraft's attitude
       // while keeping the horizon steady and the route ahead visible.
-      const heightAboveGround = Math.max(0, position.y - flightSurfaceHeight(position.x, position.z, position.y));
+      const heightAboveGround = Math.max(0, position.y - this.worldKernel.flightSurfaceHeight(position.x, position.z, position.y));
       const distanceBehind = this.cameraMode === 'bomb' ? Math.max(10, heightAboveGround * 0.55) : 8;
       const heightAbove = this.cameraMode === 'bomb' ? Math.max(15, heightAboveGround * 0.7) : 3.3;
       this.desiredPosition.set(position.x + Math.sin(yaw) * distanceBehind, position.y + heightAbove, position.z + Math.cos(yaw) * distanceBehind);
-      this.desiredPosition.y = Math.max(this.desiredPosition.y, flightSurfaceHeight(this.desiredPosition.x, this.desiredPosition.z, this.desiredPosition.y) + 2);
-      if (this.cameraMode === 'bomb') this.desiredTarget.set(position.x, flightSurfaceHeight(position.x, position.z, position.y) + 0.4, position.z);
+      this.desiredPosition.y = Math.max(this.desiredPosition.y, this.worldKernel.flightSurfaceHeight(this.desiredPosition.x, this.desiredPosition.z, this.desiredPosition.y) + 2);
+      if (this.cameraMode === 'bomb') this.desiredTarget.set(position.x, this.worldKernel.flightSurfaceHeight(position.x, position.z, position.y) + 0.4, position.z);
       else this.desiredTarget.set(position.x - Math.sin(yaw) * 5, position.y + 0.8, position.z - Math.cos(yaw) * 5);
       if (this.snapCamera) {
         this.cameraPosition.copy(this.desiredPosition); this.cameraTarget.copy(this.desiredTarget);
@@ -301,7 +302,7 @@ export class FlightEngine {
         const blend = 1 - Math.exp(-8 * dt);
         this.cameraPosition.lerp(this.desiredPosition, blend); this.cameraTarget.lerp(this.desiredTarget, blend);
       }
-      this.cameraPosition.y = Math.max(this.cameraPosition.y, flightSurfaceHeight(this.cameraPosition.x, this.cameraPosition.z, this.cameraPosition.y) + 1.5);
+      this.cameraPosition.y = Math.max(this.cameraPosition.y, this.worldKernel.flightSurfaceHeight(this.cameraPosition.x, this.cameraPosition.z, this.cameraPosition.y) + 1.5);
       this.camera.position.copy(this.cameraPosition); this.camera.lookAt(this.cameraTarget);
     }
     this.snapCamera = false;
@@ -341,6 +342,6 @@ export class FlightEngine {
     document.removeEventListener('mousemove', this.mousemove); document.removeEventListener('pointerlockchange', this.pointerlockchange);
     this.renderer.domElement.removeEventListener('click', this.lockPointer);
     if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
-    this.simulation.dispose(); this.headlight.dispose(); this.audio.dispose(); this.drone.dispose(); this.weaponVisuals.dispose(); this.world.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
+    this.simulation.dispose(); this.weaponSimulation.dispose(); this.headlight.dispose(); this.audio.dispose(); this.drone.dispose(); this.weaponVisuals.dispose(); this.world.dispose(); this.worldKernel.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
   }
 }

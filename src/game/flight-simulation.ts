@@ -4,6 +4,7 @@ import type { FlightInput, FlightMode, FlightState, Vec3 } from './flight.ts';
 import type { Telemetry } from './types.ts';
 import { WIND_PRESETS } from './wind.ts';
 import type { WindSettings } from './wind.ts';
+import type { RustRuntime } from './rust-runtime.ts';
 
 export interface SimulationBounds {
   minX: number; maxX: number; minZ: number; maxZ: number; maxAltitude: number;
@@ -49,6 +50,21 @@ export function createFlightSimulation(module: WebAssembly.Module,
     },
   });
   const core = instance.exports as FlightCoreExports;
+  return createSimulationAdapter(core, handle => core.simulate_tick(handle));
+}
+
+/** Production flight queries the native Rust world in the same shared instance. */
+export function createWorldFlightSimulation(runtime: RustRuntime, worldHandle: number): FlightSimulation {
+  const call = (name: string) => (...args: number[]) => runtime.call(name, ...args);
+  const core = { memory: runtime.memory, abi_version: call('abi_version'), input_len: call('input_len'),
+    output_len: call('output_len'), simulation_new: call('simulation_new'), simulation_input_ptr: call('simulation_input_ptr'),
+    simulation_output_ptr: call('simulation_output_ptr'), simulation_free: call('simulation_free'), simulate_tick: call('simulate_tick') } as FlightCoreExports;
+  return createSimulationAdapter(core, handle => {
+    if (runtime.call('simulate_world_tick', handle, worldHandle) !== 1) throw new Error('Native world flight tick failed');
+  });
+}
+
+function createSimulationAdapter(core: FlightCoreExports, tick: (handle: number) => void): FlightSimulation {
   if (!(core.memory instanceof WebAssembly.Memory) || typeof core.abi_version !== 'function'
     || core.abi_version() !== 1 || core.input_len() !== 36 || core.output_len() !== 22) {
     throw new Error('Unsupported flight-core WASM interface');
@@ -88,7 +104,7 @@ export function createFlightSimulation(module: WebAssembly.Module,
         windOverride ? 1 : 0, windOverride?.x ?? 0, windOverride?.y ?? 0, windOverride?.z ?? 0,
       ]);
       stepping = true;
-      try { core.simulate_tick(handle); } finally { stepping = false; }
+      try { tick(handle); } finally { stepping = false; }
       refreshViews();
       if (Number.isFinite(dt) && dt > 0) {
         state.position.x = outputBuffer[0]; state.position.y = outputBuffer[1]; state.position.z = outputBuffer[2];

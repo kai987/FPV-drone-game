@@ -3,6 +3,9 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { groundHeight } from './landscape.ts';
 import { PASTURES } from './rural-layout.ts';
 import type { Pasture } from './rural-layout.ts';
+import type { RustRuntime } from './rust-runtime.ts';
+import type { WorldKernel } from './world-kernel.ts';
+import { createLivestockSimulation } from './effect-simulation.ts';
 
 type Triple = readonly [number, number, number];
 type Section = readonly [z: number, width: number, height: number, centerY: number];
@@ -204,7 +207,7 @@ function taperedTube(points: readonly Triple[], radius: number, taper: number, s
 }
 
 /** Continuous anatomical skins, fine fleece and jointed, gently moving livestock. */
-export function createLivestock() {
+export function createLivestock(runtime?: RustRuntime, world?: WorldKernel) {
   const group = new THREE.Group(); group.name = 'Grazing cattle and sheep';
   const geometries = new Set<THREE.BufferGeometry>(); const materials = new Set<THREE.Material>(); const textures = new Set<THREE.Texture>();
   const ownGeometry = <T extends THREE.BufferGeometry>(value: T) => { geometries.add(value); return value; };
@@ -362,6 +365,16 @@ export function createLivestock() {
     mesh.frustumCulled = false; batch.mesh = mesh; group.add(mesh);
   });
 
+  // The static anatomy is uploaded once. Every moving parent and final part
+  // matrix is evaluated together in Rust; Three only receives the packed result.
+  const parents = new Map<THREE.Matrix4, number>();
+  if (runtime) for (const animal of animals) {
+    for (const parent of [animal.root, animal.head, animal.neck, animal.tail,
+      ...animal.legs.flatMap(leg => [...leg.bones, ...leg.joints, leg.foot])]) parents.set(parent, parents.size);
+  }
+  const simulation = runtime ? createLivestockSimulation(runtime, animals,
+    [...batches.values()].flatMap(batch => batch.parts.map(part => ({ parent: parents.get(part.parent)!, local: part.local.elements }))), world) : undefined;
+
   const rootPosition = new THREE.Vector3(); const headPosition = new THREE.Vector3(); const neckOrigin = new THREE.Vector3();
   const rootScale = new THREE.Vector3(); const unitScale = new THREE.Vector3(1, 1, 1); const boneScale = new THREE.Vector3();
   const direction = new THREE.Vector3(); const midpoint = new THREE.Vector3(); const axisY = new THREE.Vector3(0, 1, 0); const axisForward = new THREE.Vector3(0, 0, -1);
@@ -370,6 +383,17 @@ export function createLivestock() {
   let previousTime: number | null = null; let disposed = false;
   const update = (time: number) => {
     if (disposed) return;
+    if (simulation) {
+      const matrices = simulation.update(time);
+      let offset = 0;
+      batches.forEach(batch => {
+        const length = batch.parts.length * 16;
+        batch.mesh!.instanceMatrix.array.set(matrices.subarray(offset, offset + length));
+        batch.mesh!.instanceMatrix.needsUpdate = true;
+        offset += length;
+      });
+      return;
+    }
     const dt = previousTime === null ? 0 : THREE.MathUtils.clamp(time - previousTime, 0, 0.08); previousTime = time;
     for (const animal of animals) {
       const cow = animal.species === 'cow';
@@ -446,6 +470,7 @@ export function createLivestock() {
     update,
     dispose() {
       if (disposed) return; disposed = true;
+      simulation?.dispose();
       batches.forEach(batch => batch.mesh?.dispose()); geometries.forEach(geometry => geometry.dispose());
       materials.forEach(material => material.dispose()); textures.forEach(texture => texture.dispose()); group.clear();
     },

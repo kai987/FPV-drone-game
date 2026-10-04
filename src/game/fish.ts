@@ -1,13 +1,17 @@
 import * as THREE from 'three';
 import { FISH_SCHOOLS } from './rural-layout.ts';
 import { WATER_LEVEL } from './landscape.ts';
+import type { RustRuntime } from './rust-runtime.ts';
+import { createFishSimulation } from './effect-simulation.ts';
 
 /** Close, coherent shoals of silver river fish and bronze carp, below the water surface. */
-export function createFish() {
+export function createFish(runtime?: RustRuntime) {
   const group = new THREE.Group();
   group.name = 'River and lake fish schools';
   const count = FISH_SCHOOLS.reduce((sum, school) => sum + school.count, 0);
-  const pathLengths = FISH_SCHOOLS.map(school => school.points.reduce((length, point, index) => {
+  const simulation = runtime ? createFishSimulation(runtime, FISH_SCHOOLS, WATER_LEVEL) : undefined;
+  // The no-runtime path is the independent model/test reference.
+  const pathLengths = runtime ? [] : FISH_SCHOOLS.map(school => school.points.reduce((length, point, index) => {
     const next = school.points[(index + 1) % school.points.length];
     return length + Math.hypot(next.x - point.x, next.z - point.z);
   }, 0));
@@ -78,6 +82,17 @@ export function createFish() {
   let disposed = false;
   const update = (time: number) => {
     if (disposed) return;
+    if (simulation) {
+      const matrices = simulation.update(time);
+      let offset = 0;
+      for (const mesh of meshes) {
+        const length = mesh.count * 16;
+        mesh.instanceMatrix.array.set(matrices.subarray(offset, offset + length));
+        mesh.instanceMatrix.needsUpdate = true;
+        offset += length;
+      }
+      return;
+    }
     let slot = 0;
     FISH_SCHOOLS.forEach((school, schoolIndex) => {
       for (let fish = 0; fish < school.count; fish++, slot++) {
@@ -121,6 +136,7 @@ export function createFish() {
     dispose() {
       if (disposed) return;
       disposed = true;
+      simulation?.dispose();
       for (const mesh of meshes) mesh.dispose();
       for (const geometry of [bodyGeometry, finGeometry, dorsalGeometry, eyeGeometry, gillGeometry]) geometry.dispose();
       for (const material of [bodyMaterial, finMaterial, eyeMaterial, gillMaterial]) material.dispose();

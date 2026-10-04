@@ -1,42 +1,11 @@
 import * as THREE from 'three';
-import { groundHeight, LAKES, RIVER_SAMPLES, TERRAIN_SIZE, WATER_LEVEL, WORLD_CENTER_Z } from './landscape.ts';
+import { TERRAIN_SIZE, WATER_LEVEL, WORLD_CENTER_Z } from './landscape.ts';
+import type { SceneSimulation } from './scene-simulation.ts';
 
 /** Seamless slope texture: integer frequencies wrap exactly, and mipmaps filter tiny ripples. */
-function createRippleTexture() {
+function createRippleTexture(scene: SceneSimulation) {
   const size = 256;
-  const pixels = new Uint8Array(size * size * 4);
-  let seed = 821;
-  const random = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-  const waves = Array.from({ length: 48 }, (_, i) => {
-    const frequency = 8 + random() * 48;
-    // A preferred wind direction gives short, uneven crests instead of round noise blobs.
-    const x = Math.round(frequency);
-    const z = Math.round((random() - 0.5) * 20);
-    const length = Math.hypot(x, z) || 1;
-    return { x, z, phase: random() * Math.PI * 2, weight: (0.55 + random() * 0.45) / Math.sqrt(i + 6), length };
-  });
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      let slopeX = 0;
-      let slopeZ = 0;
-      let height = 0;
-      for (const wave of waves) {
-        const phase = (x * wave.x + y * wave.z) / size * Math.PI * 2 + wave.phase;
-        const slope = Math.cos(phase) * wave.weight;
-        slopeX += slope * wave.x / wave.length;
-        slopeZ += slope * wave.z / wave.length;
-        height += Math.sin(phase) * wave.weight;
-      }
-      const offset = (y * size + x) * 4;
-      pixels[offset] = Math.round(127.5 + THREE.MathUtils.clamp(slopeX * 0.3, -1, 1) * 127.5);
-      pixels[offset + 1] = Math.round(127.5 + THREE.MathUtils.clamp(slopeZ * 0.3, -1, 1) * 127.5);
-      pixels[offset + 2] = Math.round(127.5 + THREE.MathUtils.clamp(height * 0.3, -1, 1) * 127.5);
-      pixels[offset + 3] = 255;
-    }
-  }
+  const pixels = scene.ripplePixels(size);
   const texture = new THREE.DataTexture(pixels, size, size, THREE.RGBAFormat);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.magFilter = THREE.LinearFilter;
@@ -47,55 +16,16 @@ function createRippleTexture() {
   return texture;
 }
 
-/** Compute the current once per vertex; the fragment shader never searches the river. */
-function currentAt(x: number, z: number) {
-  let distanceSquared = Infinity;
-  let directionX = 0;
-  let directionZ = 1;
-  for (let i = 0; i < RIVER_SAMPLES.length - 1; i++) {
-    const a = RIVER_SAMPLES[i];
-    const b = RIVER_SAMPLES[i + 1];
-    const dx = b.x - a.x;
-    const dz = b.z - a.z;
-    const lengthSquared = dx * dx + dz * dz;
-    const t = THREE.MathUtils.clamp(((x - a.x) * dx + (z - a.z) * dz) / lengthSquared, 0, 1);
-    const distance = (x - a.x - t * dx) ** 2 + (z - a.z - t * dz) ** 2;
-    if (distance < distanceSquared) {
-      distanceSquared = distance;
-      directionX = dx / Math.sqrt(lengthSquared);
-      directionZ = dz / Math.sqrt(lengthSquared);
-    }
-  }
-  let strength = 1 - THREE.MathUtils.smoothstep(Math.sqrt(distanceSquared), 22, 80);
-  for (const lake of LAKES) {
-    const dx = x - lake.x;
-    const dz = z - lake.z;
-    const u = (dx * Math.cos(lake.rotation) + dz * Math.sin(lake.rotation)) / lake.radiusX;
-    const v = (-dx * Math.sin(lake.rotation) + dz * Math.cos(lake.rotation)) / lake.radiusZ;
-    strength *= THREE.MathUtils.smoothstep(Math.hypot(u, v), 0.72, 1.12);
-  }
-  return [directionX * strength, directionZ * strength, strength];
-}
-
 /** A level collision surface with animated, filtered optical waves above its carved bed. */
-export function createWater(panorama: THREE.Texture) {
+export function createWater(panorama: THREE.Texture, scene: SceneSimulation, points: Float32Array, heights: Float32Array) {
   const group = new THREE.Group();
   group.name = 'Lakes and flowing river';
   const geometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, 300, 300);
   geometry.rotateX(-Math.PI / 2);
-  const positions = geometry.attributes.position;
-  const depths = new Float32Array(positions.count);
-  const currents = new Float32Array(positions.count * 3);
-  for (let i = 0; i < positions.count; i++) {
-    const x = positions.getX(i);
-    const z = positions.getZ(i) + WORLD_CENTER_Z;
-    depths[i] = WATER_LEVEL - groundHeight(x, z);
-    // Dry vertices are hidden by terrain; keep a margin for shoreline interpolation.
-    if (depths[i] > -6) currents.set(currentAt(x, z), i * 3);
-  }
+  const { depths, currents } = scene.waterData(points, heights);
   geometry.setAttribute('waterDepth', new THREE.BufferAttribute(depths, 1));
   geometry.setAttribute('waterCurrent', new THREE.BufferAttribute(currents, 3));
-  const ripples = createRippleTexture();
+  const ripples = createRippleTexture(scene);
   const material = new THREE.ShaderMaterial({
     uniforms: {
       time: { value: 0 },

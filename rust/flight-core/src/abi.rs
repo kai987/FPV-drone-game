@@ -105,10 +105,11 @@ fn query_obstacle(_: Vec3) -> bool {
     false
 }
 
-/// # Safety
-/// The handle must be live and calls must not reenter or mutate its input buffer.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn simulate_tick(handle: usize) {
+unsafe fn run_tick(
+    handle: usize,
+    surface: impl FnMut(f64, f64, f64) -> f64,
+    obstacle: impl FnMut(Vec3) -> bool,
+) {
     if handle == 0 {
         return;
     }
@@ -178,8 +179,8 @@ pub unsafe extern "C" fn simulate_tick(handle: usize) {
                 None
             },
         },
-        query_surface,
-        query_obstacle,
+        surface,
+        obstacle,
     );
     let description = result.wind_description;
     let sector = |value: u32| -> f64 {
@@ -213,4 +214,31 @@ pub unsafe extern "C" fn simulate_tick(handle: usize) {
         f64::from(result.boundary_contact),
         f64::from(result.obstacle_contact),
     ];
+}
+
+/// # Safety
+/// The handle must be live and calls must not reenter or mutate its input buffer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn simulate_tick(handle: usize) {
+    unsafe {
+        run_tick(handle, query_surface, query_obstacle);
+    }
+}
+
+/// # Safety
+/// Both handles must be live, distinct allocations. World configuration and its
+/// obstacle index must remain unchanged for the duration of this native tick.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn simulate_world_tick(handle: usize, world_handle: usize) -> u32 {
+    let Some(world) = (unsafe { crate::world_abi::world_from_handle(world_handle) }) else {
+        return 0;
+    };
+    unsafe {
+        run_tick(
+            handle,
+            |x, z, from_y| world.flight_surface_height(x, z, from_y),
+            |position| world.intersects_obstacle(position),
+        );
+    }
+    1
 }
