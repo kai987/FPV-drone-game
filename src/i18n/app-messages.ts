@@ -72,6 +72,7 @@ export const APP_MESSAGES = {
   '浏览器暂未允许声音播放': ['ブラウザーで音声再生が許可されていません', 'Your browser has not allowed audio playback'],
   '此浏览器暂不支持全屏，可使用浏览器的全屏功能': ['このブラウザーでは全画面表示を利用できません。ブラウザーの全画面機能をお使いください', 'Fullscreen is unavailable here. Use your browser’s fullscreen feature.'],
   '三维{name}飞行画面，飞行时点击可启用鼠标视角': ['{name}の3D飛行画面。飛行中にクリックするとマウス視点を有効にできます', '3D flight view of {name}. Click during flight to enable mouse look'],
+  '三维{name}飞行画面，支持键盘、鼠标和触屏手势操作': ['{name}の3D飛行画面。キーボード、マウス、タッチジェスチャーで操作できます', '3D flight view of {name}, supporting keyboard, mouse and touch gestures'],
   '飞行模块加载失败。请刷新页面，并使用支持 WebAssembly 的新版浏览器。': ['飛行モジュールを読み込めませんでした。ページを再読み込みし、WebAssembly対応の新しいブラウザーを使用してください。', 'The flight module failed to load. Reload using a modern browser that supports WebAssembly.'],
   '地图纹理加载失败：{asset}。请检查网络连接后重新加载。': ['マップのテクスチャを読み込めませんでした：{asset}。ネットワーク接続を確認し、再読み込みしてください。', 'Map texture failed to load: {asset}. Check your connection and reload.'],
   '当前浏览器无法启动 3D 画面。请启用硬件加速，或使用支持 WebGL 2 的新版 Chrome、Edge 或 Safari。': ['3D画面を起動できません。ハードウェアアクセラレーションを有効にするか、WebGL 2対応の新しいChrome、Edge、Safariを使用してください。', 'Unable to start the 3D view. Enable hardware acceleration or use a modern Chrome, Edge or Safari with WebGL 2 support.'],
