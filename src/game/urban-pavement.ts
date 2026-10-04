@@ -20,7 +20,7 @@ function segments(length: number, maxSpan: number): number {
   return count;
 }
 
-/** Split at road boundaries first, so no ground triangle can straddle asphalt. */
+/** Subdivide a bounded interval without creating kilometre-long triangles. */
 function gridAxis(edges: Set<number>): number[] {
   const cuts = [...edges].sort((a, b) => a - b), result = [cuts[0]];
   for (let i = 1; i < cuts.length; i++) {
@@ -36,22 +36,40 @@ function gridAxis(edges: Set<number>): number[] {
 export function createUrbanGroundGeometry(bounds: GroundBounds, roads: readonly RoadRectangle[]): THREE.BufferGeometry {
   if (!Object.values(bounds).every(Number.isFinite) || bounds.maxX <= bounds.minX || bounds.maxZ <= bounds.minZ)
     throw new RangeError('Invalid urban ground bounds');
-  const xs = new Set([bounds.minX, bounds.maxX]), zs = new Set([bounds.minZ, bounds.maxZ]);
   const clipped = roads.map(rectangleBounds).map(road => ({
     minX: Math.max(bounds.minX, road.minX), maxX: Math.min(bounds.maxX, road.maxX),
     minZ: Math.max(bounds.minZ, road.minZ), maxZ: Math.min(bounds.maxZ, road.maxZ),
   })).filter(road => road.maxX > road.minX && road.maxZ > road.minZ);
-  for (const road of clipped) { xs.add(road.minX); xs.add(road.maxX); zs.add(road.minZ); zs.add(road.maxZ); }
-  const xCuts = gridAxis(xs), zCuts = gridAxis(zs);
-  if ((xCuts.length - 1) * (zCuts.length - 1) > MAX_CELLS) throw new RangeError('Pavement grid is too large');
+  // Road edges only split the 256m tiles they actually touch. A global grid
+  // would propagate every driveway edge across the entire 12km horizon.
+  const xTiles = gridAxis(new Set([bounds.minX, bounds.maxX]));
+  const zTiles = gridAxis(new Set([bounds.minZ, bounds.maxZ]));
+  if ((xTiles.length - 1) * (zTiles.length - 1) > MAX_CELLS) throw new RangeError('Pavement grid is too large');
   const positions: number[] = [], normals: number[] = [], indices: number[] = [];
-  for (let x = 1; x < xCuts.length; x++) for (let z = 1; z < zCuts.length; z++) {
-    const x0 = xCuts[x - 1], x1 = xCuts[x], z0 = zCuts[z - 1], z1 = zCuts[z];
-    if (clipped.some(road => x0 >= road.minX && x1 <= road.maxX && z0 >= road.minZ && z1 <= road.maxZ)) continue;
-    const vertex = positions.length / 3;
-    positions.push(x0, 2, z0, x1, 2, z0, x0, 2, z1, x1, 2, z1);
-    normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
-    indices.push(vertex, vertex + 2, vertex + 1, vertex + 2, vertex + 3, vertex + 1);
+  let cells = 0;
+  for (let zTile = 1; zTile < zTiles.length; zTile++) {
+    const minZ = zTiles[zTile - 1], maxZ = zTiles[zTile];
+    const rowRoads = clipped.filter(road => road.minZ < maxZ && road.maxZ > minZ);
+    for (let xTile = 1; xTile < xTiles.length; xTile++) {
+      const minX = xTiles[xTile - 1], maxX = xTiles[xTile];
+      const nearby = rowRoads.filter(road => road.minX < maxX && road.maxX > minX);
+      const xs = new Set([minX, maxX]), zs = new Set([minZ, maxZ]);
+      for (const road of nearby) {
+        xs.add(Math.max(minX, road.minX)); xs.add(Math.min(maxX, road.maxX));
+        zs.add(Math.max(minZ, road.minZ)); zs.add(Math.min(maxZ, road.maxZ));
+      }
+      const xCuts = [...xs].sort((a, b) => a - b), zCuts = [...zs].sort((a, b) => a - b);
+      cells += (xCuts.length - 1) * (zCuts.length - 1);
+      if (cells > MAX_CELLS) throw new RangeError('Pavement grid is too large');
+      for (let x = 1; x < xCuts.length; x++) for (let z = 1; z < zCuts.length; z++) {
+        const x0 = xCuts[x - 1], x1 = xCuts[x], z0 = zCuts[z - 1], z1 = zCuts[z];
+        if (nearby.some(road => x0 >= road.minX && x1 <= road.maxX && z0 >= road.minZ && z1 <= road.maxZ)) continue;
+        const vertex = positions.length / 3;
+        positions.push(x0, 2, z0, x1, 2, z0, x0, 2, z1, x1, 2, z1);
+        normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
+        indices.push(vertex, vertex + 2, vertex + 1, vertex + 2, vertex + 3, vertex + 1);
+      }
+    }
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));

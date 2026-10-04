@@ -1,5 +1,8 @@
 import { getMapSpec } from './map-catalog.ts';
 import { getUrbanRoadNetwork, isUrbanRoadArea } from './urban-roads.ts';
+import type { UrbanRoadNetwork } from './urban-roads.ts';
+import { createBuildingAccessRoads } from './urban-access-roads.ts';
+import type { BuildingAccess } from './urban-access-roads.ts';
 
 /** Metres, shared by the renderer, Rust collision geometry and minimap. */
 export interface UrbanBox {
@@ -48,6 +51,9 @@ export const HARBOR_BREAKWATERS: readonly UrbanBox[] = Object.freeze([
 ]);
 
 export interface UrbanMapLayout {
+  /** Main streets and building access lanes, shared by scenery and minimap. */
+  roads: UrbanRoadNetwork;
+  accesses: readonly BuildingAccess[];
   boxes: readonly UrbanBox[];
   warehouses: readonly WarehouseSpec[];
   containers: readonly ContainerSpec[];
@@ -248,7 +254,8 @@ function factoryLayout(): UrbanMapLayout {
     }
   }
   infillWarehouses('factory', warehouses, boxes);
-  return { boxes, warehouses, containers, tanks, chimneys, cranes: [], trucks, pipes, ships: [],
+  const access = createBuildingAccessRoads(getUrbanRoadNetwork('factory'), warehouses, boxes, getMapSpec('factory').bounds);
+  return { roads: access.network, accesses: access.accesses, boxes, warehouses, containers, tanks, chimneys, cranes: [], trucks, pipes, ships: [],
     landmarks: [
       ...warehouses.map(building => ({ x: building.x, z: building.z, label: building.label, kind: 'warehouse' as const })),
       ...tanks.map((tank, index) => ({ x: tank.x, z: tank.z, label: `储罐 ${index + 1}`, kind: 'tank' as const })),
@@ -363,7 +370,9 @@ function harborLayout(): UrbanMapLayout {
   boxes.push({ x: 108, z: -962, width: 7, depth: 7, base: 42.7, height: 2.8 });
   boxes.push({ x: 108, z: -962, width: 9.6, depth: 9.6, base: 45.6, height: 0.8 });
   infillWarehouses('harbor', warehouses, boxes);
-  return { boxes, warehouses, containers, tanks: [], chimneys: [], cranes, trucks, pipes: [], ships, ship,
+  const access = createBuildingAccessRoads(getUrbanRoadNetwork('harbor'), warehouses, boxes,
+    { ...getMapSpec('harbor').bounds, maxX: HARBOR_SHORE_X });
+  return { roads: access.network, accesses: access.accesses, boxes, warehouses, containers, tanks: [], chimneys: [], cranes, trucks, pipes: [], ships, ship,
     landmarks: [
       ...warehouses.map(building => ({ x: building.x, z: building.z, label: building.label, kind: 'warehouse' as const })),
       ...cranes.map((crane, index) => ({ x: crane.x, z: crane.z, label: `桥吊 ${index + 1}`, kind: 'crane' as const })),
@@ -375,7 +384,7 @@ function harborLayout(): UrbanMapLayout {
 
 const FACTORY_LAYOUT = factoryLayout();
 const HARBOR_LAYOUT = harborLayout();
-const EMPTY_LAYOUT: UrbanMapLayout = { boxes: [], warehouses: [], containers: [], tanks: [], chimneys: [], cranes: [], trucks: [], pipes: [], ships: [], landmarks: [] };
+const EMPTY_LAYOUT: UrbanMapLayout = { roads: getUrbanRoadNetwork('valley'), accesses: [], boxes: [], warehouses: [], containers: [], tanks: [], chimneys: [], cranes: [], trucks: [], pipes: [], ships: [], landmarks: [] };
 
 export function getMapLayout(mapId: string): UrbanMapLayout {
   if (mapId === 'factory') return FACTORY_LAYOUT;

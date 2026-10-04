@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
 import { createGroundBodyGeometry, createUrbanGroundGeometry, splitPavementRectangle } from '../src/game/urban-pavement.ts';
-import { getUrbanRoadNetwork } from '../src/game/urban-roads.ts';
+import { getMapLayout } from '../src/game/map-layout.ts';
 import type { RoadRectangle } from '../src/game/urban-roads.ts';
 import { HARBOR_SHORE_X } from '../src/game/map-layout.ts';
 import { urbanWorldFixture } from './helpers/urban-world-fixture.ts';
@@ -27,6 +27,14 @@ function near(actual: number, expected: number, tolerance = 1e-5) {
 
 function rectangleBounds(rect: RoadRectangle): Bounds {
   return { minX: rect.x - rect.width / 2, maxX: rect.x + rect.width / 2, minZ: rect.z - rect.depth / 2, maxZ: rect.z + rect.depth / 2 };
+}
+
+/** The GPU terrain positions use Float32, including fractional driveway edges. */
+function floatRectangle(rect: RoadRectangle): RoadRectangle {
+  const b = rectangleBounds(rect);
+  const minX = Math.fround(b.minX), maxX = Math.fround(b.maxX);
+  const minZ = Math.fround(b.minZ), maxZ = Math.fround(b.maxZ);
+  return { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, width: maxX - minX, depth: maxZ - minZ };
 }
 
 /** Independent sweep computes the paved union area, including overlaps and clipped ends. */
@@ -182,26 +190,43 @@ test('invalid and excessive tessellation is rejected before creating unbounded g
   }
 });
 
+test('hundreds of distinct driveway edges split local tiles without a map-wide Cartesian grid', () => {
+  const bounds = { minX: -6000, maxX: 6000, minZ: -6000, maxZ: 6000 };
+  const roads = Array.from({ length: 315 }, (_, index) => ({
+    x: -5500 + index * 97 % 11000, z: -5500 + index * 131 % 11000, width: 12, depth: 32,
+  }));
+  const geometry = createUrbanGroundGeometry(bounds, roads), mesh = groundMesh(geometry);
+  try {
+    near(geometryArea(geometry), 144_000_000 - roadUnionArea(bounds, roads), 0.01);
+    assert.ok(geometry.index!.count / 3 < 32_000, 'driveway boundaries remain local to their terrain tiles');
+    for (const road of roads) {
+      const ray = new THREE.Raycaster(new THREE.Vector3(road.x, 100, road.z), new THREE.Vector3(0, -1, 0));
+      assert.equal(ray.intersectObject(mesh).length, 0, 'every driveway opens the terrain beneath it');
+    }
+  } finally { geometry.dispose(); (mesh.material as THREE.Material).dispose(); }
+});
+
 for (const mapId of ['factory', 'harbor'] as const) {
   test(`${mapId} real horizon terrain contains the exact road cutouts with bounded geometry`, () => {
     const bounds = { minX: mapId === 'harbor' ? HARBOR_SHORE_X - 12000 : -6000,
       maxX: mapId === 'harbor' ? HARBOR_SHORE_X : 6000, minZ: -6700, maxZ: 5300 };
-    const roads = getUrbanRoadNetwork(mapId).surfaces, geometry = createUrbanGroundGeometry(bounds, roads);
+    const roads = getMapLayout(mapId).roads.surfaces, geometry = createUrbanGroundGeometry(bounds, roads);
     try {
-      const area = (bounds.maxX - bounds.minX) * (bounds.maxZ - bounds.minZ) - roadUnionArea(bounds, roads);
+      const gpuRoads = roads.map(floatRectangle);
+      const area = (bounds.maxX - bounds.minX) * (bounds.maxZ - bounds.minZ) - roadUnionArea(bounds, gpuRoads);
       near(geometryArea(geometry), area, 0.01);
       near(geometry.boundingBox!.min.x, bounds.minX); near(geometry.boundingBox!.max.x, bounds.maxX);
       near(geometry.boundingBox!.min.z, bounds.minZ); near(geometry.boundingBox!.max.z, bounds.maxZ);
       const faces = triangles(geometry);
-      assert.ok(faces.length < 16_000, 'road stability does not require an unbounded full terrain mesh');
+      assert.ok(faces.length < 24_000, 'main roads and driveways remain within a bounded local terrain mesh');
       const bytes = geometry.getAttribute('position').array.byteLength + geometry.getAttribute('normal').array.byteLength + geometry.index!.array.byteLength;
       assert.ok(bytes < 1024 * 1024, 'one full 12km ground surface stays below 1MiB of geometry buffers');
       for (const face of faces) {
-        assert.ok(roads.every(road => !intersectsRoad(face, road)), 'a ground triangle spans a real road interior');
+        assert.ok(gpuRoads.every(road => !intersectsRoad(face, road)), 'a ground triangle spans a GPU road interior');
         assert.ok(Math.max(...face.map(point => point.x)) - Math.min(...face.map(point => point.x)) <= 256.001);
         assert.ok(Math.max(...face.map(point => point.z)) - Math.min(...face.map(point => point.z)) <= 256.001);
       }
-      assert.ok(roads.reduce((count, road) => count + splitPavementRectangle(road).length, 0) < 1000);
+      assert.ok(roads.reduce((count, road) => count + splitPavementRectangle(road).length, 0) < 3000);
     } finally { geometry.dispose(); }
   });
 

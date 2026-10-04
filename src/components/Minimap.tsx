@@ -6,7 +6,6 @@ import { getMapSpec } from '../game/map-catalog';
 import type { MapId } from '../game/map-catalog';
 import { getMapLayout, HARBOR_PIERS, HARBOR_SHORE_X } from '../game/map-layout';
 import type { UrbanBox } from '../game/map-layout';
-import { getUrbanRoadNetwork } from '../game/urban-roads';
 import { BRIDGES, CABINS, FISH_SCHOOLS } from '../game/rural-layout';
 import { useI18n } from '../i18n/context';
 import { beginMapDrag, centerMapBounds, clamp, createProjection, formatMapSpan, getMapBounds, getMapCenter, isOutsideBounds, panMapBounds, ZOOM_LEVELS } from './minimap-view.ts';
@@ -80,7 +79,7 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
   const worldBounds = selectedMap.bounds;
   const layout = getMapLayout(mapId);
   const isValley = mapId === 'valley';
-  const roads = getUrbanRoadNetwork(mapId);
+  const roads = layout.roads;
   const [mapView, setMapView] = useState<MapView>(mode === 'race' ? 'route' : 'world');
   const [zoomIndex, setZoomIndex] = useState(0);
   const [cameraMode, setCameraMode] = useState<MapCameraMode>('overview');
@@ -241,6 +240,22 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
     if (industrial) return t(`${industrial[1]} ${industrial[2]} {number}`, { number: industrial[3] });
     return t(label);
   };
+  // Dense districts keep every landmark dot/title, while visible labels avoid
+  // each other and the map boundary so they cannot obscure whole road rows.
+  const visibleLandmarkLabels = new Map<number, string>();
+  if (!compactSymbols && zoom > 1) {
+    const occupied: { x: number; y: number; width: number }[] = [];
+    geography.landmarks.forEach((landmark, index) => {
+      const label = landmarkLabel(landmark.label);
+      const width = [...label].reduce((sum, char) => sum + (/[\u2e80-\uffff]/u.test(char) ? 6.5 : 4), 0);
+      const x = landmark.position.x + 5, y = landmark.position.y - 5;
+      if (x < geography.left + 1 || x + width > geography.left + geography.width - 1
+        || y < geography.top + 1 || y + 9 > geography.top + geography.height - 1) return;
+      if (occupied.some(other => x < other.x + other.width + 3 && x + width + 3 > other.x
+        && y < other.y + 11 && y + 11 > other.y)) return;
+      occupied.push({ x, y, width }); visibleLandmarkLabels.set(index, label);
+    });
+  }
   const overviewLabel = t('{name}{view}，{zoom} 倍，{camera}，{geography}，橙色为未命中靶标', {
     name: t(selectedMap.name), view: t(isWorld ? '全域地图' : '航线地图'), zoom,
     camera: t(cameraMode === 'follow' ? '跟随无人机' : cameraMode === 'manual' ? '自由浏览' : '预设总览'),
@@ -306,7 +321,7 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
             {geography.landmarks.map((landmark, index) => <g key={`${landmark.kind}-${index}`} transform={`translate(${landmark.position.x} ${landmark.position.y})`}>
               <title>{landmarkLabel(landmark.label)}</title>
               {landmark.kind === 'crane' ? <path d="M -3 3 L -3 -3 L 4 -3 M 2 -3 L 2 2 M -4 3 L 4 3" fill="none" stroke="#e8daaa" strokeWidth={compactSymbols ? 0.6 : 1} /> : <circle r={compactSymbols ? 1 : 2} fill={landmark.kind === 'lighthouse' ? '#dff781' : '#e1ddbe'} stroke="#26372d" strokeWidth="0.5" />}
-              {!compactSymbols && zoom > 1 && <text x="5" y="2" fontSize="6" fill="#f1f4e9">{landmarkLabel(landmark.label)}</text>}
+              {visibleLandmarkLabels.has(index) && <text x="5" y="2" fontSize="6" fill="#f1f4e9">{visibleLandmarkLabels.get(index)}</text>}
             </g>)}
           </>}
           {isValley && <>
