@@ -8,6 +8,7 @@ import { createNightSky } from './night-sky.ts';
 import { getMapLayout, HARBOR_PIERS, HARBOR_SHORE_X, HARBOR_BREAKWATERS } from './map-layout.ts';
 import type { UrbanBox, WarehouseSpec, ContainerSpec, CraneSpec, TruckSpec } from './map-layout.ts';
 import { getUrbanRoadNetwork, isUrbanRoadArea } from './urban-roads.ts';
+import { createGroundBodyGeometry, createUrbanGroundGeometry, splitPavementRectangle } from './urban-pavement.ts';
 import { generateRipplePixels } from './scene-simulation.ts';
 import { createRippleTexture, createWaterMaterial, setWaterNight } from './water.ts';
 import { URBAN_SKY_GLSL } from './urban-sky.ts';
@@ -130,7 +131,10 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
       surfaceMaterial.polygonOffsetUnits = -4 * layer;
       pavementMaterials.set(key, surfaceMaterial);
     }
-    box(surfaceMaterial, x, y, z, width, 0.025, depth, 0, false);
+    // Short faces avoid the clipping/interpolation error of kilometre-long
+    // triangles. All pieces still share the same instanced material batch.
+    for (const piece of splitPavementRectangle({ x, z, width, depth }))
+      box(surfaceMaterial, piece.x, y, piece.z, piece.width, 0.025, piece.depth, 0, false);
   };
 
   // Real structural ground, with an exposed quay face four metres above sea level.
@@ -138,8 +142,22 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
   // never reveal a rectangular terrain edge, including beyond the larger bounds.
   const horizonExtent = Math.max(12000, map.bounds.maxX - map.bounds.minX + 4800);
   const mapCenterZ = (map.bounds.minZ + map.bounds.maxZ) / 2;
+  const groundCenterX = harbor ? HARBOR_SHORE_X - horizonExtent / 2 : 0;
+  // Keep the solid quay sides and underside, but replace its huge top face
+  // with a surface that has actual road openings. Asphalt can no longer fight
+  // a second ground face at the same depth, even in a distant grazing view.
+  instance(ownGeometry(createGroundBodyGeometry()), concrete, groundCenterX, -3, mapCenterZ,
+    horizonExtent, 10, horizonExtent, 0, undefined, false);
+  const groundTop = new THREE.InstancedMesh(ownGeometry(createUrbanGroundGeometry({
+    minX: groundCenterX - horizonExtent / 2, maxX: groundCenterX + horizonExtent / 2,
+    minZ: mapCenterZ - horizonExtent / 2, maxZ: mapCenterZ + horizonExtent / 2,
+  }, roads.surfaces)), concrete, 1);
+  groundTop.setMatrixAt(0, new THREE.Matrix4());
+  groundTop.computeBoundingSphere();
+  groundTop.name = 'Industrial ground surface';
+  groundTop.receiveShadow = true;
+  scene.add(groundTop);
   if (harbor) {
-    box(concrete, HARBOR_SHORE_X - horizonExtent / 2, -3, mapCenterZ, horizonExtent, 10, horizonExtent, 0, false);
     HARBOR_PIERS.forEach(pier => box(concrete, pier.x, pier.base + pier.height / 2, pier.z, pier.width, pier.height, pier.depth));
     box(darkSteel, HARBOR_SHORE_X + 0.08, -0.1, mapCenterZ, 0.22, 4, horizonExtent, 0, false);
     for (let z = map.bounds.maxZ - 80; z > map.bounds.minZ + 80; z -= 22) box(black, HARBOR_SHORE_X + 0.35, 0.3, z, 0.65, 2.6, 1.9);
@@ -152,7 +170,7 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
       for (let x = wall.x - wall.width / 2 + 13; x < wall.x + wall.width / 2 - 10; x += 8)
         box(paleConcrete, x, wall.base + wall.height + 0.6, wall.z, 3.3, 1.2, 3.3, 0.55);
     }
-  } else box(concrete, 0, -3, mapCenterZ, horizonExtent, 10, horizonExtent, 0, false);
+  }
   for (const surface of roads.surfaces) land(asphalt, surface.x, surface.z, surface.width, surface.depth);
   for (const kerb of roads.kerbs) land(paleConcrete, kerb.x, kerb.z, kerb.width, kerb.depth, 2.045);
   for (const marking of roads.markings) land(marking.kind === 'edge' ? yellow : roadWhite,
