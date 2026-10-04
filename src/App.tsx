@@ -108,7 +108,7 @@ export default function App() {
         if (cancelled) { game.dispose(); return; }
         engine.current = game;
         const translate = translateRef.current;
-        game.setAccessibleLabel(translate('三维{name}飞行画面，飞行时点击可启用鼠标视角', { name: translate(getMapSpec(game.mapId).name) }));
+        game.setAccessibleLabel(translate('三维{name}飞行画面，支持键盘、鼠标和触屏手势操作', { name: translate(getMapSpec(game.mapId).name) }));
         const current = settings.current;
         game.mode = current.mode; game.flightMode = current.flightMode;
         game.setDrone(current.droneId);
@@ -142,7 +142,7 @@ export default function App() {
   useEffect(() => { engine.current?.setWind(windSettings); }, [windSettings, loaded]);
   useEffect(() => { engine.current?.setNight(night); }, [night, loaded]);
   useEffect(() => {
-    engine.current?.setAccessibleLabel(t('三维{name}飞行画面，飞行时点击可启用鼠标视角', { name: t(selectedMap.name) }));
+    engine.current?.setAccessibleLabel(t('三维{name}飞行画面，支持键盘、鼠标和触屏手势操作', { name: t(selectedMap.name) }));
   }, [t, mapId, loaded, selectedMap.name]);
   useEffect(() => {
     const switchDayNight = (event: KeyboardEvent) => {
@@ -220,6 +220,7 @@ export default function App() {
         <CompactControls />
       </aside>
       <section className={`flight-region status-${status}`} aria-label={t('{name}无人机飞行场', { name: t(selectedMap.name) })}>
+        <div className="flight-stage">
         <div className="viewport" data-testid="viewport">
           <div className="canvas-host" ref={host} />
           <div className="scene-heading"><span className="scene-number">{selectedMap.number}</span><div><strong>{t(selectedMap.name)}</strong><small>{selectedMap.englishName}</small></div></div>
@@ -232,10 +233,13 @@ export default function App() {
           {status === 'finished' ? <div className="state-overlay"><div className="state-panel finish-panel"><Trophy className="state-icon" size={32} /><h2>{t('漂亮的一次飞行。')}</h2><p>{t('{count} 个检查点全部完成', { count: selectedMap.checkpoints.length })}</p><strong className="finish-time">{formatTime(telemetry.elapsed)}</strong><div className="finish-best">{!telemetry.recordEligible ? t('本轮调整过风况，不计入个人最佳') : finishedRecordKey === bestTimeKey(droneId, flightMode, windSettings, mapId) ? t('本图同风况最佳 · {time}', { time: formatTime(personalBest ?? telemetry.elapsed) }) : t('本轮已完成 · 新风况用于下次起飞')}</div><button className="primary-button" onClick={() => engine.current?.start()}>{t('再飞一次')}<ArrowRight size={19} /></button><button className="text-button" onClick={() => { setMode('free'); if (engine.current) { engine.current.mode = 'free'; engine.current.start(); } }}>{t('在{name}自由探索', { name: t(selectedMap.name) })}</button></div></div> : null}
           <div className={`flight-notice ${notice ? 'visible' : ''}`} role="status">{translateNotice(locale, notice)}</div>
           <WindPanel wind={telemetry.wind} airSpeed={telemetry.airSpeed} onOpen={openWeather} />
-          <Minimap key={mapId} mapId={mapId} telemetry={telemetry} mode={mode} />
-          <WeaponPanel ammo={telemetry.weapons.ammo} reloadRemaining={telemetry.weapons.reloadRemaining} score={telemetry.weapons.score} hits={telemetry.weapons.hitTargetIds.length} status={status} onDrop={() => engine.current?.dropBomb()} />
           {status === 'flying' ? <TouchControls onAxis={(axis, value) => engine.current?.setTouch(axis, value)} /> : null}
           {status === 'flying' ? <button className="mobile-pause icon-button" aria-label={t('暂停飞行')} onClick={() => engine.current?.pause()}><Pause size={19} /></button> : null}
+        </div>
+        <div className="flight-hud">
+          <WeaponPanel ammo={telemetry.weapons.ammo} reloadRemaining={telemetry.weapons.reloadRemaining} score={telemetry.weapons.score} hits={telemetry.weapons.hitTargetIds.length} status={status} onDrop={() => engine.current?.dropBomb()} />
+          <Minimap key={mapId} mapId={mapId} telemetry={telemetry} mode={mode} />
+        </div>
         </div>
         <TelemetryBar telemetry={telemetry} mode={mode} />
       </section>

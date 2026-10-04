@@ -72,7 +72,7 @@ VECTOR is inspired by the [2017 DRL RacerX record report](https://www.guinnesswo
 | Minimap overview | Click the magnification or Route/Overview preset to return to 1× |
 | Interface language | Header 中文 / 日本語 / English selector |
 
-Click the 3D scene during flight to enable mouse look. Esc releases the mouse and pauses. Switching browser tabs or losing window focus also pauses automatically. Movement, turning, and altitude buttons appear after takeoff on mobile and support simultaneous touches. Inputs, selectors, and modal dialogs isolate flight shortcuts to prevent accidental movement or bombing while using the interface.
+Click the 3D scene during flight to enable mouse look. Esc releases the mouse and pauses. Switching browser tabs or losing window focus also pauses automatically. After takeoff on mobile, control flight with gestures on the flight view. Hold one finger to accelerate gradually from low speed; input reaches the selected aircraft and mode’s maximum after about two seconds. Drag up/down for forward/backward flight and left/right to strafe. Drag a second finger up/down to climb/descend and left/right to turn; both fingers can work together. Releasing a finger clears its axes and flight physics slows the aircraft. Assisted mode brakes faster, and wind can still cause drift. Bombing, wind direction, and the minimap sit in a panel below the flight view. Dragging or zooming the minimap does not steer the aircraft. Inputs, selectors, and modal dialogs isolate flight shortcuts to prevent accidental movement or bombing while using the interface.
 
 ### Flight, wind, and bombing tips
 

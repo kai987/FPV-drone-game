@@ -36,9 +36,13 @@ export const GUIDE_MESSAGES = {
   '向下投放一枚炸弹，飞行中可投弹': ['下向きに爆弾を 1 発投下。飛行中に使えます', 'Drop one bomb downward while flying'],
   '随时切换日间 / 夜间，保留当前飞行进度': ['昼間 / 夜間を切り替え。飛行の進行状況は保持されます', 'Switch day / night while preserving flight progress'],
   '鼠标与触屏': ['マウスとタッチ操作', 'Mouse and touch controls'],
-  '飞行时点击画面可启用鼠标视角，Esc 释放鼠标并暂停。手机上使用画面两侧的方向按钮，可同时操作多个方向；点击左侧「投弹」按钮投放炸弹，点击右上角的视角按钮切换俯视瞄准。': [
-    '飛行中に画面をクリックするとマウス視点を使えます。Esc でマウスを解放し、一時停止します。スマートフォンでは画面両側の方向ボタンを使い、複数方向を同時に操作できます。左側の爆弾投下ボタンで投下し、右上の視点ボタンで俯瞰照準へ切り替えます。',
-    'Click the flight view to enable mouse look. Esc releases the mouse and pauses. On phones, use the direction buttons on both sides; multiple directions can be held together. Use the bomb button on the left to drop a bomb and the view button at the top right to select top-down aim.',
+  '飞行时点击画面可启用鼠标视角，Esc 释放鼠标并暂停。手机上，单指按住飞行画面会柔和前进，持续按住约 2 秒，推进输入渐增至满量程；向上拖前进、向下拖后退、向左右拖平移，拖得越远控制幅度越大。松开手指释放控制并减速，风仍可能让飞机缓慢漂移。': [
+    '飛行中に画面をクリックするとマウス視点を使えます。Escでマウスを解放し、一時停止します。スマートフォンでは飛行画面を指1本で押すとゆっくり前進し、約2秒押し続けると推進入力が最大まで滑らかに増えます。上へドラッグで前進、下へドラッグで後退、左右へドラッグで横移動し、移動距離が大きいほど操作量が増えます。指を離すと操作入力が解除されて減速しますが、風で少し流されることがあります。',
+    'Click the flight view to enable mouse look; Esc releases the mouse and pauses. On phones, press the flight view with one finger to move gently forward. Hold for about two seconds to gradually reach full thrust input. Drag up to fly forward, down to reverse, or sideways to strafe; dragging farther increases the input. Release to stop applying control and slow down. Wind can still cause gentle drift.',
+  ],
+  '保持第一根手指，再按下第二根手指：上下拖动控制升降，左右拖动控制转向，向右拖即右转。松开某根手指只释放它控制的方向。投弹、小地图与风向菜单已移至手机页面底部；小地图拖动不会操纵飞机，右上角视角按钮可切换俯视瞄准。': [
+    '1本目の指を押したまま2本目を置くと、上下ドラッグで上昇・下降、左右ドラッグで旋回を操作できます。右へドラッグすると右旋回です。指を離すと、その指の操作だけが解除されます。爆弾投下・ミニマップ・風向のパネルはスマートフォンのページ下部にあります。ミニマップをドラッグしても機体は操作されません。右上の視点ボタンで俯瞰照準に切り替えられます。',
+    'Keep your first finger down and add a second: drag it up or down to climb or descend, and left or right to turn. Dragging right turns right. Releasing a finger stops only its assigned controls. The bomb, minimap and wind-direction panels are at the bottom of the mobile page. Dragging the minimap does not fly the aircraft. Use the view button at the top right for top-down aim.',
   ],
   '迎着风，修正航迹': ['風の中で航跡を修正する', 'Correct your flight path in the wind'],
   '点击画面左上角的风况按钮，选择无风、微风、中等风或强风，以及八个基准来风方向。风向表示“从哪里吹来”，例如北风从北向南吹。起飞后实际来向会随时间平滑偏转；实时度数表示来向，小地图箭头表示吹向，暂停时冻结。机头转向后，仪表会重新显示迎风、顺风或左右前后侧风。风速也随时间、位置和高度变化。': [

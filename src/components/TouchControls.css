@@ -1,0 +1,29 @@
+.touch-gesture-controls { display: none; }
+
+@media (max-width: 980px), (pointer: coarse) {
+  .touch-gesture-controls { display: block; position: absolute; inset: 0; z-index: 2; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: grab; overflow: hidden; }
+  .touch-gesture-controls:active { cursor: grabbing; }
+  .touch-gesture-anchor { position: absolute; width: 110px; height: 110px; margin: -55px; border: 1px solid #ffffff70; border-radius: 50%; background: #132e1b24; box-shadow: 0 0 0 6px #ffffff0a; pointer-events: none; }
+  .touch-gesture-origin { position: absolute; inset: 48px; border: 1px solid #ffffff90; border-radius: 50%; }
+  .touch-gesture-finger { position: absolute; top: 34px; left: 34px; display: grid; width: 40px; height: 40px; place-items: center; color: #ecfaca; border: 1px solid #e0f5a2b3; border-radius: 50%; background: #183127ac; box-shadow: 0 2px 12px #12281340; }
+  .touch-gesture-attitude { border-style: dashed; }
+  .touch-gesture-attitude .touch-gesture-finger { color: #d7f4ff; border-color: #d7f4ffa6; }
+  .touch-gesture-label { position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); color: white; font-size: 10px; white-space: nowrap; text-shadow: 0 1px 4px #112518; }
+  .touch-gesture-hint { position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 5px 7px; width: max-content; max-width: calc(100% - 36px); padding: 8px 11px; border: 1px solid #e9f1dd35; border-radius: 10px; background: #1831279c; color: #f4f8e8; font-size: 10px; line-height: 1.5; text-align: center; pointer-events: none; backdrop-filter: blur(5px); }
+  .touch-gesture-hint > svg { flex-shrink: 0; }
+  .touch-gesture-hint > small { font-size: 9px; color: #d5dfc7; }
+  .touch-gesture-hint-active { background: #183127ba; }
+  .touch-gesture-throttle { display: flex; align-items: center; gap: 5px; }
+  .touch-gesture-throttle i { width: 40px; height: 3px; background: linear-gradient(to right, #d5ef89 calc(var(--gesture-throttle) * 100%), #ffffff30 0); border-radius: 2px; }
+  .touch-gesture-throttle small { min-width: 27px; font-size: 9px; font-variant-numeric: tabular-nums; color: #d5ef89; }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .touch-gesture-hint { bottom: 6px; padding: 4px 8px; gap: 3px 5px; font-size: 9px; max-width: calc(100% - 22px); }
+  .touch-gesture-hint > svg { width: 13px; height: 13px; }
+  .touch-gesture-hint > small { font-size: 8px; }
+  .touch-gesture-anchor { width: 84px; height: 84px; margin: -42px; }
+  .touch-gesture-origin { inset: 35px; }
+  .touch-gesture-finger { top: 22px; left: 22px; }
+  .touch-gesture-label { bottom: -18px; font-size: 9px; }
+}
