@@ -182,10 +182,25 @@ export default function Minimap({ telemetry, mode }: MinimapProps) {
   const isWorld = mapView === 'world';
   const compactSymbols = isWorld && zoom <= 2;
   const followLabel = cameraMode === 'manual' || outsideView ? '回到无人机' : cameraMode === 'follow' ? '跟随中' : '跟随';
+  const { wind } = telemetry;
+  const calm = wind.speed < 0.1;
+  const windLabel = calm ? '无风' : `${wind.directionLabel}风`;
 
   return (
     <div className={`minimap geographic-minimap${isWorld ? ' minimap-world' : ''}`} aria-label="小地图，河流、湖泊、小屋、小桥、鱼群、当前位置、检查点与投弹靶标" data-map-mode={cameraMode}
       onClick={stopMapInteraction} onDoubleClick={stopMapInteraction} onPointerDown={stopMapInteraction} onKeyDown={stopMapInteraction}>
+      <div className={`minimap-wind${calm ? ' is-calm' : ''}`} role="img"
+        aria-label={`风向：${windLabel}，${wind.speed.toFixed(1)} 米每秒${calm ? '' : '；箭头表示风吹向，地图上方为北'}`}>
+        <span className="minimap-wind-caption">{calm ? '风向' : '风吹向'}</span>
+        <div className="minimap-wind-compass" aria-hidden="true">
+          <span>N</span>
+          {calm ? <i className="minimap-wind-calm" /> : <svg className="minimap-wind-arrow" viewBox="0 0 24 24"
+            style={{ transform: `rotate(${wind.fromDegrees}deg)` }} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 4v16M6 14l6 6 6-6" />
+          </svg>}
+        </div>
+        <strong>{windLabel}</strong>
+      </div>
       <div className="map-heading">
         <div className="minimap-heading-controls">
           <div className="minimap-modes" role="group" aria-label="地图范围">

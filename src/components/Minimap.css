@@ -3,6 +3,40 @@
   pointer-events: auto;
 }
 
+.geographic-minimap .minimap-wind {
+  position: absolute;
+  right: calc(100% + 10px);
+  bottom: 0;
+  width: 62px;
+  padding: 8px 5px;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  border: 1px solid #e1e6d456;
+  border-radius: 12px;
+  background: #19261dc9;
+  backdrop-filter: blur(8px);
+  color: #dff781;
+  pointer-events: none;
+}
+
+.geographic-minimap .minimap-wind-caption { color: #cfdbc1; font-size: 8px; letter-spacing: 1px; }
+.geographic-minimap .minimap-wind strong { color: #edf4e4; font-size: 10px; font-weight: 500; white-space: nowrap; }
+.geographic-minimap .minimap-wind-compass {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dff78135;
+  border-radius: 50%;
+}
+.geographic-minimap .minimap-wind-compass > span { position: absolute; top: -5px; padding: 0 3px; background: #253329; color: #d4dec8; font-size: 7px; line-height: 10px; }
+.geographic-minimap .minimap-wind-arrow { width: 28px; height: 28px; transition: transform .25s ease; }
+.geographic-minimap .minimap-wind-calm { width: 5px; height: 5px; border-radius: 50%; background: #bac8b2; }
+.geographic-minimap .minimap-wind.is-calm { color: #bac8b2; }
+
 .geographic-minimap .map-heading {
   align-items: center;
   line-height: 1.2;
@@ -141,6 +175,11 @@
 }
 
 @media (max-width: 800px) {
+  .geographic-minimap .minimap-wind { width: 52px; right: calc(100% + 7px); padding: 6px 4px; gap: 4px; border-radius: 9px; }
+  .geographic-minimap .minimap-wind-compass { width: 34px; height: 34px; }
+  .geographic-minimap .minimap-wind-arrow { width: 23px; height: 23px; }
+  .geographic-minimap .minimap-wind strong { font-size: 9px; }
+  .geographic-minimap .minimap-wind-caption { font-size: 7px; letter-spacing: .5px; }
   .app-shell .geographic-minimap.minimap {
     width: 126px;
   }
@@ -166,6 +205,10 @@
   .geographic-minimap .minimap-water-labels {
     display: none;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geographic-minimap .minimap-wind-arrow { transition: none; }
 }
 
 @media (max-width: 800px) and (max-height: 740px) {
