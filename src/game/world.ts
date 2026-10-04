@@ -110,9 +110,9 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   sun.shadow.radius = 3;
   scene.add(sun, sun.target);
 
-  // A closed sky dome keeps upward views covered and places the distant alpine
-  // panorama outside the playable terrain, with no visible cylinder rim.
-  const panoramaAsset = panoramaOptions.resolution === 8192 ? 'alpine-panorama-8k.webp' : 'alpine-panorama-4k.webp';
+  // Use an open hilltop panorama: nearby trees in a forest photograph look like
+  // giant trees when mapped onto the distant sky. Keep the native 2:1 projection.
+  const panoramaAsset = panoramaOptions.resolution === 8192 ? 'open-hills-panorama-8k.webp' : 'open-hills-panorama-4k.webp';
   const panorama = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/${panoramaAsset}`, () => {
     panoramaMesh.visible = true;
   });
@@ -124,15 +124,30 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   panorama.generateMipmaps = true;
   panorama.anisotropy = Math.max(1, Math.min(8, panoramaOptions.maxAnisotropy ?? 1));
   textureResources.add(panorama);
+  const panoramaHaze = new THREE.Vector2(0.47, 0.51);
+  const panoramaHorizonColor = { value: new THREE.Color('#b0c9d5') };
+  const panoramaMaterial = ownMaterial(new THREE.MeshBasicMaterial({ map: panorama, side: THREE.BackSide, fog: false, toneMapped: false }));
+  panoramaMaterial.onBeforeCompile = shader => {
+    shader.uniforms.panoramaHaze = { value: panoramaHaze };
+    shader.uniforms.panoramaHorizonColor = panoramaHorizonColor;
+    shader.fragmentShader = `uniform vec2 panoramaHaze;
+      uniform vec3 panoramaHorizonColor;\n` + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+      #include <map_fragment>
+      // A sky photograph's foreground is not terrain beyond the playable map.
+      diffuseColor.rgb = mix(panoramaHorizonColor, diffuseColor.rgb,
+        smoothstep(panoramaHaze.x, panoramaHaze.y, vMapUv.y));
+    `);
+  };
+  panoramaMaterial.customProgramCacheKey = () => 'distant-panorama-horizon-haze-v1';
   const panoramaMesh = new THREE.Mesh(
     ownGeometry(new THREE.SphereGeometry(5400, 96, 48)),
-    ownMaterial(new THREE.MeshBasicMaterial({ map: panorama, side: THREE.BackSide, fog: false, toneMapped: false })),
+    panoramaMaterial,
   );
   const panoramaRotation = 0;
   // Show the scene's sky colour while the larger image downloads and decodes.
   panoramaMesh.visible = false;
   panoramaMesh.position.set(0, 0, WORLD_CENTER_Z);
-  panoramaMesh.scale.y = 0.72;
   panoramaMesh.rotation.y = panoramaRotation;
   scene.add(panoramaMesh);
   const nightSky = createNightSky();
@@ -194,7 +209,7 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
   terrain.receiveShadow = true;
   scene.add(terrain);
-  const water = createWater(panorama, sceneData, terrainSamplePoints, heights, panoramaRotation);
+  const water = createWater(panorama, sceneData, terrainSamplePoints, heights, panoramaRotation, panoramaHaze);
   scene.add(water.group);
   const rural = createRural(runtime, kernel);
   scene.add(rural.group);
@@ -408,6 +423,7 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
       sun.color.set(enabled ? '#a2c1ef' : '#fff2d7');
       sun.intensity = enabled ? 1.0 : 2.55;
       panoramaMesh.material.color.set(enabled ? '#142439' : '#ffffff');
+      panoramaHorizonColor.value.set(enabled ? '#101e32' : '#b0c9d5');
       pineMaterial.color.set(enabled ? '#647f9b' : '#ffffff');
       ringMaterial.emissive.set(enabled ? '#45586c' : '#000000');
       ringMaterial.emissiveIntensity = enabled ? 0.65 : 0;
@@ -415,10 +431,15 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
       water.setNight(enabled);
       rural.setNight(enabled);
     },
-    update(time: number, nextCheckpoint: number, focus?: { x: number; y: number; z: number }) {
+    update(time: number, nextCheckpoint: number, focus?: { x: number; y: number; z: number }, cameraPosition?: { x: number; y: number; z: number }) {
       water.update(time);
       rural.update(time);
       shrubs.update(time);
+      if (cameraPosition) {
+        // Sky and distant scenery have no local parallax, even at map edges.
+        panoramaMesh.position.copy(cameraPosition);
+        nightSky.group.position.copy(cameraPosition);
+      }
       if (focus) {
         sun.position.set(focus.x - 180, focus.y + (nightMode ? 210 : 270), focus.z + (nightMode ? -330 : 180));
         sun.target.position.set(focus.x, focus.y - 12, focus.z);

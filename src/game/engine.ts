@@ -317,7 +317,7 @@ export class FlightEngine {
       this.camera.position.copy(this.cameraPosition); this.camera.lookAt(this.cameraTarget);
     }
     this.snapCamera = false;
-    this.world.update(time / 1000, this.mode === 'race' ? this.checkpoint : -1, position);
+    this.world.update(time / 1000, this.mode === 'race' ? this.checkpoint : -1, position, this.camera.position);
     this.weaponVisuals.update(this.weapons, this.elapsed);
     this.renderer.render(this.world.scene, this.camera);
     this.audio.update(speed, this.status === 'flying');

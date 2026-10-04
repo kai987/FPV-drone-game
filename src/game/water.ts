@@ -17,7 +17,7 @@ function createRippleTexture(scene: SceneSimulation) {
 }
 
 /** A level collision surface with animated, filtered optical waves above its carved bed. */
-export function createWater(panorama: THREE.Texture, scene: SceneSimulation, points: Float32Array, heights: Float32Array, panoramaRotation: number) {
+export function createWater(panorama: THREE.Texture, scene: SceneSimulation, points: Float32Array, heights: Float32Array, panoramaRotation: number, panoramaHaze: THREE.Vector2) {
   const group = new THREE.Group();
   group.name = 'Lakes and flowing river';
   const geometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, 300, 300);
@@ -33,6 +33,7 @@ export function createWater(panorama: THREE.Texture, scene: SceneSimulation, poi
       rippleMap: { value: ripples },
       panorama: { value: panorama },
       panoramaRotation: { value: panoramaRotation },
+      panoramaHaze: { value: panoramaHaze },
       deepColor: { value: new THREE.Color('#123e49') },
       shallowColor: { value: new THREE.Color('#447b69') },
       skyColor: { value: new THREE.Color('#b0c9d5') },
@@ -56,6 +57,7 @@ export function createWater(panorama: THREE.Texture, scene: SceneSimulation, poi
       uniform sampler2D rippleMap;
       uniform sampler2D panorama;
       uniform float panoramaRotation;
+      uniform vec2 panoramaHaze;
       uniform vec3 deepColor;
       uniform vec3 shallowColor;
       uniform vec3 skyColor;
@@ -77,14 +79,15 @@ export function createWater(panorama: THREE.Texture, scene: SceneSimulation, poi
       }
 
       vec3 reflectedSky(vec3 ray) {
-        // Match the existing sky dome's rotation and vertical scale.
+        // Match the sky dome's rotation and native spherical projection.
         vec3 localRay = normalize(vec3(
           cos(panoramaRotation) * ray.x - sin(panoramaRotation) * ray.z,
-          max(ray.y, 0.015) / 0.72,
+          ray.y,
           sin(panoramaRotation) * ray.x + cos(panoramaRotation) * ray.z));
         vec2 uv = vec2(fract(atan(localRay.z, -localRay.x) / (2.0 * PI)),
-          0.5 + asin(localRay.y) / PI);
-        return texture2D(panorama, uv).rgb;
+          0.5 + asin(clamp(localRay.y, -1.0, 1.0)) / PI);
+        return mix(skyColor, texture2D(panorama, uv).rgb,
+          smoothstep(panoramaHaze.x, panoramaHaze.y, uv.y));
       }
 
       void main() {
