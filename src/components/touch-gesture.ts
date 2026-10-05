@@ -118,8 +118,11 @@ export class TouchGestureController {
     if (this.flight) {
       const horizontal = displacement(this.flight.x - this.flight.originX);
       const vertical = displacement(this.flight.originY - this.flight.y);
-      // Holding still cruises forwards; sideways movement can become a pure strafe.
-      const forward = vertical === 0 ? 1 - Math.abs(horizontal) : vertical;
+      // Blend from forward cruising to the dragged direction without a jump at
+      // the dead zone. Upward travel preserves cruising; downward travel brakes
+      // through neutral, while a full sideways drag remains a pure strafe.
+      const cruising = 1 - Math.abs(horizontal);
+      const forward = cruising * (1 - Math.abs(vertical)) + vertical;
       const length = Math.max(1, Math.hypot(forward, horizontal));
       const throttle = throttleAt(this.flight, now);
       target.forward = forward / length * throttle;

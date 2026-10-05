@@ -82,6 +82,104 @@ test('small finger jitter stays in the dead zone and preserves the gentle forwar
   assert.ok(time.advance(300).axes.strafe > 0, 'drag beyond the dead zone should register');
 });
 
+test('crossing either side of the vertical dead zone does not jump from cruising to braking or reverse', () => {
+  for (const dx of [0, 32, -32]) {
+    const gesture = new TouchGestureController();
+    gesture.begin(1, 100, 100, 0);
+    const time = clock(gesture);
+    time.advance(TOUCH_GESTURE_RAMP_MS);
+    for (const sign of [-1, 1]) {
+      gesture.move(1, 100 + dx, 100 + sign * (TOUCH_GESTURE_DEAD_ZONE - 0.01));
+      const inside = time.advance(1_000).axes;
+      gesture.move(1, 100 + dx, 100 + sign * (TOUCH_GESTURE_DEAD_ZONE + 0.01));
+      const outside = time.advance(1_000).axes;
+      assert.ok(Math.abs(outside.forward - inside.forward) < 0.001,
+        `crossing the vertical dead zone must stay continuous at x=${dx}, sign=${sign}`);
+      assert.ok(outside.forward > 0.6, 'a tiny drag must preserve forward cruising');
+      assert.ok(Math.abs(outside.strafe - inside.strafe) < 0.001, 'a vertical boundary must not jump sideways thrust');
+    }
+  }
+});
+
+test('forward drags preserve full forward hold and do not slow a mixed forward and sideways gesture', () => {
+  for (const dx of [0, 32, -32]) {
+    const gesture = new TouchGestureController();
+    gesture.begin(1, 100, 100, 0);
+    const time = clock(gesture);
+    time.advance(TOUCH_GESTURE_RAMP_MS);
+    gesture.move(1, 100 + dx, 100);
+    let previous = time.advance(1_000).axes.forward;
+    for (const upwardDistance of [TOUCH_GESTURE_DEAD_ZONE + 0.25, 28, 52, TOUCH_GESTURE_RADIUS]) {
+      gesture.move(1, 100 + dx, 100 - upwardDistance);
+      const axes = time.advance(1_000).axes;
+      assert.ok(axes.forward >= previous - tolerance, 'dragging farther forward must not reduce forward thrust');
+      if (dx === 0) near(axes.forward, 1, 'upward drag preserves full forward hold');
+      else assert.ok(Math.sign(axes.strafe) === Math.sign(dx), 'a mixed drag keeps its sideways direction');
+      previous = axes.forward;
+    }
+  }
+});
+
+test('a downward drag progressively slows cruising, crosses neutral and then reverses', () => {
+  const gesture = new TouchGestureController();
+  gesture.begin(1, 100, 100, 0);
+  const time = clock(gesture);
+  time.advance(TOUCH_GESTURE_RAMP_MS);
+  let previous = 1;
+  for (let distance = TOUCH_GESTURE_DEAD_ZONE; distance <= TOUCH_GESTURE_RADIUS; distance += 8) {
+    gesture.move(1, 100, 100 + distance);
+    const axes = time.advance(1_000).axes;
+    assert.ok(axes.forward <= previous + tolerance, 'downward travel must monotonically reduce forward thrust');
+    assert.ok(previous - axes.forward <= 0.3, 'small downward travel must not jump to reverse');
+    if (distance === 20) assert.ok(axes.forward > 0.6, 'a gentle downward drag slows while still flying forward');
+    if (distance === 44) near(axes.forward, 0, 'halfway travel beyond the dead zone reaches neutral');
+    if (distance === 60) assert.ok(axes.forward < 0, 'a deeper downward drag engages reverse');
+    assert.equal(axes.strafe, 0);
+    previous = axes.forward;
+  }
+  near(previous, -1, 'full downward travel reaches full reverse');
+});
+
+test('mixed braking preserves sideways direction and remains continuous across the horizontal dead zone', () => {
+  for (const sign of [-1, 1]) {
+    const gesture = new TouchGestureController();
+    gesture.begin(1, 100, 100, 0);
+    const time = clock(gesture);
+    time.advance(TOUCH_GESTURE_RAMP_MS);
+    gesture.move(1, 100 + sign * 32, 100);
+    const cruising = time.advance(1_000).axes;
+    gesture.move(1, 100 + sign * 32, 120);
+    const braking = time.advance(1_000).axes;
+    assert.ok(braking.forward > 0 && braking.forward < cruising.forward, 'a gentle mixed downward drag slows without immediately reversing');
+    near(braking.strafe, cruising.strafe, 'gentle braking preserves sideways thrust');
+    for (const dy of [-20, 20]) {
+      gesture.move(1, 100 + sign * (TOUCH_GESTURE_DEAD_ZONE - 0.01), 100 + dy);
+      const inside = time.advance(1_000).axes;
+      gesture.move(1, 100 + sign * (TOUCH_GESTURE_DEAD_ZONE + 0.01), 100 + dy);
+      const outside = time.advance(1_000).axes;
+      assert.ok(Math.abs(outside.forward - inside.forward) < 0.001, 'crossing the horizontal dead zone must not jump forward thrust');
+      assert.ok(Math.abs(outside.strafe - inside.strafe) < 0.001, 'crossing the horizontal dead zone must not jump sideways thrust');
+    }
+  }
+});
+
+test('rapid changes between mixed drags keep the published axes smooth frame by frame', () => {
+  const gesture = new TouchGestureController();
+  gesture.begin(1, 100, 100, 0);
+  const time = clock(gesture);
+  let previous = time.advance(TOUCH_GESTURE_RAMP_MS).axes;
+  for (const [dx, dy] of [[13, -13], [76, 0], [32, 20], [0, 76], [-76, -76], [0, 0]]) {
+    gesture.move(1, 100 + dx, 100 + dy);
+    time.advance(1_000, snapshot => {
+      for (const axis of ['forward', 'strafe'] as const) {
+        assert.ok(Math.abs(snapshot.axes[axis] - previous[axis]) <= 0.05,
+          `${axis} must not jump by more than 5% in one 16ms frame`);
+      }
+      previous = snapshot.axes;
+    });
+  }
+});
+
 test('primary drag follows screen signs, supports reverse and becomes pure strafe at full side travel', () => {
   const gesture = new TouchGestureController();
   gesture.begin(1, 160, 260, 0);

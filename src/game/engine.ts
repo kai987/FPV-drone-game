@@ -30,6 +30,8 @@ import { preloadWorldAssets } from './world-assets';
 import type { WorldAssets } from './world-assets';
 import { createLoadingMetrics } from './loading-metrics';
 import type { LoadingMetrics } from './loading-metrics';
+import { FixedSimulationClock } from './simulation-clock';
+import { RenderPerformanceMonitor } from './render-performance';
 
 export interface EngineEvents {
   telemetry: (value: Telemetry) => void;
@@ -75,17 +77,25 @@ export class FlightEngine {
   private headlight = new THREE.SpotLight('#dcecff', 0, 85, Math.PI / 5, 0.55, 1.5);
   private headlightTarget = new THREE.Object3D();
   private weapons: WeaponState;
+  private previousWeapons: WeaponState;
   private cameraPosition = new THREE.Vector3();
   private cameraTarget = new THREE.Vector3();
   private desiredPosition = new THREE.Vector3();
   private desiredTarget = new THREE.Vector3();
   private snapCamera = true;
   private state = createFlightState();
+  private previousPose = createFlightState();
+  private displayPose = createFlightState();
+  private readonly simulationClock = new FixedSimulationClock();
+  private readonly renderPerformance = new RenderPerformanceMonitor({
+    devicePixelRatio: window.devicePixelRatio, isMobile: matchMedia('(pointer: coarse)').matches,
+  });
   private status: Status = 'ready';
   private keys = new Set<string>();
   private frame = 0;
   private lastTime = 0;
   private lastEmit = 0;
+  private lastPerformanceMetrics: unknown;
   private elapsed = 0;
   private windClock = 0;
   private wind: Telemetry['wind'] = EMPTY_TELEMETRY.wind;
@@ -141,7 +151,7 @@ export class FlightEngine {
     mapId: MapId, renderer: THREE.WebGLRenderer, private assets: WorldAssets,
     private loadingMetrics: LoadingMetrics, resolution: 3548 | 7096) {
     this.renderer = renderer;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    this.renderer.setPixelRatio(this.renderPerformance.pixelRatio);
     this.panoramaResolution = resolution;
     let maps: FlightEngine['maps'] | undefined;
     try {
@@ -154,6 +164,7 @@ export class FlightEngine {
       this.activeMap = this.maps.getOrCreate(mapId);
       this.state = this.initialState();
       this.weapons = this.weaponSimulation.state;
+      this.previousWeapons = this.weapons;
     } catch (error) {
       maps?.dispose(); this.drone.dispose(); this.headlight.dispose(); this.audio.dispose();
       this.warmupTarget.dispose();
@@ -189,7 +200,7 @@ export class FlightEngine {
     document.addEventListener('mousemove', this.mousemove);
     document.addEventListener('pointerlockchange', this.pointerlockchange);
     this.renderer.domElement.addEventListener('click', this.lockPointer);
-    this.refreshWind(); this.resize();
+    this.copyPreviousPose(); this.refreshWind(); this.resize();
   }
   private createMap(id: MapId): MapResources {
     const stopCpu = this.loadingMetrics.measure(`${id}.cpu`);
@@ -385,15 +396,23 @@ export class FlightEngine {
       if (this.weapons.ammo === 0) this.events.notice('弹药已投完 · 3 秒后自动补充');
     }
   }
-  private setStatus(status: Status) { this.status = status; this.events.status(status); }
+  private setStatus(status: Status) {
+    if (status !== this.status) {
+      if (status === 'flying') this.simulationClock.reset(performance.now());
+      this.renderPerformance.reset();
+      this.copyPreviousPose();
+    }
+    this.status = status; this.events.status(status);
+  }
   start() {
     if (this.disposed || !this.prepared) return;
     this.state = this.initialState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
     this.windClock = 0; this.unchangedWind = true;
     this.refreshWind();
-    this.weapons = this.weaponSimulation.reset();
+    this.weapons = this.weaponSimulation.reset(); this.previousWeapons = this.weapons;
     this.snapCamera = true;
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
+    this.copyPreviousPose(); this.simulationClock.reset(performance.now()); this.renderPerformance.reset();
     this.collisionCooldown = 0; this.setStatus('flying'); this.emit();
     this.events.notice('起飞成功 · B 投弹，V 切换俯视瞄准 · 下方有练习靶标');
   }
@@ -407,61 +426,84 @@ export class FlightEngine {
     this.setStatus('ready'); this.state = this.initialState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
     this.windClock = 0; this.unchangedWind = true; this.collisionCooldown = 0;
     this.refreshWind();
-    this.weapons = this.weaponSimulation.reset();
+    this.weapons = this.weaponSimulation.reset(); this.previousWeapons = this.weapons;
+    this.copyPreviousPose(); this.simulationClock.reset(performance.now()); this.renderPerformance.reset();
     this.snapCamera = true; this.events.notice('');
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
     if (document.pointerLockElement) document.exitPointerLock(); this.emit();
   }
-  private tick = (time: number) => {
-    if (this.disposed) return;
-    const elapsedDelta = Math.max((time - this.lastTime) / 1000, 0);
-    const dt = Math.min(elapsedDelta, 0.05); this.lastTime = time;
-    if (this.status === 'flying') {
-      const previous = { ...this.state.position };
-      const pressed = (code: string) => this.keys.has(code) ? 1 : 0;
-      const result = this.simulation.step(this.state, {
-        forward: pressed('KeyW') - pressed('KeyS') + this.touch.forward,
-        strafe: pressed('KeyD') - pressed('KeyA') + this.touch.strafe,
-        climb: pressed('Space') - Math.max(pressed('ShiftLeft'), pressed('ShiftRight')) + this.touch.climb,
-        yaw: pressed('KeyQ') + pressed('ArrowLeft') - pressed('KeyE') - pressed('ArrowRight') + this.touch.yaw,
-        lookPitch: pressed('ArrowUp') - pressed('ArrowDown'),
-      }, dt, this.flightMode, getDroneSpec(this.selectedDroneId).flight, this.currentWind, this.windClock, this.mapSpec.bounds);
-      this.windClock = result.windClock; this.wind = result.wind;
-      this.elapsed += elapsedDelta; this.collisionCooldown -= dt;
-      if (result.boundaryContact) {
-        if (this.collisionCooldown <= 0) { this.events.notice('已到达飞行场边界 · 转向继续探索'); this.collisionCooldown = 1.5; }
-      }
-      {
-        const groundHit = this.state.collision;
-        if (result.obstacleContact || groundHit) {
-          if (this.collisionCooldown <= 0) {
-            this.collisionCooldown = 1.5;
-            if (this.mode === 'race') this.elapsed += 3;
-            const contact = groundHit && this.state.position.y < WATER_LEVEL + 3 && this.worldKernel.isWater(this.state.position.x, this.state.position.z) ? '触水' : '碰撞';
-            this.events.notice({ key: this.mode === 'race' ? '{contact} · 已稳住机身，计时增加 3 秒' : '{contact} · 已稳住机身，请升高或避开障碍', params: { contact } });
-          }
+  private copyPreviousPose() {
+    Object.assign(this.previousPose.position, this.state.position);
+    this.previousPose.yaw = this.state.yaw; this.previousPose.pitch = this.state.pitch; this.previousPose.roll = this.state.roll;
+  }
+  private stepSimulation = (dt: number) => {
+    this.copyPreviousPose();
+    const previous = this.previousPose.position;
+    const pressed = (code: string) => this.keys.has(code) ? 1 : 0;
+    const result = this.simulation.step(this.state, {
+      forward: pressed('KeyW') - pressed('KeyS') + this.touch.forward,
+      strafe: pressed('KeyD') - pressed('KeyA') + this.touch.strafe,
+      climb: pressed('Space') - Math.max(pressed('ShiftLeft'), pressed('ShiftRight')) + this.touch.climb,
+      yaw: pressed('KeyQ') + pressed('ArrowLeft') - pressed('KeyE') - pressed('ArrowRight') + this.touch.yaw,
+      lookPitch: pressed('ArrowUp') - pressed('ArrowDown'),
+    }, dt, this.flightMode, getDroneSpec(this.selectedDroneId).flight, this.currentWind, this.windClock, this.mapSpec.bounds);
+    this.windClock = result.windClock; this.wind = result.wind;
+    this.elapsed += dt; this.collisionCooldown -= dt;
+    if (result.boundaryContact) {
+      if (this.collisionCooldown <= 0) { this.events.notice('已到达飞行场边界 · 转向继续探索'); this.collisionCooldown = 1.5; }
+    }
+    {
+      const groundHit = this.state.collision;
+      if (result.obstacleContact || groundHit) {
+        if (this.collisionCooldown <= 0) {
+          this.collisionCooldown = 1.5;
+          if (this.mode === 'race') this.elapsed += 3;
+          const contact = groundHit && this.state.position.y < WATER_LEVEL + 3 && this.worldKernel.isWater(this.state.position.x, this.state.position.z) ? '触水' : '碰撞';
+          this.events.notice({ key: this.mode === 'race' ? '{contact} · 已稳住机身，计时增加 3 秒' : '{contact} · 已稳住机身，请升高或避开障碍', params: { contact } });
         }
       }
-      const weaponEvents = this.weaponSimulation.step(elapsedDelta);
-      this.weapons = weaponEvents.state;
-      if (weaponEvents.impacts > 0) {
-        const impact = this.weapons.explosions.at(-1);
-        this.audio.explosion(Boolean(impact && impact.position.y < WATER_LEVEL + 0.3 && this.worldKernel.isWater(impact.position.x, impact.position.z)));
-      }
-      if (weaponEvents.hits > 0) {
-        this.events.notice(this.weapons.hitTargetIds.length === this.mapSpec.targets.length
-          ? { key: '全部靶标命中 · 总得分 {score} · R 重新挑战', params: { score: this.weapons.score } }
-          : { key: '命中靶标 +{points} · {hits} / {total}', params: { points: weaponEvents.hits * 100, hits: this.weapons.hitTargetIds.length, total: this.mapSpec.targets.length } });
-      }
-      if (this.mode === 'race' && this.checkpoint < this.mapSpec.checkpoints.length && crossesCheckpoint(previous, this.state.position, this.mapSpec.checkpoints[this.checkpoint])) {
-        this.checkpoint++; this.audio.checkpoint();
-        if (this.checkpoint === this.mapSpec.checkpoints.length) {
-          this.setStatus('finished'); this.events.finish(this.elapsed);
-          if (document.pointerLockElement) document.exitPointerLock();
-        } else this.events.notice({ key: '检查点 {number} / {total} · 继续前往下一个飞行环', params: { number: String(this.checkpoint).padStart(2, '0'), total: this.mapSpec.checkpoints.length } });
-      }
     }
-    const { position, velocity, yaw, pitch, roll } = this.state;
+    this.previousWeapons = this.weapons;
+    const weaponEvents = this.weaponSimulation.step(dt);
+    this.weapons = weaponEvents.state;
+    if (weaponEvents.impacts > 0) {
+      const impact = this.weapons.explosions.at(-1);
+      this.audio.explosion(Boolean(impact && impact.position.y < WATER_LEVEL + 0.3 && this.worldKernel.isWater(impact.position.x, impact.position.z)));
+    }
+    if (weaponEvents.hits > 0) {
+      this.events.notice(this.weapons.hitTargetIds.length === this.mapSpec.targets.length
+        ? { key: '全部靶标命中 · 总得分 {score} · R 重新挑战', params: { score: this.weapons.score } }
+        : { key: '命中靶标 +{points} · {hits} / {total}', params: { points: weaponEvents.hits * 100, hits: this.weapons.hitTargetIds.length, total: this.mapSpec.targets.length } });
+    }
+    if (this.mode === 'race' && this.checkpoint < this.mapSpec.checkpoints.length && crossesCheckpoint(previous, this.state.position, this.mapSpec.checkpoints[this.checkpoint])) {
+      this.checkpoint++; this.audio.checkpoint();
+      if (this.checkpoint === this.mapSpec.checkpoints.length) {
+        this.setStatus('finished'); this.events.finish(this.elapsed);
+        if (document.pointerLockElement) document.exitPointerLock();
+      } else this.events.notice({ key: '检查点 {number} / {total} · 继续前往下一个飞行环', params: { number: String(this.checkpoint).padStart(2, '0'), total: this.mapSpec.checkpoints.length } });
+    }
+    return this.status === 'flying';
+  };
+  private tick = (time: number) => {
+    if (this.disposed) return;
+    const frameStart = performance.now();
+    const elapsedDelta = this.lastTime ? Math.max((time - this.lastTime) / 1000, 0) : 0;
+    const dt = Math.min(elapsedDelta, 0.25); this.lastTime = time;
+    let alpha = 1;
+    if (this.status === 'flying') alpha = this.simulationClock.tick(time, this.stepSimulation).alpha;
+    else this.simulationClock.reset(time);
+    const simulationEnd = performance.now();
+    // Interpolate presentation only; collisions, checkpoints and telemetry use the Rust state.
+    if (this.status === 'flying') {
+      const previous = this.previousPose, current = this.state, display = this.displayPose;
+      for (const axis of ['x', 'y', 'z'] as const) display.position[axis] = THREE.MathUtils.lerp(previous.position[axis], current.position[axis], alpha);
+      const yawDelta = Math.atan2(Math.sin(current.yaw - previous.yaw), Math.cos(current.yaw - previous.yaw));
+      display.yaw = previous.yaw + yawDelta * alpha;
+      display.pitch = THREE.MathUtils.lerp(previous.pitch, current.pitch, alpha);
+      display.roll = THREE.MathUtils.lerp(previous.roll, current.roll, alpha);
+    }
+    const { position, yaw, pitch, roll } = this.status === 'flying' ? this.displayPose : this.state;
+    const velocity = this.state.velocity;
     const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
     this.drone.model.position.set(position.x, position.y, position.z);
     this.headlight.position.set(position.x - Math.sin(yaw) * 0.75, position.y - 0.1, position.z - Math.cos(yaw) * 0.75);
@@ -501,15 +543,31 @@ export class FlightEngine {
     }
     this.snapCamera = false;
     this.world.update(time / 1000, this.mode === 'race' ? this.checkpoint : -1, position, this.camera.position);
-    this.weaponVisuals.update(this.weapons, this.elapsed);
+    this.weaponVisuals.update(this.weapons, this.windClock, this.previousWeapons, this.status === 'flying' ? alpha : 1);
+    const sceneEnd = performance.now();
     this.renderer.render(this.world.scene, this.camera);
+    const renderEnd = performance.now();
+    const pixelRatio = this.renderPerformance.recordFrame(time, simulationEnd - frameStart, sceneEnd - simulationEnd,
+      renderEnd - sceneEnd, this.renderer.info, this.status === 'flying' && !document.hidden);
+    if (pixelRatio !== undefined) {
+      this.renderer.setPixelRatio(pixelRatio); this.resize();
+    }
     this.audio.update(speed, this.status === 'flying');
-    if (time - this.lastEmit > 90) { this.lastEmit = time; this.emit(); }
+    if (time - this.lastEmit > 90) {
+      this.lastEmit = time; this.emit();
+      const measurements = this.renderPerformance.snapshot();
+      if (measurements !== this.lastPerformanceMetrics) {
+        this.lastPerformanceMetrics = measurements;
+        this.renderer.domElement.dataset.performanceMetrics = JSON.stringify(measurements);
+      }
+      this.renderer.domElement.dataset.pixelRatio = String(this.renderPerformance.pixelRatio);
+      this.renderer.domElement.dataset.simulationTime = String(this.windClock);
+    }
     this.frame = requestAnimationFrame(this.tick);
   };
   private refreshWind() {
     // Configuration/reset events refresh Rust telemetry without advancing time
-    // or contacts; normal flight still has exactly one simulate_tick per frame.
+    // or contacts; normal flight advances every system in shared fixed substeps.
     const result = this.simulation.step(this.state, { forward: 0, strafe: 0, climb: 0, yaw: 0 }, 0,
       this.flightMode, getDroneSpec(this.selectedDroneId).flight, this.currentWind, this.windClock);
     this.wind = result.wind;

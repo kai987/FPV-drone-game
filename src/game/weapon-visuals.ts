@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import {
   BLAST_RADIUS, EXPLOSION_LIFETIME, MAX_ACTIVE_BOMBS, MAX_ACTIVE_EXPLOSIONS, TARGETS,
 } from './weapons.ts';
-import type { WeaponState } from './weapons.ts';
+import type { Bomb, WeaponState } from './weapons.ts';
 import type { Target } from './weapons.ts';
 import { groundHeight } from './world.ts';
 import { isWater, WATER_LEVEL } from './landscape.ts';
@@ -11,6 +11,7 @@ import type { RustRuntime } from './rust-runtime.ts';
 import type { WorldKernel } from './world-kernel.ts';
 import { createExplosionSimulation } from './effect-simulation.ts';
 import type { EffectFieldLayout } from './effect-simulation.ts';
+import { interpolateBombPosition } from './weapon-presentation.ts';
 
 /** Geometry, target feedback and pooled effects for the fictional practice game. */
 export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel, targets: readonly Target[] = TARGETS) {
@@ -215,6 +216,7 @@ export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel, 
     return bomb;
   };
   const bombs = new Map<number, THREE.Group>();
+  const previousBombs = new Map<number, Bomb>();
   const bombPool: THREE.Group[] = [];
 
   const noiseShader = `
@@ -412,7 +414,7 @@ export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel, 
       rimMaterial.emissiveIntensity = value ? 1.05 : 0.5;
       checkMaterial.emissiveIntensity = value ? 0.65 : 0.28;
     },
-    update(state: WeaponState, time: number) {
+    update(state: WeaponState, time: number, previousState: WeaponState = state, alpha = 1) {
       if (disposed) return;
       const delta = THREE.MathUtils.clamp(time - previousTime, 0, 0.06); previousTime = time;
       const hitIds = new Set(state.hitTargetIds);
@@ -440,6 +442,8 @@ export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel, 
       rims.instanceMatrix.needsUpdate = true;
 
       const activeBombs = state.bombs.slice(-MAX_ACTIVE_BOMBS);
+      previousBombs.clear();
+      for (const bomb of previousState.bombs) previousBombs.set(bomb.id, bomb);
       const bombIds = new Set(activeBombs.map(bomb => bomb.id));
       for (const [id, visual] of bombs) if (!bombIds.has(id)) {
         visual.visible = false; bombs.delete(id); bombPool.push(visual);
@@ -448,7 +452,8 @@ export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel, 
         let visual = bombs.get(bomb.id);
         let fresh = false;
         if (!visual) { visual = bombPool.pop() ?? makeBomb(); bombs.set(bomb.id, visual); fresh = true; }
-        visual.visible = true; visual.position.set(bomb.position.x, bomb.position.y, bomb.position.z);
+        visual.visible = true;
+        interpolateBombPosition(bomb, previousBombs.get(bomb.id), alpha, visual.position);
         velocity.set(-bomb.velocity.x, -bomb.velocity.y, -bomb.velocity.z);
         if (velocity.lengthSq() > 0.001) desiredPose.setFromUnitVectors(up, velocity.normalize());
         else desiredPose.identity();
@@ -576,7 +581,7 @@ export function createWeaponVisuals(runtime?: RustRuntime, world?: WorldKernel, 
       for (const material of materials) material.dispose();
       for (const texture of textures) texture.dispose();
       for (const light of flashLights) { light.intensity = 0; light.dispose(); }
-      bombs.clear(); bombPool.length = 0; group.clear(); group.removeFromParent();
+      bombs.clear(); previousBombs.clear(); bombPool.length = 0; group.clear(); group.removeFromParent();
     },
   };
 }
