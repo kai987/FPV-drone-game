@@ -7,6 +7,8 @@ mod abi;
 pub mod effects;
 mod effects_abi;
 pub mod flight;
+pub mod gun;
+mod gun_abi;
 pub mod scene;
 mod scene_abi;
 pub mod simulation;

@@ -2,16 +2,16 @@
 
 [中文](./README.md) | [日本語](./README.ja.md) | **English**
 
-A browser game for drone flying and bombing practice, with chase, top-down aiming, and first-person views. React, TypeScript, Vite, and Three.js provide the interface and 3D rendering. Rust compiles to WebAssembly and handles flight, wind, geography queries, bombs, and batched scene and animation calculations. No account, backend, or paid API is required.
+A browser game for drone flying, bombing, and machine-gun target practice, with chase, top-down aiming, and first-person views. React, TypeScript, Vite, and Three.js provide the interface and 3D rendering. Rust compiles to WebAssembly and handles flight, wind, geography queries, bombs, and batched scene and animation calculations. No account, backend, or paid API is required.
 
 Play online: [GitHub Pages](https://kai987.github.io/FPV-drone-game/) · [Sites](https://aeroflow-fpv-drone-game.huamengdiqidiguo.chatgpt.site/)
 
 ## Features
 
-- Six fictional FPV drones with distinct shapes, colors, and handling. Hangar thumbnails, the rotatable large preview, and the flying drone share the same 3D model. Browse hardware settings and game flight parameters.
-- Three independent maps, each with eight checkpoint rings, five bombing targets, and its own minimap. Choose a timed challenge or free flight, and Assisted or Sport handling.
+- Seven fictional FPV drones with distinct shapes, colors, and handling. Hangar thumbnails, the rotatable large preview, and the flying drone share the same 3D model. Browse hardware settings and game flight parameters.
+- Three independent maps, each with eight checkpoint rings, five practice targets, and its own minimap. Choose a timed challenge or free flight, and Assisted or Sport handling.
 - Calm, Breeze, Moderate, and Strong wind with eight base origin directions. Takeoff starts at the base direction, then the actual direction shifts smoothly over time. Wind speed also varies with time, position, and altitude. Headwind, tailwind, and crosswind affect actual ground speed and trajectory. Live instrument degrees show where wind comes from; the compass beside the minimap shows where it blows. Pause freezes the wind field.
-- Six bombs, automatic reloading, smoke and debris on land, and splashes and ripples on water. The first hit on each target earns 100 points.
+- The original six aircraft carry six bombs with automatic reloading, smoke and debris on land, and splashes and ripples on water. GUARDIAN carries an underslung machine gun with muzzle flashes, tracers, impacts, and automatic reloading. The first hit on each target earns 100 points.
 - Day/night switching, a drone searchlight, lit windows, urban streetlights, and a harbor lighthouse. Optional motor, checkpoint, and bombing audio is muted by default.
 - A draggable, zoomable minimap, live telemetry, pause/restart, fullscreen, and multitouch mobile controls.
 - Instantly switch the header selector between **中文 / 日本語 / English**. Chinese is the default. The language is stored as `zh / ja / en` under `aeroflow-language` in localStorage. Switching preserves flight position and progress, the map, ammunition, wind, minimap view, and the existing 3D renderer. Flying and language switching still work when local storage is unavailable.
@@ -34,7 +34,7 @@ All maps have a 450 m altitude ceiling. The factory and harbor have about four t
 - **Roads:** Each industrial map retains 21 main-road crossroads with zebra crossings and stop bars on all four approaches. Shared service roads connect the loading entrances of all 190 factory buildings and 125 harbor warehouses, avoiding buildings, cargo, tanks and the shoreline. The factory adds 148 T-junctions and 11 crossroads; the harbor adds 88 T-junctions and 7 crossroads. Long service roads have center dashes and junctions have zebra crossings; only the terminating approach stops at a T-junction. The 3D pavement, ground cutouts and minimap share the complete metre-scaled road layout.
 - **Switching:** On first entry, all three maps prepare their scenes, textures, Rust services, and day/night shaders, with per-map progress. Flying is enabled only after all are ready. Switching reuses cached scenes, returns to the selected map's spawn point, and resets the route, timer, ammunition, and score. Drone, game/handling mode, wind, day/night, sound, language, and camera view are retained.
 
-## Six drones
+## Seven drones
 
 | Game drone | Frame and color | Assisted / Sport speed limit |
 | --- | --- | --- |
@@ -44,6 +44,7 @@ All maps have a 450 m altitude ceiling. The factory and harbor have about four t
 | RANGE | Long arms, large battery, and tall antenna, blue | 64.8 / 110.2 km/h |
 | VECTOR | Low fairing and symmetrical speed X frame, cyan | 152.9 / 260.0 km/h |
 | FALCON | Long axial center pod and four parallel motor pods, gold | 211.8 / 360.0 km/h |
+| GUARDIAN | Heavy octocopter, underslung gun gimbal and tall skids, olive/bronze | 54.7 / 93.0 km/h |
 
 These are ordinary, calm-air game limits calculated from the shared flight configuration. Actual ground speed depends on wind, turns, acceleration, and braking. **All drones are fictional game configurations. Hardware and endurance are also fictional settings, battery drain is not simulated, and these values are not product measurements or world records.**
 
@@ -63,7 +64,9 @@ VECTOR is inspired by the [2017 DRL RacerX record report](https://www.guinnesswo
 | Pause | Esc |
 | Pause / resume | P |
 | Restart from the spawn point | R |
-| Drop a bomb | B, or the bombing button |
+| Drop a bomb | B, or the bombing button (original six aircraft) |
+| Machine gun | GUARDIAN: hold F, the left mouse button in locked mouse look, or the fire button; release to stop |
+| Mobile gun aiming | GUARDIAN: drag the right-side Drag to aim area; flight gestures remain on the left |
 | Day / night | N, or the header day/night button |
 | Chase → top-down aiming → first-person | V, or the camera button at the upper right of the scene |
 | Minimap zoom | − / +: 1×, 2×, 4×, 8× |
@@ -74,13 +77,16 @@ VECTOR is inspired by the [2017 DRL RacerX record report](https://www.guinnesswo
 
 Click the 3D scene during flight to enable mouse look. Esc releases the mouse and pauses. Switching browser tabs or losing window focus also pauses automatically. After takeoff on mobile, control flight with gestures on the flight view. Hold one finger to accelerate gradually from low speed; input reaches the selected aircraft and mode’s maximum after about two seconds. Drag up/down for forward/backward flight and left/right to strafe. Drag a second finger up/down to climb/descend and left/right to turn; both fingers can work together. Releasing a finger clears its axes and flight physics slows the aircraft. Assisted mode brakes faster, and wind can still cause drift. Bombing, wind direction, and the minimap sit in a panel below the flight view. Dragging or zooming the minimap does not steer the aircraft. Inputs, selectors, and modal dialogs isolate flight shortcuts to prevent accidental movement or bombing while using the interface.
 
-### Flight, wind, and bombing tips
+Touch gestures are enabled only when the primary pointer is coarse; narrowing a desktop window keeps mouse and keyboard controls. Gesture areas accept touch input only and clear active gestures when the input capability changes.
+
+### Flight, wind, and target practice tips
 
 - **Timed challenge:** Fly through the illuminated rings in order, approaching their front side. Collisions slow the drone and add three seconds; persistent contact has a penalty cooldown. **Free flight** has no ring requirement or collision time penalty.
 - Game and handling modes are locked while flying or paused. Return to the spawn point to change them. Wind can be adjusted at any time: opening settings pauses the game, and applying changes preserves position, time, and ammunition until you resume manually.
 - The default breeze uses northwest as its base direction and causes slight drift. Select Calm, then hold W to practice the first two rings. Wind names and live degrees indicate its origin: a north wind blows north to south. The compass arrow indicates its destination. Actual direction changes smoothly on its own; watch the degrees and arrow, then steer against the drift. Direction and speed freeze while paused, and restarting begins at the base direction. Assisted reduces drift; Sport requires more active correction.
 - A practice target is directly below the spawn point. Take off, press V for top-down aiming, then B to drop a bomb. Bombs inherit drone velocity; the reticle marks the point below the drone, not a predicted impact.
-- After all six bombs are used, reloading takes three seconds. Each of the five targets awards 100 points on its first hit. Bombing scores are separate from ring timing, and bombing works in both game modes. Pause freezes bombs, explosions, and the reload timer; restarting restores ammunition, targets, and score.
+- On the original six aircraft, after all six bombs are used, reloading takes three seconds. Each of the five targets awards 100 points on its first hit. Bombing scores are separate from ring timing, and bombing works in both game modes. Pause freezes bombs, explosions, and the reload timer; restarting restores ammunition, targets, and score.
+- **GUARDIAN machine gun:** Fictional arcade settings are 40 rounds per magazine, 24 shots per second, and a 2.4-second automatic reload. Hold F or the fire button to shoot and release to stop; holding through reload resumes firing afterward. Bullets leave the underslung muzzle toward the point indicated by the center reticle. Use V for top-down or FPV view. Use mouse/arrow keys on desktop; on phones, drag the right aiming area, fly with gestures on the left, and hold the fire button below. Menus, pause, and lost focus stop firing; press again after resuming.
 - Light-blue fish icons on the valley minimap mark schools. Near the river bend east of spawn, downstream of the wooden bridge, or at a lake, hover about 2–8 m above water and use top-down view. High or horizontal views can be obscured by reflections.
 - Water contact stabilizes the drone. The camera, drone, and bombs share ground/water queries. Explore both lakes along the river in free flight, or cruise the full industrial-map envelope.
 
@@ -135,6 +141,8 @@ Maps are scenes generated from shared configuration and procedural models, not c
 
 Initial loading reuses decoded images, overlaps texture downloads with scene preparation, and serially compiles and warms all three maps' day/night GPU resources. Trees use instanced billboards. Basic urban structures are instanced by material; details use 600 m spatial chunks and a 450 m visibility margin around their bounding spheres. Night streetlights use a fixed pool of eight lights. All map and rendering resources are released when leaving the game.
 
+The idle background updates at about 12 FPS. Paused and finished scenes render on demand; the main scene stops drawing behind the hangar, guide, or wind dialog and while the page is hidden. Day/night and camera changes still redraw a paused scene, and resuming never catches up paused time. A lost WebGL context clears movement and firing input and pauses flight. Restoring the view preserves position, ammunition, and score until manual resume. Startup interruptions and runtime errors display a reload action.
+
 Original TypeScript mathematics and frozen older scene/explosion equations remain independent test references. Production uses Rust services and shows a load failure instead of silently switching to JS physics. WASM calculations still run synchronously on the main thread, without a Worker. No FPS improvement is claimed for the Rust migration or map optimization; performance changes require separate measurement.
 
 During flight, the game measures FPS, frame intervals, CPU time for simulation, scene updates and render submission, plus draw and resource counts. Sustained slow pacing lowers rendering pixel ratio in stages; stable pacing allows cautious recovery. Coarse-pointer devices target 30 FPS and other devices target 60 FPS, with pixel ratio capped by device DPR and 1.75. Reports update about once a second in the game canvas `data-performance-metrics`. These are CPU and frame-pacing measurements, not GPU execution time or a guarantee of reaching the target FPS.
@@ -172,7 +180,7 @@ docs/asset-licenses.md      Asset sources and offline processing records
 
 `npm run check` runs native Cargo tests, Node tests using the real WASM file, and TypeScript checks. `npm run build` validates production output. Test counts grow with features; use the command results as the current count.
 
-Coverage includes numerical compatibility across six drones, two handling modes, four wind strengths, eight directions, and 30/60/120 fps; complete Valley and urban eight-ring routes using ordinary controls; pause, invalid time steps, bounds, bridges, roofs/decks, elevated and rotated-object collisions, weapon lifecycles, layered impact surfaces, records and language storage, map caching, and resource cleanup. Seeded scenery, complete terrain heights/colors, water textures/flow, batched fish/livestock/explosion animation, expanded-map roads, berths, land/water boundaries, and minimap bounds are also checked.
+Coverage includes numerical compatibility across seven drones, two handling modes, four wind strengths, eight directions, and 30/60/120 fps; complete Valley and urban eight-ring routes using ordinary controls; pause, invalid time steps, bounds, bridges, roofs/decks, elevated and rotated-object collisions, weapon lifecycles, layered impact surfaces, records and language storage, map caching, and resource cleanup. Seeded scenery, complete terrain heights/colors, water textures/flow, batched fish/livestock/explosion animation, expanded-map roads, berths, land/water boundaries, and minimap bounds are also checked.
 
 Browser checks include three-map preloading, map/drone switching, day/night, bombing, language changes, minimap/touch interaction at desktop and mobile sizes, page overflow, and the console. Browser viewport checks are not physical-phone GPU benchmarks, and real drone performance is outside validation scope.
 

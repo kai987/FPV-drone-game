@@ -10,7 +10,7 @@ function eachCorner(bounds: THREE.Box3, visit: (corner: THREE.Vector3) => void) 
   for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) visit(point.set(x, y, z));
 }
 
-test('all six game models fit completely in thumbnail, desktop and narrow mobile cameras', () => {
+test('all seven game models fit completely in thumbnail, desktop and narrow mobile cameras', () => {
   for (const spec of DRONES) {
     const drone = createDrone(spec.id);
     try {

@@ -3,11 +3,13 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DEFAULT_DRONE_ID, getDroneSpec } from './drone-catalog.ts';
 import type { DroneId } from './drone-catalog.ts';
+import { createGuardianDrone } from './guardian-drone.ts';
 
-/** Fictional FPV aircraft: FALCON's nose is local +Y; the other five point -Z. */
+/** Fictional FPV aircraft: FALCON's nose is local +Y; other aircraft point -Z. */
 export function createDrone(id: DroneId = DEFAULT_DRONE_ID) {
   const spec = getDroneSpec(id);
   if (spec.id === 'falcon') return createFalconDrone();
+  if (spec.id === 'guardian') return createGuardianDrone();
   const shape = {
     cinewhoop: { motorX: 0.54, motorZ: 0.53, radius: 0.38, motor: 0.8, arm: 0.095, width: 0.43, length: 0.76, battery: [0.26, 0.18, 0.43], tilt: 0.28, blades: 4 },
     freestyle: { motorX: 0.76, motorZ: 0.73, radius: 0.505, motor: 1, arm: 0.12, width: 0.48, length: 0.96, battery: [0.34, 0.22, 0.61], tilt: 0.42, blades: 3 },

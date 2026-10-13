@@ -8,6 +8,17 @@ export const GUIDE_MESSAGES = {
   '转向': ['旋回', 'Turn'],
   '升降': ['上昇・下降', 'Climb/descend'],
   '暂停 / 视角 / 投弹': ['一時停止 / 視点 / 爆弾投下', 'Pause / View / Drop bomb'],
+  '机枪连射（守卫者）': ['機銃連射（ガーディアン）', 'Machine gun (Guardian)'],
+  '守卫者：按住机枪连射，松开停止': ['ガーディアン：長押しで機銃を連射、離すと停止', 'Guardian: hold to fire the machine gun, release to stop'],
+  '守卫者：瞄准与射击': ['ガーディアン：照準と射撃', 'Guardian: aim and fire'],
+  '在机库选择 GUARDIAN 守卫者，使用机腹机枪练习打靶。按住 F、锁定鼠标视角后的左键，或长按射击按钮连射，松开即停。子弹从机腹下方的枪口射向屏幕中心准星所指的位置，可用鼠标或方向键调整视角，按 V 切换俯视瞄准或第一视角。每弹匣 40 发，每秒 24 发，用完自动装填 2.4 秒；保持按压会在装填后继续射击。每个靶标首次命中得 100 分，暂停或打开菜单会停止射击。守卫者使用机枪，其余六款使用炸弹。': [
+    'ハンガーで GUARDIAN ガーディアンを選び、機体下部の機銃で標的射撃を練習します。Fキー、マウス視点をロックした状態で左ボタン、または射撃ボタンを押し続けると連射し、離すと止まります。弾は機体下の銃口から画面中央の照準が示す位置へ飛び、マウスや方向キーで視点を調整できます。Vで俯瞰照準やFPV視点に切り替えます。1弾倉40発、毎秒24発で、空になると2.4秒で自動補充します。押し続けると補充後に射撃を再開します。各標的への初回命中で100点を獲得し、一時停止やメニューを開くと射撃は止まります。ガーディアンは機銃、他の6機種は爆弾を使います。',
+    'Select GUARDIAN Guardian in the hangar for target practice with its underslung machine gun. Hold F, the left mouse button with mouse look locked, or the fire button to shoot; release to stop. Bullets leave the underslung muzzle toward the point indicated by the center reticle. Aim with the mouse or arrow keys, and use V for top-down aim or FPV view. Each magazine has 40 rounds, fires 24 rounds per second, and automatically reloads in 2.4 seconds when empty. Keep holding to resume after reloading. The first hit on each target earns 100 points. Pausing or opening a menu stops firing. Guardian uses the machine gun; the other six aircraft use bombs.',
+  ],
+  '手机上，守卫者的飞行画面左侧保留飞行手势，右侧「滑动瞄准」区域拖动调整准星；可同时按住底部射击按钮。瞄准区的按压不会让飞机自动加速。射击按钮松手即停；暂停后需要重新按住才能继续射击。底部面板保持紧凑，不遮挡飞行画面。': [
+    'スマートフォンのガーディアンでは、飛行画面の左側で飛行ジェスチャー、右側の「スワイプで照準」エリアで照準を操作します。下の射撃ボタンを同時に押し続けられます。照準エリアを押しても機体は自動加速しません。射撃ボタンから指を離すと射撃が止まり、一時停止後は改めて押すと再開します。下部のパネルはコンパクトで飛行画面を遮りません。',
+    'On phones, Guardian keeps flight gestures on the left side of the flight view. Drag in the right-side Drag to aim area to adjust the reticle while holding the fire button below. Pressing the aiming area does not accelerate the aircraft. Release the fire button to stop shooting; after a pause, press again to fire. The bottom panel stays compact and clear of the flight view.',
+  ],
   '飞行操作指南': ['飛行操作ガイド', 'Flight controls guide'],
   '从第一步，到自由飞行。': ['最初の一歩から、自由な飛行へ。', 'From your first flight to free exploration.'],
   '关闭操作指南': ['操作ガイドを閉じる', 'Close flight guide'],
@@ -16,9 +27,9 @@ export const GUIDE_MESSAGES = {
     'Try Assisted mode first. It helps stabilize the aircraft and slows down when you release the keys. Wind can still cause gentle drift; use small inputs in the opposite direction to correct it.',
   ],
   '在机库里挑选飞行伙伴': ['ハンガーで飛行の相棒を選ぶ', 'Choose your aircraft in the hangar'],
-  '点击页头当前机型名称，查看六款无人机的游戏同款 3D 缩略图和完整参数。选中机型后可拖动大图旋转，用滚轮或双指缩放，点击「复位」恢复完整视角。CINE 轻影适合低速近景，FLOW 自由式均衡灵活，RACE 疾风追求速度，RANGE 远行者适合平稳巡航；VECTOR 矢量与 FALCON 游隼在运动模式下可达 260 / 360 km/h，适合开阔地带高速飞行。辅助与运动的性能按钮仅用于预览，不会修改当前飞行模式。': [
-    'ページ上部の機体名をクリックすると、6 機種のゲーム内と同じ 3D サムネイルと詳細仕様を確認できます。機体を選び、大きなプレビューをドラッグして回転、ホイールやピンチで拡大縮小します。「リセット」で全体が見える表示に戻せます。CINE ライトは低速で近くの景色を楽しむ飛行、FLOW フリースタイルはバランスのよい自在な飛行、RACE 疾風は速度重視、RANGE エクスプローラーは安定した巡航に向いています。VECTOR ベクターと FALCON ハヤブサはスポーツモードでそれぞれ 260 / 360 km/h に達し、開けた場所での高速飛行に向いています。アシストとスポーツの性能ボタンは確認用で、現在の飛行モードを変更しません。',
-    'Click the current aircraft name in the header to inspect six aircraft with the same 3D models used in flight and their complete specifications. Select an aircraft, drag the large preview to rotate, and scroll or pinch to zoom. Reset restores the full view. CINE Light suits slow close-up flights, FLOW Freestyle is balanced and agile, RACE Swift prioritizes speed, and RANGE Explorer cruises steadily. VECTOR Vector and FALCON Peregrine reach 260 / 360 km/h in Sport mode and suit open areas. The Assisted and Sport performance buttons only preview specifications; they do not change your current flight mode.',
+  '点击页头当前机型名称，查看七款无人机的游戏同款 3D 缩略图和完整参数。选中机型后可拖动大图旋转，用滚轮或双指缩放，点击「复位」恢复完整视角。CINE 轻影适合低速近景，FLOW 自由式均衡灵活，RACE 疾风追求速度，RANGE 远行者适合平稳巡航；VECTOR 矢量与 FALCON 游隼在运动模式下可达 260 / 360 km/h，适合开阔地带高速飞行。辅助与运动的性能按钮仅用于预览，不会修改当前飞行模式。': [
+    'ページ上部の機体名をクリックすると、7 機種のゲーム内と同じ 3D サムネイルと詳細仕様を確認できます。機体を選び、大きなプレビューをドラッグして回転、ホイールやピンチで拡大縮小します。「リセット」で全体が見える表示に戻せます。CINE ライトは低速で近くの景色を楽しむ飛行、FLOW フリースタイルはバランスのよい自在な飛行、RACE 疾風は速度重視、RANGE エクスプローラーは安定した巡航に向いています。VECTOR ベクターと FALCON ハヤブサはスポーツモードでそれぞれ 260 / 360 km/h に達し、開けた場所での高速飛行に向いています。アシストとスポーツの性能ボタンは確認用で、現在の飛行モードを変更しません。',
+    'Click the current aircraft name in the header to inspect seven aircraft with the same 3D models used in flight and their complete specifications. Select an aircraft, drag the large preview to rotate, and scroll or pinch to zoom. Reset restores the full view. CINE Light suits slow close-up flights, FLOW Freestyle is balanced and agile, RACE Swift prioritizes speed, and RANGE Explorer cruises steadily. VECTOR Vector and FALCON Peregrine reach 260 / 360 km/h in Sport mode and suit open areas. The Assisted and Sport performance buttons only preview specifications; they do not change your current flight mode.',
   ],
   '飞行中打开机库会暂停，关闭后仍可决定何时继续；切换须明确点击「返回起点并应用」，本轮进度和弹药会重置。个人最佳按机型、飞行模式与风况分别记录。机型均为游戏改编或虚构配置，高速机的真实原型及纪录来源可在机库查看；电池、镜头、图传和续航为参考设定，当前不模拟耗电。': [
     '飛行中にハンガーを開くと一時停止し、閉じた後も好きなタイミングで再開できます。機体を変更するには「スタートに戻って適用」を押してください。この飛行の進行状況と爆弾がリセットされます。自己ベストは機体、飛行モード、風の設定ごとに記録します。機体はゲーム向けの改編または架空の設定です。高速機の実在するプロトタイプと記録の出典はハンガーで確認できます。バッテリー、レンズ、映像伝送、飛行時間は参考設定で、現在はバッテリー消費をシミュレーションしていません。',
@@ -73,9 +84,9 @@ export const GUIDE_MESSAGES = {
     'Use Day / Night at the top right or press N during flight. Your position, timer and ammunition are preserved.',
   ],
   '在山谷里练习投弹': ['谷で爆弾投下を練習する', 'Practice bomb drops in the valley'],
-  '计时挑战和自由飞行都可投弹。按 V 切换俯视瞄准，从目标上方投放；炸弹会继承无人机的飞行速度，减速悬停更容易命中。每轮携带 6 枚，连续投弹间隔 0.45 秒，用完后自动装填 3 秒。场内有 5 个地面靶标，每个首次命中加 100 分，重新开始会重置靶标和得分。': [
-    'タイムアタックでも自由飛行でも爆弾を投下できます。V で俯瞰照準に切り替え、目標の上から投下してください。爆弾はドローンの速度を引き継ぐため、減速してホバリングすると当てやすくなります。1 回の飛行で 6 発を搭載し、連続投下の間隔は 0.45 秒です。使い切ると 3 秒で自動補充します。地上の標的は 5 個で、各標的への初回命中で 100 点を獲得します。やり直すと標的とスコアがリセットされます。',
-    'You can drop bombs in both Time trial and Free flight. Press V for top-down aim and release above the target. Bombs inherit aircraft velocity, so slow hovering makes hits easier. Each flight carries six bombs with a 0.45-second interval between drops. After they run out, reloading takes three seconds. There are five ground targets; the first hit on each earns 100 points. Restarting resets targets and scores.',
+  '六款原有机型在计时挑战和自由飞行都可投弹。按 V 切换俯视瞄准，从目标上方投放；炸弹会继承无人机的飞行速度，减速悬停更容易命中。每轮携带 6 枚，连续投弹间隔 0.45 秒，用完后自动装填 3 秒。场内有 5 个地面靶标，每个首次命中加 100 分，重新开始会重置靶标和得分。': [
+    '従来の6機種はタイムアタックでも自由飛行でも爆弾を投下できます。V で俯瞰照準に切り替え、目標の上から投下してください。爆弾はドローンの速度を引き継ぐため、減速してホバリングすると当てやすくなります。1 回の飛行で 6 発を搭載し、連続投下の間隔は 0.45 秒です。使い切ると 3 秒で自動補充します。地上の標的は 5 個で、各標的への初回命中で 100 点を獲得します。やり直すと標的とスコアがリセットされます。',
+    'The original six aircraft can drop bombs in both Time trial and Free flight. Press V for top-down aim and release above the target. Bombs inherit aircraft velocity, so slow hovering makes hits easier. Each flight carries six bombs with a 0.45-second interval between drops. After they run out, reloading takes three seconds. There are five ground targets; the first hit on each earns 100 points. Restarting resets targets and scores.',
   ],
   '准备好了': ['準備できました', 'Ready to fly'],
 } satisfies MessageCatalog;

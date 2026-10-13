@@ -11,10 +11,12 @@ import { DEFAULT_MAP_ID, MAPS, getMapSpec } from './game/map-catalog';
 import type { MapId } from './game/map-catalog';
 import { EMPTY_TELEMETRY, formatTime } from './game/types';
 import type { CameraMode, FlightMode, RaceMode, Status } from './game/types';
+import type { GraphicsState } from './game/render-loop';
 import ControlsGuide, { CompactControls } from './components/ControlsGuide';
 import TelemetryBar from './components/TelemetryBar';
 import Minimap from './components/Minimap';
 import TouchControls from './components/TouchControls';
+import AimControls from './components/AimControls';
 import WeaponPanel from './components/WeaponPanel';
 import DroneHangar from './components/DroneHangar';
 import { DEFAULT_DRONE_ID, getDroneSpec } from './game/drone-catalog';
@@ -50,15 +52,18 @@ export default function App() {
   const [mapId, setMapId] = useState<MapId>(DEFAULT_MAP_ID);
   const [notice, setNotice] = useState<NoticeMessage>('');
   const [error, setError] = useState<NoticeMessage>('');
+  const [graphics, setGraphics] = useState<GraphicsState>('ready');
   const [loaded, setLoaded] = useState(false);
   const [mapProgress, setMapProgress] = useState<MapLoadProgress<MapId>>({ ready: [], current: null, total: MAPS.length });
   const [best, setBest] = useState<Record<string, number>>({});
   const [finishedRecordKey, setFinishedRecordKey] = useState<string | null>(null);
   const settingsLocked = status === 'flying' || status === 'paused';
+  const modalOpen = hangar || guide || weatherOpen;
+  const graphicsReady = graphics === 'ready' && !error;
   const selectedDrone = getDroneSpec(droneId);
   const selectedMap = getMapSpec(mapId);
-  const settings = useRef({ mode, flightMode, droneId, windSettings, night, sound, cameraMode, mapId });
-  settings.current = { mode, flightMode, droneId, windSettings, night, sound, cameraMode, mapId };
+  const settings = useRef({ mode, flightMode, droneId, windSettings, night, sound, cameraMode, mapId, obscured: modalOpen });
+  settings.current = { mode, flightMode, droneId, windSettings, night, sound, cameraMode, mapId, obscured: modalOpen };
   const personalBest = useMemo(() => {
     const cached = best[bestTimeKey(droneId, flightMode, windSettings, mapId)];
     if (cached !== undefined) return cached;
@@ -73,7 +78,7 @@ export default function App() {
     const loading = new AbortController();
     const loadingStarted = performance.now();
     let game: FlightEngine | null = null;
-    setLoaded(false); setError(''); setNotice(''); setFinishedRecordKey(null);
+    setLoaded(false); setError(''); setGraphics('ready'); setNotice(''); setFinishedRecordKey(null);
     setMapProgress({ ready: [], current: null, total: MAPS.length });
     setStatus('ready');
     const map = getMapSpec(settings.current.mapId);
@@ -87,6 +92,8 @@ export default function App() {
           status: value => { if (!cancelled) setStatus(value); },
           notice: value => { if (!cancelled) notify(value); },
           cameraMode: value => { if (!cancelled) setCameraMode(value); },
+          graphics: value => { if (!cancelled) setGraphics(value); },
+          failure: value => { if (!cancelled) setError(value); },
           finish: seconds => {
             if (cancelled || !game || engine.current !== game) return;
             const currentMode = game.flightMode;
@@ -113,6 +120,7 @@ export default function App() {
         game.mode = current.mode; game.flightMode = current.flightMode;
         game.setDrone(current.droneId);
         game.setWind(current.windSettings); game.setNight(current.night); game.setCameraMode(current.cameraMode);
+        game.setObscured(current.obscured);
         await game.preloadMaps(progress => { if (!cancelled) setMapProgress(progress); });
         if (cancelled) return;
         setNotice(''); clearTimeout(noticeTimeout.current);
@@ -126,7 +134,9 @@ export default function App() {
       } catch (failure) {
         game?.dispose();
         if (engine.current === game) engine.current = null;
-        if (!cancelled) setError(failure instanceof Error && failure.message.startsWith('飞行模块加载失败')
+        if (!cancelled) setError(failure instanceof Error && (failure.message.startsWith('图形连接已中断') || failure.message.startsWith('飞行画面遇到错误'))
+          ? failure.message
+          : failure instanceof Error && failure.message.startsWith('飞行模块加载失败')
           ? '飞行模块加载失败。请刷新页面，并使用支持 WebAssembly 的新版浏览器。'
           : failure instanceof Error && failure.message.startsWith('地图纹理加载失败')
           ? { key: '地图纹理加载失败：{asset}。请检查网络连接后重新加载。', params: { asset: failure.message.replace('地图纹理加载失败：', '') } }
@@ -141,6 +151,7 @@ export default function App() {
   useEffect(() => { if (engine.current) { engine.current.mode = mode; engine.current.flightMode = flightMode; } }, [mode, flightMode, loaded]);
   useEffect(() => { engine.current?.setWind(windSettings); }, [windSettings, loaded]);
   useEffect(() => { engine.current?.setNight(night); }, [night, loaded]);
+  useEffect(() => { engine.current?.setObscured(modalOpen); }, [modalOpen, loaded]);
   useEffect(() => {
     engine.current?.setAccessibleLabel(t('三维{name}飞行画面，支持键盘、鼠标和触屏手势操作', { name: t(selectedMap.name) }));
   }, [t, mapId, loaded, selectedMap.name]);
@@ -207,14 +218,14 @@ export default function App() {
           <h2><span>{selectedMap.number} /</span> {t(selectedMap.name)}</h2>
           <div className="course-meta"><span>{t('{count} 检查点', { count: selectedMap.checkpoints.length })}</span><i /><span>{t(selectedMap.areaLabel)}</span><i /><span>{t(selectedMap.themeLabel)}</span></div>
           <div className="map-selector">
-            <div className="segment-control" role="group" aria-label={t('选择飞行地图')} aria-describedby="map-switch-help">{MAPS.map(map => <button key={map.id} type="button" disabled={!loaded || Boolean(error)} aria-label={t('切换到{name}', { name: t(map.name) })} aria-pressed={mapId === map.id} className={mapId === map.id ? 'active' : ''} title={t('{name} · 切换地图会返回起点', { name: t(map.name) })} onClick={() => changeMap(map.id)}>{map.id === 'valley' ? t('山谷') : map.id === 'factory' ? t('工厂') : t('海港')}</button>)}</div>
+            <div className="segment-control" role="group" aria-label={t('选择飞行地图')} aria-describedby="map-switch-help">{MAPS.map(map => <button key={map.id} type="button" disabled={!loaded || !graphicsReady} aria-label={t('切换到{name}', { name: t(map.name) })} aria-pressed={mapId === map.id} className={mapId === map.id ? 'active' : ''} title={t('{name} · 切换地图会返回起点', { name: t(map.name) })} onClick={() => changeMap(map.id)}>{map.id === 'valley' ? t('山谷') : map.id === 'factory' ? t('工厂') : t('海港')}</button>)}</div>
             <p id="map-switch-help" className="map-switch-help">{loaded ? t('3 张地图已就绪 · 切换会返回起点') : t('首次进入将准备全部 3 张地图')}</p>
           </div>
           <div className="segment-control" role="group" aria-label={t('游戏模式')}><button disabled={settingsLocked} aria-pressed={mode === 'race'} className={mode === 'race' ? 'active' : ''} onClick={() => changeMode('race')}>{t('计时挑战')}</button><button disabled={settingsLocked} aria-pressed={mode === 'free'} className={mode === 'free' ? 'active' : ''} onClick={() => changeMode('free')}>{t('自由飞行')}</button></div>
           <h3 className="setting-label">{t('飞行模式')}</h3>
           <div className="segment-control" role="group" aria-label={t('飞行模式')}><button disabled={settingsLocked} aria-pressed={flightMode === 'assisted'} className={flightMode === 'assisted' ? 'active' : ''} onClick={() => { setFlightMode('assisted'); engine.current?.reset(); }}>{t('辅助')}</button><button disabled={settingsLocked} aria-pressed={flightMode === 'sport'} className={flightMode === 'sport' ? 'active' : ''} onClick={() => { setFlightMode('sport'); engine.current?.reset(); }}>{t('运动')}</button></div>
-          <button className="primary-button launch-button" onClick={action} disabled={!loaded || Boolean(error)}>{status === 'flying' ? t('暂停飞行') : status === 'paused' ? t('继续飞行') : status === 'finished' ? t('再飞一次') : t('开始飞行')}{status === 'flying' ? <Pause size={19} /> : <ArrowRight size={21} />}</button>
-          {status === 'ready' ? <p className="launch-note">{t('无需下载，即刻起飞')}</p> : <button className="text-button reset-button" onClick={() => engine.current?.reset()}><RotateCcw size={13} />{t('返回起点')}</button>}
+          <button className="primary-button launch-button" onClick={action} disabled={!loaded || !graphicsReady}>{status === 'flying' ? t('暂停飞行') : status === 'paused' ? t('继续飞行') : status === 'finished' ? t('再飞一次') : t('开始飞行')}{status === 'flying' ? <Pause size={19} /> : <ArrowRight size={21} />}</button>
+          {status === 'ready' ? <p className="launch-note">{t('无需下载，即刻起飞')}</p> : <button className="text-button reset-button" disabled={!graphicsReady} onClick={() => engine.current?.reset()}><RotateCcw size={13} />{t('返回起点')}</button>}
           {personalBest ? <div className="personal-best" title={t('{map} · {drone} · {mode}模式', { map: t(selectedMap.name), drone: t(selectedDrone.name), mode: t(flightMode === 'assisted' ? '辅助' : '运动') })}><Trophy size={14} /><span>{t('本图 · 同风况最佳')}</span><strong>{formatTime(personalBest)}</strong></div> : null}
         </section>
         <CompactControls />
@@ -225,19 +236,21 @@ export default function App() {
           <div className="canvas-host" ref={host} />
           <div className="scene-heading"><span className="scene-number">{selectedMap.number}</span><div><strong>{t(selectedMap.name)}</strong><small>{selectedMap.englishName}</small></div></div>
           <button className="fpv-mark view-toggle" aria-label={t('切换到{name}', { name: t(cameraLabels[nextCamera]) })} title={t('按 V 切换追尾、俯视瞄准、第一视角')} onClick={() => engine.current?.cycleCameraMode()}><Camera size={15} /><span>{t(cameraLabels[cameraMode])}</span><span className="view-key">V</span></button>
-          <div className={`crosshair ${cameraMode === 'chase' ? 'chase-crosshair' : ''}`} aria-hidden="true" />
+          <div className={`crosshair ${cameraMode === 'chase' ? 'chase-crosshair' : ''}${telemetry.weapons.kind === 'machine-gun' ? ' gun-crosshair' : ''}`} aria-hidden="true" />
           {status === 'flying' && mode === 'race' ? <div className="target-indicator"><span className="target-dot" />{t('下一检查点 {number}', { number: String(telemetry.checkpoint + 1).padStart(2, '0') })}<span className="target-distance">{distance} m</span></div> : null}
-          {!loaded && !error ? <div className="scene-loading" role="status" aria-live="polite"><Wind size={28} /><span>{t('正在准备全部地图 · {ready} / {total}', { ready: mapProgress.ready.length, total: mapProgress.total })}</span><progress aria-label={t('地图准备进度')} value={mapProgress.ready.length} max={mapProgress.total} /><small className="map-load-details">{MAPS.map(map => `${t(map.name)} ${mapProgress.ready.includes(map.id) ? '✓' : mapProgress.current === map.id ? t('加载中') : t('待加载')}`).join(' · ')}</small></div> : null}
-          {error ? <div className="state-overlay"><div className="state-panel"><h2>{t('画面暂不可用')}</h2><p>{translateNotice(locale, error)}</p><button className="primary-button" onClick={() => location.reload()}>{t('重新加载')}</button></div></div> : null}
-          {status === 'paused' ? <div className="state-overlay"><div className="state-panel pause-panel"><Pause className="state-icon" size={30} /><h2>{t('让风等你一下。')}</h2><p>{t('飞行已暂停，按 P 或点击下方继续。')}</p><button className="primary-button" onClick={action}><Play size={17} />{t('继续飞行')}</button><button className="text-button" onClick={() => engine.current?.reset()}>{t('返回起点')}</button></div></div> : null}
-          {status === 'finished' ? <div className="state-overlay"><div className="state-panel finish-panel"><Trophy className="state-icon" size={32} /><h2>{t('漂亮的一次飞行。')}</h2><p>{t('{count} 个检查点全部完成', { count: selectedMap.checkpoints.length })}</p><strong className="finish-time">{formatTime(telemetry.elapsed)}</strong><div className="finish-best">{!telemetry.recordEligible ? t('本轮调整过风况，不计入个人最佳') : finishedRecordKey === bestTimeKey(droneId, flightMode, windSettings, mapId) ? t('本图同风况最佳 · {time}', { time: formatTime(personalBest ?? telemetry.elapsed) }) : t('本轮已完成 · 新风况用于下次起飞')}</div><button className="primary-button" onClick={() => engine.current?.start()}>{t('再飞一次')}<ArrowRight size={19} /></button><button className="text-button" onClick={() => { setMode('free'); if (engine.current) { engine.current.mode = 'free'; engine.current.start(); } }}>{t('在{name}自由探索', { name: t(selectedMap.name) })}</button></div></div> : null}
+          {!loaded && !error && graphics === 'ready' ? <div className="scene-loading" role="status" aria-live="polite"><Wind size={28} /><span>{t('正在准备全部地图 · {ready} / {total}', { ready: mapProgress.ready.length, total: mapProgress.total })}</span><progress aria-label={t('地图准备进度')} value={mapProgress.ready.length} max={mapProgress.total} /><small className="map-load-details">{MAPS.map(map => `${t(map.name)} ${mapProgress.ready.includes(map.id) ? '✓' : mapProgress.current === map.id ? t('加载中') : t('待加载')}`).join(' · ')}</small></div> : null}
+          {error ? <div className="state-overlay" role="alert"><div className="state-panel"><h2>{t('画面暂不可用')}</h2><p>{translateNotice(locale, error)}</p><button className="primary-button" onClick={() => location.reload()}>{t('重新加载')}</button></div></div> : null}
+          {!error && (graphics === 'lost' || graphics === 'restoring') ? <div className="state-overlay" role="status" aria-live="polite"><div className="state-panel"><h2>{t(graphics === 'lost' ? '画面连接中断' : '正在恢复画面')}</h2><p>{t('飞行进度已保留，恢复后可手动继续。')}</p><button className="primary-button" onClick={() => location.reload()}>{t('重新加载并返回起点')}</button></div></div> : null}
+          {status === 'paused' && graphicsReady ? <div className="state-overlay"><div className="state-panel pause-panel"><Pause className="state-icon" size={30} /><h2>{t('让风等你一下。')}</h2><p>{t('飞行已暂停，按 P 或点击下方继续。')}</p><button className="primary-button" onClick={action}><Play size={17} />{t('继续飞行')}</button><button className="text-button" onClick={() => engine.current?.reset()}>{t('返回起点')}</button></div></div> : null}
+          {status === 'finished' && graphicsReady ? <div className="state-overlay"><div className="state-panel finish-panel"><Trophy className="state-icon" size={32} /><h2>{t('漂亮的一次飞行。')}</h2><p>{t('{count} 个检查点全部完成', { count: selectedMap.checkpoints.length })}</p><strong className="finish-time">{formatTime(telemetry.elapsed)}</strong><div className="finish-best">{!telemetry.recordEligible ? t('本轮调整过风况，不计入个人最佳') : finishedRecordKey === bestTimeKey(droneId, flightMode, windSettings, mapId) ? t('本图同风况最佳 · {time}', { time: formatTime(personalBest ?? telemetry.elapsed) }) : t('本轮已完成 · 新风况用于下次起飞')}</div><button className="primary-button" onClick={() => engine.current?.start()}>{t('再飞一次')}<ArrowRight size={19} /></button><button className="text-button" onClick={() => { setMode('free'); if (engine.current) { engine.current.mode = 'free'; engine.current.start(); } }}>{t('在{name}自由探索', { name: t(selectedMap.name) })}</button></div></div> : null}
           <div className={`flight-notice ${notice ? 'visible' : ''}`} role="status">{translateNotice(locale, notice)}</div>
           <WindPanel wind={telemetry.wind} airSpeed={telemetry.airSpeed} onOpen={openWeather} />
           {status === 'flying' ? <TouchControls onAxis={(axis, value) => engine.current?.setTouch(axis, value)} /> : null}
+          {status === 'flying' && telemetry.weapons.kind === 'machine-gun' ? <AimControls onAim={(dx, dy) => engine.current?.aim(dx, dy)} /> : null}
           {status === 'flying' ? <button className="mobile-pause icon-button" aria-label={t('暂停飞行')} onClick={() => engine.current?.pause()}><Pause size={19} /></button> : null}
         </div>
         <div className="flight-hud">
-          <WeaponPanel ammo={telemetry.weapons.ammo} reloadRemaining={telemetry.weapons.reloadRemaining} score={telemetry.weapons.score} hits={telemetry.weapons.hitTargetIds.length} status={status} onDrop={() => engine.current?.dropBomb()} />
+          <WeaponPanel kind={telemetry.weapons.kind} capacity={telemetry.weapons.capacity} firing={telemetry.weapons.firing} ammo={telemetry.weapons.ammo} reloadRemaining={telemetry.weapons.reloadRemaining} score={telemetry.weapons.score} hits={telemetry.weapons.hitTargetIds.length} status={status} onDrop={() => engine.current?.dropBomb()} onFireChange={held => engine.current?.setFiring(held)} />
           <Minimap key={mapId} mapId={mapId} telemetry={telemetry} mode={mode} />
         </div>
         </div>
@@ -246,6 +259,6 @@ export default function App() {
     </main>
     {weatherOpen ? <WindSettingsDialog settings={windSettings} activeFlight={settingsLocked} onApply={applyWind} onClose={() => setWeatherOpen(false)} /> : null}
     {guide ? <ControlsGuide onClose={() => setGuide(false)} /> : null}
-    {hangar ? <DroneHangar droneId={droneId} flightMode={flightMode} status={status} available={loaded && !error} onApply={applyDrone} onClose={() => setHangar(false)} /> : null}
+    {hangar ? <DroneHangar droneId={droneId} flightMode={flightMode} status={status} available={loaded && graphicsReady} onApply={applyDrone} onClose={() => setHangar(false)} /> : null}
   </div>;
 }

@@ -86,6 +86,9 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
 .chase-crosshair { opacity: .5; width: 18px; height: 18px; }
 .chase-crosshair::before { width: 18px; top: 8px; }
 .chase-crosshair::after { height: 18px; left: 8px; }
+.gun-crosshair { width: 30px; height: 30px; border: 1px solid #eef7c599; border-radius: 50%; opacity: .95; z-index: 3; }
+.gun-crosshair::before { width: 38px; height: 1px; top: 14px; left: -5px; background: #effbc6; }
+.gun-crosshair::after { width: 1px; height: 38px; left: 14px; top: -5px; background: #effbc6; }
 .target-indicator { position: absolute; top: 29px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; color: white; background: #1a2a2680; padding: 9px 12px; border: 1px solid #ffffff30; border-radius: 7px; font-size: 11px; white-space: nowrap; }
 .target-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--lime); }
 .target-distance { border-left: 1px solid #ffffff40; padding-left: 8px; font-variant-numeric: tabular-nums; }
@@ -262,7 +265,7 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
 .hangar-heading h2 { font-size: 27px; margin: 8px 0 5px; font-weight: 700; letter-spacing: -.7px; }
 .hangar-heading p { margin: 0; color: var(--muted); font-size: 12px; }
 .hangar-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 26px; }
-.hangar-models { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.hangar-models { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
 .hangar-model { min-width: 0; padding: 7px 10px 12px; text-align: left; background: #eef1e7; border: 1px solid #dce2d2; border-radius: 11px; }
 .hangar-model.selected { background: #e6eddb; border-color: #879b5f; box-shadow: inset 0 0 0 1px #879b5f; }
 
@@ -388,6 +391,15 @@ kbd { display: inline-flex; justify-content: center; align-items: center; height
 .hangar-finish { display: flex; align-items: center; gap: 7px; margin: 15px 0 10px; color: var(--ink); font-size: 11px; }
 .hangar-finish i { width: 12px; height: 12px; border: 1px solid #00000015; border-radius: 50%; }
 .hangar-selection .hangar-model-note { font-size: 10px; color: var(--muted); }
+@media (min-width: 1400px) {
+  .drone-hangar { width: min(1160px, calc(100% - 32px)); }
+}
+@media (min-width: 801px) and (max-width: 1399px) {
+  .hangar-models { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .hangar-model { display: grid; grid-template-columns: clamp(48px, 6vw, 76px) minmax(0, 1fr); column-gap: 8px; align-content: center; align-items: center; padding: 8px; }
+  .hangar-model > .hangar-model-image { grid-column: 1; grid-row: 1 / 4; height: 74px; aspect-ratio: auto; margin: 0; }
+  .hangar-model > strong, .hangar-model > span:not(.hangar-model-image), .hangar-model > small { grid-column: 2; margin-top: 0; }
+}
 @media (max-width: 800px) {
   .hangar-inspector { gap: 16px; }
   .hangar-inspector .hangar-selection h3 { font-size: 18px; }

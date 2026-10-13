@@ -1,5 +1,5 @@
-export type DroneId = 'cinewhoop' | 'freestyle' | 'racer' | 'explorer' | 'vector' | 'falcon';
-export type DroneFrame = 'ducted' | 'x' | 'stretch-x' | 'long-range' | 'speed-x' | 'streamlined';
+export type DroneId = 'cinewhoop' | 'freestyle' | 'racer' | 'explorer' | 'vector' | 'falcon' | 'guardian';
+export type DroneFrame = 'ducted' | 'x' | 'stretch-x' | 'long-range' | 'speed-x' | 'streamlined' | 'heavy-octo';
 export type DroneFlightMode = 'assisted' | 'sport';
 
 /** Multipliers applied to the shared arcade flight simulation, not hardware measurements. */
@@ -20,6 +20,8 @@ export interface DroneSpec {
   description: string;
   color: string;
   frame: DroneFrame;
+  /** The game loadout. Existing aircraft retain the bomb system by default. */
+  weapon?: 'bomb' | 'machine-gun';
   wheelbaseMm: number;
   propellerInches: number;
   weightGrams: number;
@@ -101,6 +103,13 @@ export const DRONES: readonly DroneSpec[] = Object.freeze([
       summary: '项目合作方记载的平均纪录速度约 657 km/h。',
       url: 'https://airshaper.com/cases/peregreen-v4-fastest-drone', source: 'AirShaper 项目案例',
     },
+  },
+  {
+    id: 'guardian', name: 'GUARDIAN 守卫者', tagline: '八旋翼稳飞，空中靶场', category: '重型八旋翼',
+    description: '虚构游戏机型，橄榄绿机身配青铜色机臂、八个旋翼与高脚滑橇。机腹云台搭载游戏机枪，用于连续射击地面靶标；机身较重，转向与制动更缓，适合低速稳定瞄准。全部硬件、弹药与性能均为游戏设定。',
+    color: '#8b9566', frame: 'heavy-octo', weapon: 'machine-gun', wheelbaseMm: 860, propellerInches: 13, weightGrams: 3800,
+    battery: '8S · 6000 mAh', motors: '8 × 3508 · 650 KV', lens: '广角 150°', videoLink: '数字图传 · 1080p', enduranceMinutes: 12,
+    flight: Object.freeze({ speed: 0.76, climb: 0.75, response: 0.74, brake: 0.65, yaw: 0.63, bank: 0.72 }),
   },
 ]);
 

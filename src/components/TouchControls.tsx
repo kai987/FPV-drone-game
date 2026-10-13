@@ -4,6 +4,7 @@ import { Hand, Move, RotateCw } from 'lucide-react';
 import { useI18n } from '../i18n/context';
 import { TouchGestureController, TOUCH_GESTURE_RADIUS } from './touch-gesture';
 import type { TouchFlightAxes, TouchFlightAxis, TouchGestureSnapshot } from './touch-gesture';
+import { isTouchPointer, useTouchInput } from './useTouchInput';
 import './TouchControls.css';
 
 interface TouchControlsProps {
@@ -11,7 +12,6 @@ interface TouchControlsProps {
 }
 
 const AXES: TouchFlightAxis[] = ['forward', 'strafe', 'climb', 'yaw'];
-const GESTURE_MEDIA = '(max-width: 980px), (pointer: coarse)';
 
 export default function TouchControls({ onAxis }: TouchControlsProps) {
   const { t } = useI18n();
@@ -24,7 +24,7 @@ export default function TouchControls({ onAxis }: TouchControlsProps) {
   const frame = useRef<number | null>(null);
   const alive = useRef(false);
   const lastVisualAt = useRef(0);
-  const [enabled, setEnabled] = useState(() => window.matchMedia(GESTURE_MEDIA).matches);
+  const enabled = useTouchInput();
   const [visual, setVisual] = useState<TouchGestureSnapshot>(() => controller.snapshot(0));
   useLayoutEffect(() => { callback.current = onAxis; }, [onAxis]);
 
@@ -70,21 +70,14 @@ export default function TouchControls({ onAxis }: TouchControlsProps) {
 
   useEffect(() => {
     alive.current = true;
-    const media = window.matchMedia(GESTURE_MEDIA);
-    const updateMedia = () => {
-      setEnabled(media.matches);
-      if (!media.matches) reset();
-    };
     const blur = () => reset();
     const visibility = () => { if (document.hidden) reset(); };
-    media.addEventListener('change', updateMedia);
     window.addEventListener('blur', blur);
     window.addEventListener('resize', blur);
     window.addEventListener('orientationchange', blur);
     document.addEventListener('visibilitychange', visibility);
     return () => {
       alive.current = false;
-      media.removeEventListener('change', updateMedia);
       window.removeEventListener('blur', blur);
       window.removeEventListener('resize', blur);
       window.removeEventListener('orientationchange', blur);
@@ -93,13 +86,15 @@ export default function TouchControls({ onAxis }: TouchControlsProps) {
     };
   }, []);
 
+  useLayoutEffect(() => { if (!enabled) reset(); }, [enabled]);
+
   function position(event: PointerEvent<HTMLDivElement>) {
     const bounds = event.currentTarget.getBoundingClientRect();
     return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
   }
 
   function press(event: PointerEvent<HTMLDivElement>) {
-    if (!alive.current || !enabled || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    if (!alive.current || !enabled || !isTouchPointer(event)) return;
     const { x, y } = position(event);
     if (!controller.begin(event.pointerId, x, y, performance.now())) return;
     event.preventDefault();
@@ -112,6 +107,7 @@ export default function TouchControls({ onAxis }: TouchControlsProps) {
   }
 
   function move(event: PointerEvent<HTMLDivElement>) {
+    if (!isTouchPointer(event)) return;
     const { x, y } = position(event);
     if (controller.move(event.pointerId, x, y)) {
       event.preventDefault();
@@ -120,6 +116,7 @@ export default function TouchControls({ onAxis }: TouchControlsProps) {
   }
 
   function release(event: PointerEvent<HTMLDivElement>) {
+    if (!isTouchPointer(event)) return;
     if (!controller.end(event.pointerId)) return;
     event.preventDefault();
     event.stopPropagation();

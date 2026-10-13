@@ -170,6 +170,17 @@
   color: #e5d896;
 }
 
+.weapon-panel.weapon-panel-gun .weapon-panel-drop {
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.weapon-panel.weapon-panel-firing .weapon-panel-drop {
+  background: #ffcf83;
+  border-color: #ffe4b2;
+}
+
 @media (max-width: 800px) {
   .weapon-panel {
     bottom: 156px;
@@ -270,6 +281,7 @@
   .app-shell .flight-hud .weapon-panel .weapon-panel-drop { min-width: 0; min-height: 44px; height: 44px; flex-direction: column; gap: 2px; font-size: 10px; line-height: 12px; padding: 3px; }
   .app-shell .flight-hud .weapon-panel .weapon-panel-drop svg { width: 13px; height: 13px; }
   .app-shell .flight-hud .weapon-panel.weapon-panel-reloading .weapon-panel-drop svg { display: none; }
+  .app-shell .flight-hud .weapon-panel.weapon-panel-gun .weapon-panel-drop svg { display: none; }
   .app-shell .flight-hud .weapon-panel .weapon-panel-drop span { max-width: 100%; white-space: normal; }
   .app-shell .flight-hud .weapon-panel .weapon-panel-drop kbd { display: none; }
 }

@@ -18,10 +18,10 @@ function simulate(id: DroneId, mode: DroneFlightMode, input: FlightInput, second
   return state;
 }
 
-test('six fictional catalogue entries have distinct frames and retain freestyle as the default', () => {
-  assert.deepEqual(DRONES.map(drone => drone.id), ['cinewhoop', 'freestyle', 'racer', 'explorer', 'vector', 'falcon']);
-  assert.equal(new Set(DRONES.map(drone => drone.frame)).size, 6);
-  assert.equal(new Set(DRONES.map(drone => drone.color)).size, 6);
+test('seven fictional catalogue entries have distinct frames and retain freestyle as the default', () => {
+  assert.deepEqual(DRONES.map(drone => drone.id), ['cinewhoop', 'freestyle', 'racer', 'explorer', 'vector', 'falcon', 'guardian']);
+  assert.equal(new Set(DRONES.map(drone => drone.frame)).size, 7);
+  assert.equal(new Set(DRONES.map(drone => drone.color)).size, 7);
   assert.equal(DEFAULT_DRONE_ID, 'freestyle');
   assert.equal(getDroneSpec('unknown').id, DEFAULT_DRONE_ID);
   assert.match(DRONE_CATALOG_NOTE, /虚构游戏机型/);
@@ -31,6 +31,19 @@ test('six fictional catalogue entries have distinct frames and retain freestyle 
     assert.ok(spec.wheelbaseMm > 0 && spec.propellerInches > 0 && spec.weightGrams > 0 && spec.enduranceMinutes > 0);
     for (const label of [spec.name, spec.description, spec.battery, spec.motors, spec.lens, spec.videoLink]) assert.ok(label.length > 0);
     assert.ok(Object.values(spec.flight).every(value => Number.isFinite(value) && value > 0));
+  }
+});
+
+test('Guardian selects the game machine gun and handles more slowly than the default aircraft', () => {
+  const guardian = getDroneSpec('guardian');
+  assert.equal(guardian.weapon, 'machine-gun');
+  assert.equal(guardian.reference, undefined);
+  assert.match(guardian.description, /全部硬件、弹药与性能均为游戏设定/);
+  for (const drone of DRONES.filter(spec => spec.id !== 'guardian')) assert.equal(drone.weapon ?? 'bomb', 'bomb');
+  for (const mode of modes) {
+    const heavy = getFlightConfig('guardian', mode), standard = getFlightConfig(DEFAULT_DRONE_ID, mode);
+    assert.ok(heavy.speed < standard.speed && heavy.climbSpeed < standard.climbSpeed);
+    assert.ok(heavy.yawSpeed < standard.yawSpeed && heavy.brake < standard.brake && heavy.response < standard.response);
   }
 });
 
@@ -127,7 +140,7 @@ test('selected profiles change normalized acceleration, braking, yaw and bank', 
   }
 });
 
-test('six rendered airframes have distinct silhouettes and only cinewhoop has four hollow ducts', () => {
+test('seven rendered airframes have distinct silhouettes and only cinewhoop has four hollow ducts', () => {
   const sizes = new Map<DroneId, THREE.Vector3>();
   for (const spec of DRONES) {
     const drone = createDrone(spec.id);
@@ -162,12 +175,14 @@ test('six rendered airframes have distinct silhouettes and only cinewhoop has fo
   const explorer = sizes.get('explorer')!;
   const vector = sizes.get('vector')!;
   const falcon = sizes.get('falcon')!;
+  const guardian = sizes.get('guardian')!;
   assert.ok(cine.x < standard.x && cine.z < standard.z);
   assert.ok(race.z / race.x > standard.z / standard.x);
   assert.ok(explorer.x > standard.x && explorer.z > standard.z && explorer.y > standard.y);
   assert.ok(Math.abs(vector.x / vector.z - 1) < 0.05, 'VECTOR uses a symmetric speed X frame');
   assert.ok(falcon.y > falcon.x && falcon.y > falcon.z, 'FALCON stands along its +Y thrust axis at rest');
   assert.ok(falcon.y < 3.2, 'FALCON stays within the flight camera and ground clearance budget');
+  assert.ok(guardian.x > explorer.x && guardian.z > explorer.z && guardian.y > explorer.y, 'GUARDIAN has a wider eight-rotor stance and taller landing gear');
 });
 
 test('assembled aircraft have finite geometry, tilted FPV cameras and clear swept rotor discs', () => {
@@ -190,7 +205,7 @@ test('assembled aircraft have finite geometry, tilted FPV cameras and clear swep
         assert.ok(Array.from(attribute.array).every(Number.isFinite), `${spec.id} has invalid geometry`);
       }
     });
-    assert.equal(rotors.length, 4, 'each quadcopter has four independent motor/propeller assemblies');
+    assert.equal(rotors.length, spec.id === 'guardian' ? 8 : 4, 'each aircraft has the correct independent motor/propeller assemblies');
     assert.ok(meshes < 65 && triangles < 40_000, `${spec.id} must keep the detailed model within its render budget`);
     const fpvCamera = drone.model.getObjectByName(spec.id === 'falcon' ? 'Axial FPV camera' : 'Tilted FPV camera')!;
     assert.ok(fpvCamera, 'an actual FPV camera is present');
@@ -222,6 +237,28 @@ test('assembled aircraft have finite geometry, tilted FPV cameras and clear swep
     });
     drone.dispose();
   }
+});
+
+test('Guardian muzzle follows the independent gun pivot without moving its aircraft frame', () => {
+  const drone = createDrone('guardian');
+  try {
+    const pivot = drone.model.getObjectByName('gun-pivot')!;
+    const muzzle = drone.model.getObjectByName('gun-muzzle')!;
+    const frame = drone.model.getObjectByName('GUARDIAN eight-arm frame')!;
+    assert.ok(pivot && muzzle && frame);
+    assert.equal(muzzle.parent, pivot);
+    assert.ok(muzzle.position.z < -0.8, 'muzzle lies at the visible forward barrel tip');
+    const initialPosition = muzzle.getWorldPosition(new THREE.Vector3());
+    const frameTransform = frame.matrixWorld.clone();
+    pivot.rotation.set(-0.35, 0.2, 0);
+    drone.update(0, true, 0); drone.update(0.1, true, 20);
+    drone.model.updateMatrixWorld(true);
+    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(muzzle.getWorldQuaternion(new THREE.Quaternion()));
+    assert.ok(direction.y < -0.3 && direction.z < -0.8, 'the engine can aim the visible barrel down and forward');
+    assert.ok(muzzle.getWorldPosition(new THREE.Vector3()).distanceTo(initialPosition) > 0.2);
+    assert.deepEqual(frame.matrixWorld.elements, frameTransform.elements);
+    assert.equal(pivot.rotation.x, -0.35, 'rotor updates preserve engine-controlled aim');
+  } finally { drone.dispose(); }
 });
 
 test('switching models can release every shared part once without disposing another model', () => {

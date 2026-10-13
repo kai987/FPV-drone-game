@@ -68,6 +68,22 @@ export class FlightAudio {
   }
   checkpoint() { this.tone(680, 1100, 0.25, 0.08); }
   drop() { this.tone(520, 170, 0.2, 0.055); }
+  /** A short synthesized arcade pop, bounded like the other transient voices. */
+  fire() {
+    if (!this.enabled || !this.context || !this.master || !this.noiseBuffer || this.disposed) return;
+    this.tone(180, 65, 0.07, 0.045, 'triangle');
+    const now = this.context.currentTime;
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    source.buffer = this.noiseBuffer;
+    filter.type = 'bandpass'; filter.frequency.value = 1400; filter.Q.value = 0.7;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.11, now + 0.003);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.085);
+    source.connect(filter); filter.connect(gain); gain.connect(this.master);
+    this.track(source, [source, filter, gain]); source.start(now); source.stop(now + 0.09);
+  }
   /** Low impact, a short noisy transient and a soft tail; water gets a lighter splash. */
   explosion(waterImpact = false) {
     if (!this.enabled || !this.context || !this.master || !this.noiseBuffer || this.disposed) return;

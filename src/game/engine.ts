@@ -32,6 +32,12 @@ import { createLoadingMetrics } from './loading-metrics';
 import type { LoadingMetrics } from './loading-metrics';
 import { FixedSimulationClock } from './simulation-clock';
 import { RenderPerformanceMonitor } from './render-performance';
+import { createGunSimulation } from './gun-simulation';
+import type { GunSimulation } from './gun-simulation';
+import { GUN_CAPACITY, GUN_RANGE, GUN_SHOTS_PER_SECOND } from './gun';
+import { createGunVisuals } from './gun-visuals';
+import { RenderLoop, renderModeFor } from './render-loop';
+import type { GraphicsState } from './render-loop';
 
 export interface EngineEvents {
   telemetry: (value: Telemetry) => void;
@@ -39,6 +45,8 @@ export interface EngineEvents {
   notice: (value: NoticeMessage) => void;
   finish: (seconds: number) => void;
   cameraMode: (value: CameraMode) => void;
+  graphics: (value: GraphicsState) => void;
+  failure: (value: NoticeMessage) => void;
 }
 
 interface MapResources {
@@ -48,6 +56,8 @@ interface MapResources {
   simulation: FlightSimulation;
   weapons: WeaponSimulation;
   visuals: ReturnType<typeof createWeaponVisuals>;
+  gun: GunSimulation;
+  gunVisuals: ReturnType<typeof createGunVisuals>;
   dispose(): void;
 }
 
@@ -59,7 +69,10 @@ export class FlightEngine {
   private activeMap: MapResources;
   private prepared = false;
   private preparing: Promise<void> | null = null;
-  private compilation: Promise<THREE.Object3D> | null = null;
+  private graphicsState: GraphicsState = 'ready';
+  private fatalMessage = '';
+  private obscured = false;
+  private readonly renderLoop = new RenderLoop(time => this.tick(time));
   private readonly warmupTarget = new THREE.WebGLRenderTarget(256, 144);
   private readonly panoramaResolution: 3548 | 7096;
   private night = false;
@@ -68,6 +81,18 @@ export class FlightEngine {
   private get mapSpec() { return this.activeMap.spec; }
   private get weaponSimulation() { return this.activeMap.weapons; }
   private get weaponVisuals() { return this.activeMap.visuals; }
+  private get gun() { return this.activeMap.gun; }
+  private get gunVisuals() { return this.activeMap.gunVisuals; }
+  private get hasGun() { return getDroneSpec(this.selectedDroneId).weapon === 'machine-gun'; }
+  private readonly firingSources = new Set<'ui' | 'keyboard' | 'mouse'>();
+  private get firing() { return this.hasGun && this.status === 'flying' && this.firingSources.size > 0; }
+  private readonly gunOrigin = new THREE.Vector3();
+  private readonly gunDirection = new THREE.Vector3();
+  private readonly gunLocalDirection = new THREE.Vector3();
+  private readonly gunAimPoint = new THREE.Vector3();
+  private readonly gunParentRotation = new THREE.Quaternion();
+  private readonly gunForward = new THREE.Vector3(0, 0, -1);
+  private gunAimReady = false;
   private get simulation() { return this.activeMap.simulation; }
   get mapId(): MapId { return this.activeMap.spec.id; }
   private camera = new THREE.PerspectiveCamera(68, 1, 0.2, 10000);
@@ -92,8 +117,9 @@ export class FlightEngine {
   });
   private status: Status = 'ready';
   private keys = new Set<string>();
-  private frame = 0;
   private lastTime = 0;
+  private sceneTime = 0;
+  private renderedFrames = 0;
   private lastEmit = 0;
   private lastPerformanceMetrics: unknown;
   private elapsed = 0;
@@ -142,7 +168,8 @@ export class FlightEngine {
       if (signal.aborted) throw new DOMException('Loading cancelled', 'AbortError');
       return new FlightEngine(host, events, core, mapId, renderer, assets, metrics, resolution);
     } catch (error) {
-      assets?.dispose(); renderer?.dispose(); renderer?.forceContextLoss();
+      assets?.dispose(); renderer?.dispose();
+      if (renderer && !renderer.getContext().isContextLost()) renderer.forceContextLoss();
       throw error;
     }
   }
@@ -198,8 +225,13 @@ export class FlightEngine {
     window.addEventListener('blur', this.blur);
     document.addEventListener('visibilitychange', this.visibility);
     document.addEventListener('mousemove', this.mousemove);
+    document.addEventListener('mousedown', this.mousedown);
+    document.addEventListener('mouseup', this.mouseup);
     document.addEventListener('pointerlockchange', this.pointerlockchange);
     this.renderer.domElement.addEventListener('click', this.lockPointer);
+    this.renderer.domElement.addEventListener('webglcontextlost', this.contextLost);
+    this.renderer.domElement.addEventListener('webglcontextrestored', this.contextRestored);
+    this.syncRenderMode();
     this.copyPreviousPose(); this.refreshWind(); this.resize();
   }
   private createMap(id: MapId): MapResources {
@@ -210,6 +242,8 @@ export class FlightEngine {
     let simulation: FlightSimulation | undefined;
     let weapons: WeaponSimulation | undefined;
     let visuals: ReturnType<typeof createWeaponVisuals> | undefined;
+    let gun: GunSimulation | undefined;
+    let gunVisuals: ReturnType<typeof createGunVisuals> | undefined;
     try {
       kernel = createWorldKernel(this.runtime, id);
       world = createWorld(this.runtime, kernel, {
@@ -221,27 +255,36 @@ export class FlightEngine {
       simulation = createWorldFlightSimulation(this.runtime, kernel.handle);
       weapons = createWeaponSimulation(this.runtime, kernel, spec.targets);
       visuals = createWeaponVisuals(this.runtime, kernel, spec.targets);
-      world.scene.add(visuals.group);
+      gun = createGunSimulation(this.runtime, kernel, spec.targets);
+      gunVisuals = createGunVisuals();
+      world.scene.add(visuals.group, gunVisuals.group);
       world.setNight(this.night); visuals.setNight(this.night);
       stopCpu();
       let disposed = false;
-      return { spec, kernel, world, simulation, weapons, visuals, dispose() {
+      return { spec, kernel, world, simulation, weapons, visuals, gun, gunVisuals, dispose() {
         if (disposed) return;
         disposed = true;
-        simulation!.dispose(); weapons!.dispose(); visuals!.dispose(); world!.dispose(); kernel!.dispose();
+        simulation!.dispose(); weapons!.dispose(); visuals!.dispose(); gun!.dispose(); gunVisuals!.dispose(); world!.dispose(); kernel!.dispose();
       } };
     } catch (error) {
-      simulation?.dispose(); weapons?.dispose(); visuals?.dispose(); world?.dispose(); kernel?.dispose();
+      simulation?.dispose(); weapons?.dispose(); visuals?.dispose(); gun?.dispose(); gunVisuals?.dispose(); world?.dispose(); kernel?.dispose();
       throw error;
     }
   }
   private attachAircraft(map: MapResources) {
     map.world.scene.add(this.drone.model, this.headlight, this.headlightTarget);
   }
+  private assertContext() {
+    if (this.disposed) throw new Error('Flight engine has been disposed');
+    if (this.graphicsState === 'failed') throw new Error(this.fatalMessage);
+    if (this.graphicsState === 'lost' || this.renderer.getContext().isContextLost()) {
+      throw new Error('图形连接已中断，请重新加载画面。');
+    }
+  }
   private async prepareMap(map: MapResources) {
     // Let React paint the progress before CPU scene preparation and GPU work.
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    if (this.disposed) throw new Error('Flight engine has been disposed');
+    this.assertContext();
     const stopGpu = this.loadingMetrics.measure(`${map.spec.id}.gpu`);
     this.attachAircraft(map);
     const { spawn, spawnYaw } = map.spec;
@@ -255,11 +298,13 @@ export class FlightEngine {
       map.world.setNight(night); map.visuals.setNight(night);
       this.headlight.intensity = night ? 950 : 0;
       const stopCompile = this.loadingMetrics.measure(`${map.spec.id}.${night ? 'night' : 'day'}.compile`);
-      const compiling = this.renderer.compileAsync(map.world.scene, this.camera);
-      this.compilation = compiling;
-      try { await compiling; } finally { if (this.compilation === compiling) this.compilation = null; }
+      // compileAsync owns an uncancellable program poll which can outlive a lost
+      // context. Compile the same materials, yield, then guard the upload instead.
+      this.renderer.compile(map.world.scene, this.camera);
+      this.assertContext();
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      this.assertContext();
       stopCompile();
-      if (this.disposed) throw new Error('Flight engine has been disposed');
       const previousTarget = this.renderer.getRenderTarget();
       const stopUpload = this.loadingMetrics.measure(`${map.spec.id}.${night ? 'night' : 'day'}.upload`);
       try {
@@ -267,6 +312,7 @@ export class FlightEngine {
         this.renderer.setRenderTarget(this.warmupTarget);
         this.renderer.render(map.world.scene, this.camera);
       } finally { this.renderer.setRenderTarget(previousTarget); }
+      this.assertContext();
       stopUpload();
     }
     map.world.setNight(this.night); map.visuals.setNight(this.night);
@@ -280,12 +326,14 @@ export class FlightEngine {
         this.renderer.domElement.dataset.preloadedMaps = progress.ready.join(',');
         onProgress(progress);
       });
-      if (this.disposed) throw new Error('Flight engine has been disposed');
+      this.assertContext();
       this.prepared = true; this.snapCamera = true;
       this.setNight(this.night);
       this.attachAircraft(this.activeMap);
       this.tick(performance.now());
-      // Measured through the first visible frame, the same point at which App enables flight.
+      this.assertContext();
+      this.syncRenderMode();
+      // Maps are ready here; include the first draw when no dialog or hidden page suppresses it.
       const measurements = this.loadingMetrics.snapshot();
       this.renderer.domElement.dataset.loadingMetrics = JSON.stringify(measurements);
       this.renderer.domElement.dataset.initializationMs = String(measurements.total);
@@ -294,7 +342,7 @@ export class FlightEngine {
   }
   /** Selects an already prepared scene without rebuilding WebGL or its Rust services. */
   setMap(id: MapId): boolean {
-    if (this.disposed || !this.prepared) return false;
+    if (this.disposed || !this.prepared || this.graphicsState !== 'ready') return false;
     if (id === this.mapId) return true;
     this.activeMap = this.maps.getReady(id);
     this.attachAircraft(this.activeMap);
@@ -317,8 +365,60 @@ export class FlightEngine {
     const { width, height } = this.host.getBoundingClientRect();
     this.renderer.setSize(Math.max(width, 1), Math.max(height, 1));
     this.camera.aspect = width / Math.max(height, 1); this.camera.updateProjectionMatrix();
+    this.renderLoop.invalidate();
+  };
+  private get canFly() {
+    return !this.disposed && this.prepared && this.graphicsState === 'ready' && !this.obscured && !document.hidden;
+  }
+  private syncRenderMode() {
+    const mode = renderModeFor({ prepared: this.prepared && !this.disposed, visible: !document.hidden,
+      obscured: this.obscured, graphics: this.graphicsState, status: this.status });
+    this.renderer.domElement.dataset.renderMode = mode;
+    this.renderer.domElement.dataset.graphicsState = this.graphicsState;
+    this.renderLoop.setMode(mode);
+  }
+  /** Menus may open during initial loading; remember suppression until maps are ready. */
+  setObscured(obscured: boolean) {
+    if (this.disposed || this.obscured === obscured) return;
+    this.obscured = obscured;
+    if (obscured) this.pause();
+    this.lastTime = 0;
+    this.syncRenderMode();
+    this.renderLoop.invalidate();
+  }
+  private clearInput() {
+    this.keys.clear(); this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
+    this.firingSources.clear(); this.gunAimReady = false;
+    this.audio.update(0, false);
+    if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
+  }
+  private fail(message: string) {
+    if (this.disposed || this.graphicsState === 'failed') return;
+    this.graphicsState = 'failed';
+    this.fatalMessage = message;
+    this.pause(); this.clearInput(); this.syncRenderMode();
+    this.events.graphics('failed'); this.events.failure(message);
+  }
+  private contextLost = (event?: Event) => {
+    event?.preventDefault();
+    if (this.disposed || this.graphicsState === 'failed') return;
+    // Startup has not established a playable scene; offer a clean initialization.
+    if (!this.prepared) { this.fail('图形连接已中断，请重新加载画面。'); return; }
+    this.graphicsState = 'lost';
+    this.pause(); this.clearInput(); this.lastTime = 0;
+    this.syncRenderMode(); this.events.graphics('lost');
+  };
+  private contextRestored = () => {
+    if (this.disposed || this.graphicsState !== 'lost') return;
+    // Three has recreated its renderer by this point. Re-upload from the current
+    // CPU scene, preserving the Rust state and the player's position and score.
+    this.graphicsState = 'restoring'; this.lastTime = 0; this.snapCamera = true;
+    this.renderPerformance.reset();
+    this.resize();
+    this.events.graphics('restoring'); this.syncRenderMode(); this.renderLoop.invalidate();
   };
   private keydown = (event: KeyboardEvent) => {
+    if (!this.canFly) return;
     const target = event.target instanceof Element ? event.target : null;
     if (event.defaultPrevented || target?.closest('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"]')
       || document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')
@@ -331,25 +431,45 @@ export class FlightEngine {
     }
     if (event.code === 'KeyR' && !event.repeat && this.status !== 'ready') { event.preventDefault(); this.start(); return; }
     if (this.status !== 'flying') return;
+    if (event.code === 'KeyF' && this.hasGun) { event.preventDefault(); if (!event.repeat) this.firingSources.add('keyboard'); return; }
     if (event.code === 'KeyB') { event.preventDefault(); if (!event.repeat) this.dropBomb(); return; }
     if (['KeyW','KeyS','KeyA','KeyD','KeyQ','KeyE','Space','ShiftLeft','ShiftRight','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.code)) {
       event.preventDefault(); this.keys.add(event.code);
     }
   };
-  private keyup = (event: KeyboardEvent) => { this.keys.delete(event.code); };
-  private blur = () => { this.keys.clear(); this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 }; if (this.status === 'flying') this.pause(); };
-  private visibility = () => { if (document.hidden) this.blur(); };
+  private keyup = (event: KeyboardEvent) => { this.keys.delete(event.code); if (event.code === 'KeyF') this.firingSources.delete('keyboard'); };
+  private blur = () => { this.pause(); this.clearInput(); };
+  private visibility = () => {
+    if (document.hidden) this.blur();
+    this.lastTime = 0; this.syncRenderMode(); this.renderLoop.invalidate();
+  };
   private lockPointer = () => {
-    if (this.status === 'flying' && matchMedia('(pointer: fine)').matches) {
+    if (this.canFly && this.status === 'flying' && matchMedia('(pointer: fine)').matches) {
       void this.renderer.domElement.requestPointerLock()?.catch(() => this.events.notice('鼠标视角暂不可用，可继续使用键盘飞行'));
     }
   };
   private pointerlockchange = () => { if (!document.pointerLockElement && this.status === 'flying') this.pause(); };
   private mousemove = (event: MouseEvent) => {
-    if (document.pointerLockElement !== this.renderer.domElement || this.status !== 'flying') return;
+    if (!this.canFly || document.pointerLockElement !== this.renderer.domElement || this.status !== 'flying') return;
     this.state.yaw -= event.movementX * 0.0025 * getDroneSpec(this.selectedDroneId).flight.yaw;
     this.state.pitch = THREE.MathUtils.clamp(this.state.pitch - event.movementY * 0.0025, -0.7, 0.7);
   };
+  private mousedown = (event: MouseEvent) => {
+    if (this.canFly && event.button === 0 && document.pointerLockElement === this.renderer.domElement && this.status === 'flying' && this.hasGun) {
+      this.firingSources.add('mouse');
+    }
+  };
+  private mouseup = (event: MouseEvent) => { if (event.button === 0) this.firingSources.delete('mouse'); };
+  /** Pointer owners release independently, so keyboard and touch cannot latch each other. */
+  setFiring(pressed: boolean) {
+    if (pressed && this.canFly && this.status === 'flying' && this.hasGun) this.firingSources.add('ui');
+    else this.firingSources.delete('ui');
+  }
+  aim(deltaX: number, deltaY: number) {
+    if (!this.canFly || this.status !== 'flying' || !this.hasGun || !Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return;
+    this.state.yaw -= THREE.MathUtils.clamp(deltaX, -100, 100) * 0.004;
+    this.state.pitch = THREE.MathUtils.clamp(this.state.pitch - THREE.MathUtils.clamp(deltaY, -100, 100) * 0.004, -0.75, 0.75);
+  }
   setNight(enabled: boolean) {
     if (this.disposed) return;
     this.night = enabled;
@@ -358,6 +478,7 @@ export class FlightEngine {
     this.maps.forEach(map => { map.world.setNight(enabled); map.visuals.setNight(enabled); });
     this.headlight.intensity = enabled ? 950 : 0;
     this.renderer.toneMappingExposure = enabled ? 1.05 : 1.2;
+    this.renderLoop.invalidate();
   }
   setWind(settings: WindSettings) {
     if (this.disposed) return;
@@ -382,14 +503,17 @@ export class FlightEngine {
     this.events.notice({ key: '已选择 {name} · 参考参数可在机库查看', params: { name: getDroneSpec(id).name } });
     return true;
   }
-  setTouch(axis: keyof typeof this.touch, value: number) { this.touch[axis] = value; }
+  setTouch(axis: keyof typeof this.touch, value: number) {
+    this.touch[axis] = this.canFly && this.status === 'flying' && Number.isFinite(value) ? THREE.MathUtils.clamp(value, -1, 1) : 0;
+  }
   setCameraMode(mode: CameraMode) {
     if (this.cameraMode === mode) return;
-    this.cameraMode = mode; this.snapCamera = true; this.events.cameraMode(mode);
+    this.cameraMode = mode; this.snapCamera = true; this.gunAimReady = false; this.events.cameraMode(mode);
+    this.renderLoop.invalidate();
   }
   cycleCameraMode() { this.setCameraMode(this.cameraMode === 'chase' ? 'bomb' : this.cameraMode === 'bomb' ? 'fpv' : 'chase'); }
   dropBomb() {
-    if (this.status !== 'flying') return;
+    if (!this.canFly || this.status !== 'flying' || this.hasGun) return;
     if (this.weaponSimulation.drop(this.state.position, this.state.velocity)) {
       this.weapons = this.weaponSimulation.state;
       this.audio.drop(); this.emit();
@@ -397,44 +521,67 @@ export class FlightEngine {
     }
   }
   private setStatus(status: Status) {
+    if (status !== 'flying') this.clearInput();
     if (status !== this.status) {
+      this.gunAimReady = false;
       if (status === 'flying') this.simulationClock.reset(performance.now());
       this.renderPerformance.reset();
       this.copyPreviousPose();
+      this.lastTime = 0;
     }
     this.status = status; this.events.status(status);
+    this.syncRenderMode(); this.renderLoop.invalidate();
   }
   start() {
-    if (this.disposed || !this.prepared) return;
+    if (!this.canFly) return;
     this.state = this.initialState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
     this.windClock = 0; this.unchangedWind = true;
     this.refreshWind();
     this.weapons = this.weaponSimulation.reset(); this.previousWeapons = this.weapons;
+    this.gun.reset(); this.firingSources.clear(); this.gunAimReady = false;
     this.snapCamera = true;
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
     this.copyPreviousPose(); this.simulationClock.reset(performance.now()); this.renderPerformance.reset();
     this.collisionCooldown = 0; this.setStatus('flying'); this.emit();
-    this.events.notice('起飞成功 · B 投弹，V 切换俯视瞄准 · 下方有练习靶标');
+    this.events.notice(this.hasGun ? '起飞成功 · 长按 F 或射击按钮开火，拖动瞄准区调整准星' : '起飞成功 · B 投弹，V 切换俯视瞄准 · 下方有练习靶标');
   }
   pause() {
     if (this.status !== 'flying') return;
     this.setStatus('paused'); this.keys.clear(); this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
-    if (document.pointerLockElement) document.exitPointerLock(); this.emit();
+    this.emit();
   }
-  togglePause() { if (this.status === 'flying') this.pause(); else if (this.status === 'paused') this.setStatus('flying'); }
+  togglePause() { if (this.status === 'flying') this.pause(); else if (this.status === 'paused' && this.canFly) this.setStatus('flying'); }
   reset() {
+    if (this.disposed || this.graphicsState !== 'ready') return;
     this.setStatus('ready'); this.state = this.initialState(); this.elapsed = 0; this.checkpoint = 0; this.keys.clear();
     this.windClock = 0; this.unchangedWind = true; this.collisionCooldown = 0;
     this.refreshWind();
     this.weapons = this.weaponSimulation.reset(); this.previousWeapons = this.weapons;
+    this.gun.reset(); this.gunVisuals.update(this.gun.state); this.firingSources.clear(); this.gunAimReady = false;
     this.copyPreviousPose(); this.simulationClock.reset(performance.now()); this.renderPerformance.reset();
     this.snapCamera = true; this.events.notice('');
     this.touch = { forward: 0, strafe: 0, climb: 0, yaw: 0 };
-    if (document.pointerLockElement) document.exitPointerLock(); this.emit();
+    this.emit();
   }
   private copyPreviousPose() {
     Object.assign(this.previousPose.position, this.state.position);
     this.previousPose.yaw = this.state.yaw; this.previousPose.pitch = this.state.pitch; this.previousPose.roll = this.state.roll;
+  }
+  private updateGunMount() {
+    this.camera.getWorldDirection(this.gunDirection);
+    const pivot = this.drone.model.getObjectByName('gun-pivot');
+    const muzzle = this.drone.model.getObjectByName('gun-muzzle');
+    if (pivot?.parent && muzzle) {
+      pivot.getWorldPosition(this.gunOrigin);
+      this.gunAimPoint.copy(this.camera.position).addScaledVector(this.gunDirection, GUN_RANGE);
+      const lastShot = this.gun.state.shots.at(-1);
+      if (lastShot && lastShot.age < 1 / GUN_SHOTS_PER_SECOND) this.gunAimPoint.set(lastShot.to.x, lastShot.to.y, lastShot.to.z);
+      this.gunLocalDirection.copy(this.gunAimPoint).sub(this.gunOrigin).normalize();
+      pivot.parent.getWorldQuaternion(this.gunParentRotation).invert();
+      this.gunLocalDirection.applyQuaternion(this.gunParentRotation);
+      pivot.quaternion.setFromUnitVectors(this.gunForward, this.gunLocalDirection);
+      muzzle.getWorldPosition(this.gunOrigin);
+    } else this.gunOrigin.set(this.state.position.x, this.state.position.y - 0.5, this.state.position.z);
   }
   private stepSimulation = (dt: number) => {
     this.copyPreviousPose();
@@ -475,20 +622,48 @@ export class FlightEngine {
         ? { key: '全部靶标命中 · 总得分 {score} · R 重新挑战', params: { score: this.weapons.score } }
         : { key: '命中靶标 +{points} · {hits} / {total}', params: { points: weaponEvents.hits * 100, hits: this.weapons.hitTargetIds.length, total: this.mapSpec.targets.length } });
     }
+    if (this.hasGun) {
+      const { position, yaw, pitch, roll, velocity } = this.state;
+      const forward = -Math.sin(yaw) * velocity.x - Math.cos(yaw) * velocity.z;
+      this.drone.model.position.set(position.x, position.y, position.z);
+      this.drone.model.rotation.set(pitch - forward * 0.004, yaw, roll);
+      this.updateGunMount();
+      const ammoBefore = this.gun.state.ammo;
+      // Shots use the last visible reticle. A camera cut must be presented before
+      // firing, so a held trigger cannot shoot along the previous camera mode.
+      const gunEvents = this.gun.step(dt, this.firing && this.gunAimReady, this.gunOrigin, this.gunDirection, this.camera.position);
+      if (gunEvents.shots > 0) this.audio.fire();
+      if (ammoBefore > 0 && gunEvents.state.ammo === 0) this.events.notice('机枪装填中 · 保持按压可继续射击');
+      if (gunEvents.hits > 0) {
+        const { score, hitTargetIds } = gunEvents.state;
+        this.events.notice(hitTargetIds.length === this.mapSpec.targets.length
+          ? { key: '全部靶标命中 · 总得分 {score} · R 重新挑战', params: { score } }
+          : { key: '命中靶标 +{points} · {hits} / {total}', params: { points: gunEvents.hits * 100, hits: hitTargetIds.length, total: this.mapSpec.targets.length } });
+      }
+    }
     if (this.mode === 'race' && this.checkpoint < this.mapSpec.checkpoints.length && crossesCheckpoint(previous, this.state.position, this.mapSpec.checkpoints[this.checkpoint])) {
       this.checkpoint++; this.audio.checkpoint();
       if (this.checkpoint === this.mapSpec.checkpoints.length) {
-        this.setStatus('finished'); this.events.finish(this.elapsed);
-        if (document.pointerLockElement) document.exitPointerLock();
+        this.setStatus('finished'); this.emit(); this.events.finish(this.elapsed);
       } else this.events.notice({ key: '检查点 {number} / {total} · 继续前往下一个飞行环', params: { number: String(this.checkpoint).padStart(2, '0'), total: this.mapSpec.checkpoints.length } });
     }
     return this.status === 'flying';
   };
   private tick = (time: number) => {
-    if (this.disposed) return;
+    if (this.disposed || !this.prepared || this.obscured || document.hidden || this.graphicsState === 'lost' || this.graphicsState === 'failed') return;
+    try { this.renderFrame(time); }
+    catch (error) {
+      console.error('Flight rendering stopped:', error);
+      this.fail('飞行画面遇到错误，已暂停。请重新加载后继续。');
+    }
+  };
+  private renderFrame(time: number) {
+    if (this.renderer.getContext().isContextLost()) { this.contextLost(); return; }
+    const restoring = this.graphicsState === 'restoring';
     const frameStart = performance.now();
     const elapsedDelta = this.lastTime ? Math.max((time - this.lastTime) / 1000, 0) : 0;
     const dt = Math.min(elapsedDelta, 0.25); this.lastTime = time;
+    if (!restoring && (this.status === 'flying' || this.status === 'ready')) this.sceneTime += dt;
     let alpha = 1;
     if (this.status === 'flying') alpha = this.simulationClock.tick(time, this.stepSimulation).alpha;
     else this.simulationClock.reset(time);
@@ -518,7 +693,7 @@ export class FlightEngine {
         THREE.MathUtils.clamp(roll * 0.3 - Math.atan2(sideVelocity, 22), -1.2, 1.2));
     } else this.drone.model.rotation.set(pitch - forwardVelocity * 0.004, yaw, roll);
     this.drone.model.visible = this.cameraMode !== 'fpv';
-    this.drone.update(time / 1000, this.status === 'flying', speed);
+    this.drone.update(this.sceneTime, this.status === 'flying', speed);
     if (this.cameraMode === 'fpv') {
       this.camera.position.set(position.x, position.y, position.z);
       this.camera.rotation.set(pitch - (this.status === 'ready' ? 0.06 : 0), yaw, roll);
@@ -531,6 +706,8 @@ export class FlightEngine {
       this.desiredPosition.set(position.x + Math.sin(yaw) * distanceBehind, position.y + heightAbove, position.z + Math.cos(yaw) * distanceBehind);
       this.desiredPosition.y = Math.max(this.desiredPosition.y, this.worldKernel.flightSurfaceHeight(this.desiredPosition.x, this.desiredPosition.z, this.desiredPosition.y) + 2);
       if (this.cameraMode === 'bomb') this.desiredTarget.set(position.x, this.worldKernel.flightSurfaceHeight(position.x, position.z, position.y) + 0.4, position.z);
+      else if (this.hasGun) this.desiredTarget.set(position.x - Math.sin(yaw) * Math.cos(pitch) * 45,
+        position.y + Math.sin(pitch) * 45, position.z - Math.cos(yaw) * Math.cos(pitch) * 45);
       else this.desiredTarget.set(position.x - Math.sin(yaw) * 5, position.y + 0.8, position.z - Math.cos(yaw) * 5);
       if (this.snapCamera) {
         this.cameraPosition.copy(this.desiredPosition); this.cameraTarget.copy(this.desiredTarget);
@@ -542,10 +719,20 @@ export class FlightEngine {
       this.camera.position.copy(this.cameraPosition); this.camera.lookAt(this.cameraTarget);
     }
     this.snapCamera = false;
-    this.world.update(time / 1000, this.mode === 'race' ? this.checkpoint : -1, position, this.camera.position);
-    this.weaponVisuals.update(this.weapons, this.windClock, this.previousWeapons, this.status === 'flying' ? alpha : 1);
+    if (this.hasGun) this.updateGunMount();
+    this.world.update(this.sceneTime, this.mode === 'race' ? this.checkpoint : -1, position, this.camera.position);
+    this.weaponVisuals.update(this.hasGun ? { ...this.weapons, hitTargetIds: this.gun.state.hitTargetIds } : this.weapons,
+      this.windClock, this.previousWeapons, this.status === 'flying' ? alpha : 1);
+    this.gunVisuals.update(this.gun.state, this.hasGun ? this.gunOrigin : undefined);
     const sceneEnd = performance.now();
     this.renderer.render(this.world.scene, this.camera);
+    if (this.renderer.getContext().isContextLost()) { this.contextLost(); return; }
+    this.renderedFrames++;
+    if (restoring) {
+      this.graphicsState = 'ready'; this.events.graphics('ready'); this.syncRenderMode();
+      if (this.status === 'paused') this.events.notice('画面已恢复，点击继续飞行。');
+    }
+    this.gunAimReady = true;
     const renderEnd = performance.now();
     const pixelRatio = this.renderPerformance.recordFrame(time, simulationEnd - frameStart, sceneEnd - simulationEnd,
       renderEnd - sceneEnd, this.renderer.info, this.status === 'flying' && !document.hidden);
@@ -554,7 +741,8 @@ export class FlightEngine {
     }
     this.audio.update(speed, this.status === 'flying');
     if (time - this.lastEmit > 90) {
-      this.lastEmit = time; this.emit();
+      this.lastEmit = time;
+      if (this.status === 'flying') this.emit();
       const measurements = this.renderPerformance.snapshot();
       if (measurements !== this.lastPerformanceMetrics) {
         this.lastPerformanceMetrics = measurements;
@@ -562,9 +750,9 @@ export class FlightEngine {
       }
       this.renderer.domElement.dataset.pixelRatio = String(this.renderPerformance.pixelRatio);
       this.renderer.domElement.dataset.simulationTime = String(this.windClock);
+      this.renderer.domElement.dataset.renderedFrames = String(this.renderedFrames);
     }
-    this.frame = requestAnimationFrame(this.tick);
-  };
+  }
   private refreshWind() {
     // Configuration/reset events refresh Rust telemetry without advancing time
     // or contacts; normal flight advances every system in shared fixed substeps.
@@ -574,6 +762,7 @@ export class FlightEngine {
   }
   private emit() {
     const wind = this.wind.vector;
+    const weapon = this.hasGun ? this.gun.state : this.weapons;
     this.events.telemetry({
       speed: Math.hypot(this.state.velocity.x, this.state.velocity.y, this.state.velocity.z) * 3.6,
       altitude: this.state.position.y, elapsed: this.elapsed, checkpoint: this.checkpoint,
@@ -581,28 +770,28 @@ export class FlightEngine {
       wind: this.wind,
       airSpeed: Math.hypot(this.state.velocity.x - wind.x, this.state.velocity.y - wind.y, this.state.velocity.z - wind.z) * 3.6,
       recordEligible: this.unchangedWind,
-      weapons: { ammo: this.weapons.ammo, reloadRemaining: this.weapons.reloadRemaining,
-        score: this.weapons.score, hitTargetIds: [...this.weapons.hitTargetIds] },
+      weapons: { kind: this.hasGun ? 'machine-gun' : 'bomb', capacity: this.hasGun ? GUN_CAPACITY : 6,
+        firing: this.firing, ammo: weapon.ammo, reloadRemaining: weapon.reloadRemaining,
+        score: weapon.score, hitTargetIds: [...weapon.hitTargetIds] },
     });
   }
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    cancelAnimationFrame(this.frame); this.resizeObserver.disconnect();
+    this.renderLoop.dispose(); this.resizeObserver.disconnect();
     window.removeEventListener('keydown', this.keydown); window.removeEventListener('keyup', this.keyup);
     window.removeEventListener('blur', this.blur); document.removeEventListener('visibilitychange', this.visibility);
     document.removeEventListener('mousemove', this.mousemove); document.removeEventListener('pointerlockchange', this.pointerlockchange);
+    document.removeEventListener('mousedown', this.mousedown); document.removeEventListener('mouseup', this.mouseup);
     this.renderer.domElement.removeEventListener('click', this.lockPointer);
+    this.renderer.domElement.removeEventListener('webglcontextlost', this.contextLost);
+    this.renderer.domElement.removeEventListener('webglcontextrestored', this.contextRestored);
     if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
     this.audio.dispose(); this.renderer.domElement.remove();
     this.assets.dispose();
-    const release = () => {
-      this.headlight.dispose(); this.drone.dispose(); this.maps.dispose();
-      this.warmupTarget.dispose();
-      this.renderer.dispose(); this.renderer.forceContextLoss();
-    };
-    // Three's async compiler polls program objects. Keep them valid until that poll finishes.
-    if (this.compilation) void this.compilation.then(release, release);
-    else release();
+    this.headlight.dispose(); this.drone.dispose(); this.maps.dispose();
+    this.warmupTarget.dispose();
+    this.renderer.dispose();
+    if (!this.renderer.getContext().isContextLost()) this.renderer.forceContextLoss();
   }
 }

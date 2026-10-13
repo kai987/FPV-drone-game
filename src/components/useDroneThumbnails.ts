@@ -56,7 +56,7 @@ function renderNext(current: RenderJob) {
     current.renderer.render(current.studio!.scene, current.camera!);
     const image = current.renderer.domElement.toDataURL('image/png');
     publish({ images: { ...snapshot.images, [spec.id]: image }, loading: true, fallback: false, error: null });
-    // Let the browser paint each completed card. The same renderer serves all six.
+    // Let the browser paint each completed card. All models share one renderer.
     current.timer = setTimeout(() => renderNext(current), 16);
   } catch {
     finish(current, '当前设备暂时无法生成 3D 模型图片。');

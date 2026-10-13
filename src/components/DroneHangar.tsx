@@ -19,6 +19,7 @@ interface DroneHangarProps {
 const FINISHES: Record<DroneId, string> = {
   cinewhoop: '焰橙 · 碳黑', freestyle: '萤绿 · 碳黑', racer: '竞速红 · 碳黑',
   explorer: '远空蓝 · 碳黑', vector: '冰川青 · 石墨', falcon: '琥珀金 · 石墨',
+  guardian: '橄榄绿 · 古铜',
 };
 
 export default function DroneHangar({ droneId, flightMode, status, available, onApply, onClose }: DroneHangarProps) {
@@ -36,6 +37,7 @@ export default function DroneHangar({ droneId, flightMode, status, available, on
   const unchanged = selectedId === droneId;
   const configs = DRONES.map(drone => getFlightConfig(drone.id, previewMode));
   const hardwareRows: { label: string; value: (drone: DroneSpec) => string }[] = [
+    { label: '训练武器', value: drone => t(drone.id === 'guardian' ? '机枪 · 40 发 / 自动装填' : '炸弹 · 6 枚 / 自动装填') },
     { label: '机架尺寸', value: drone => t('{value} mm 轴距', { value: drone.wheelbaseMm }) },
     { label: '旋翼桨径', value: drone => t('{value} 英寸', { value: drone.propellerInches }) },
     { label: '起飞重量', value: drone => `${drone.weightGrams} g` },

@@ -1,0 +1,9 @@
+/* Mounted only for a coarse primary pointer; viewport rules only adjust layout. */
+.touch-aim-controls { display: block; position: absolute; inset: 0 0 0 58%; z-index: 3; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.touch-aim-hint { position: absolute; bottom: 88px; right: 12px; display: flex; align-items: center; gap: 5px; max-width: calc(100% - 16px); padding: 6px 8px; border: 1px solid #eef1d73b; border-radius: 7px; background: #18312780; color: #f4f8e8; font-size: 10px; pointer-events: none; }
+.touch-aim-hint svg { flex-shrink: 0; }
+.touch-aim-controls.aiming .touch-aim-hint { color: #ffe0aa; border-color: #ffe0aa80; }
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .touch-aim-hint { display: none; }
+}
