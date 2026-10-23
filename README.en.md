@@ -1,6 +1,6 @@
 # AEROFLOW · FPV Drone Game
 
-[中文](./README.md) | [日本語](./README.ja.md) | **English**
+[日本語](./README.md) | [中文](./README.zh.md) | **English**
 
 A browser game for drone flying and bombing practice, with chase, top-down aiming, and first-person views. React, TypeScript, Vite, and Three.js provide the interface and 3D rendering. Rust compiles to WebAssembly and handles flight, wind, geography queries, bombs, and batched scene and animation calculations. No account, backend, or paid API is required.
 
