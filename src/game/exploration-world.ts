@@ -6,7 +6,9 @@ import type { MapSpec } from './map-catalog.ts';
 import type { Vec3 } from './flight.ts';
 import { createNightSky } from './night-sky.ts';
 import { URBAN_SKY_GLSL } from './urban-sky.ts';
-import { DOWNTOWN_STREETS, buildingRoofDetails, explorationGroundHeight, getExplorationLayout, isExplorationMap } from './exploration-layout.ts';
+import { createDowntownBuildings } from './downtown-buildings.ts';
+import { createAlpineTerrainMaterial, createAlpineRockMaterial } from './alpine-terrain-material.ts';
+import { DOWNTOWN_STREETS, explorationGroundHeight, getExplorationLayout, isExplorationMap } from './exploration-layout.ts';
 
 interface InstancePose { x: number; y: number; z: number; width: number; height: number; depth: number; yaw: number; color?: string; }
 interface Batch { geometry: THREE.BufferGeometry; material: THREE.Material; poses: InstancePose[]; shadows: boolean; }
@@ -84,7 +86,7 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
   sky.renderOrder = -100; scene.add(sky);
   const nightSky = createNightSky(); scene.add(nightSky.group);
 
-  const loadAlpineTexture = (name: 'grass-texture.webp' | 'weathered-rock.webp') => {
+  const loadAlpineTexture = (name: 'grass-texture.webp' | 'alpine-rock-v2.webp' | 'alpine-snow.webp') => {
     if (!_options.assets) return undefined;
     const texture = new THREE.Texture();
     texture.colorSpace = THREE.SRGBColorSpace; texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
@@ -94,18 +96,20 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
     return texture;
   };
   const alpineGrass = id === 'mountains' ? loadAlpineTexture('grass-texture.webp') : undefined;
-  const alpineRock = id === 'mountains' ? loadAlpineTexture('weathered-rock.webp') : undefined;
+  const alpineRock = id === 'mountains' ? loadAlpineTexture('alpine-rock-v2.webp') : undefined;
 
-  // World-space procedural detail remains sharp at low altitude without another image download.
-  const terrainMaterial = ownMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }));
+  const alpineSnow = id === 'mountains' ? loadAlpineTexture('alpine-snow.webp') : undefined;
+  const texturedAlpine = alpineGrass && alpineRock && alpineSnow;
+
+  // Raster material detail follows the same world-space terrain used by Rust.
+  const terrainMaterial = ownMaterial(texturedAlpine
+    ? createAlpineTerrainMaterial({ grassTexture: alpineGrass, rockTexture: alpineRock, snowTexture: alpineSnow })
+    : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }));
+  if (!texturedAlpine) {
   terrainMaterial.onBeforeCompile = shader => {
     shader.vertexShader = 'varying vec3 environmentPoint; varying vec3 environmentNormal;\n' + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nenvironmentPoint=position; environmentNormal=normal;');
     shader.fragmentShader = 'varying vec3 environmentPoint; varying vec3 environmentNormal;\n' + shader.fragmentShader;
-    if (alpineGrass && alpineRock) {
-      shader.uniforms.alpineGrass = { value: alpineGrass }; shader.uniforms.alpineRock = { value: alpineRock };
-      shader.fragmentShader = 'uniform sampler2D alpineGrass; uniform sampler2D alpineRock;\n' + shader.fragmentShader;
-    }
     shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       vec2 p=environmentPoint.xz;
       float grain=fract(sin(dot(floor(p*18.0),vec2(12.9898,78.233)))*43758.5453);
@@ -115,26 +119,11 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
         float ripple=wave*0.042*(1.0-smoothstep(0.08,0.45,footprint));
         diffuseColor.rgb*=0.93+grain*0.1+ripple;` : `float crag=sin(p.x*0.77+sin(p.y*0.31))*sin(p.y*0.49+p.x*0.17);
         diffuseColor.rgb*=0.94+grain*0.08+crag*0.035;`}
-      ${alpineGrass && alpineRock ? `
-        vec3 terrainNormal=normalize(environmentNormal);
-        vec3 weights=pow(abs(terrainNormal),vec3(5.0)); weights/=max(dot(weights,vec3(1.0)),0.001);
-        vec3 grass=texture2D(alpineGrass,environmentPoint.xz/12.0).rgb;
-        vec3 stone=texture2D(alpineRock,environmentPoint.yz/18.0).rgb*weights.x
-          +texture2D(alpineRock,environmentPoint.xz/18.0).rgb*weights.y
-          +texture2D(alpineRock,environmentPoint.xy/18.0).rgb*weights.z;
-        float slope=length(terrainNormal.xz)/max(abs(terrainNormal.y),0.05);
-        float rocky=clamp(smoothstep(0.28,0.70,slope)+smoothstep(220.0,430.0,environmentPoint.y)*0.45,0.0,1.0);
-        float snowLine=390.0+sin(p.x*0.007+p.y*0.004)*25.0;
-        float snowy=smoothstep(snowLine,snowLine+90.0,environmentPoint.y)*(1.0-smoothstep(0.7,1.5,slope)*0.8);
-        vec3 grassColor=grass*vec3(1.25,1.32,1.15);
-        vec3 stoneColor=stone*vec3(0.87,0.94,0.98);
-        vec3 snowColor=vec3(0.85,0.90,0.92)*(0.93+dot(stone,vec3(0.299,0.587,0.114))*0.14);
-        float mottling=0.96+sin(p.x*0.023+sin(p.y*0.017))*sin(p.y*0.029)*0.05;
-        diffuseColor.rgb=mix(mix(grassColor,stoneColor,rocky)*mottling,snowColor,snowy);
-      ` : ''}
+
     `);
   };
-  terrainMaterial.customProgramCacheKey = () => `exploration-ground-${id}-${alpineGrass ? 'textured' : 'procedural'}-v2`;
+  terrainMaterial.customProgramCacheKey = () => `exploration-ground-${id}-procedural-v3`;
+  }
   const sandLow = new THREE.Color('#b7955b'), sandHigh = new THREE.Color('#e1bd7d');
   const meadow = new THREE.Color('#688064'), alpine = new THREE.Color('#8e9685'), granite = new THREE.Color('#8a9497'), snow = new THREE.Color('#eff4ee');
   function terrainPatch(minX: number, maxX: number, minZ: number, maxZ: number, segmentsX: number, segmentsZ: number) {
@@ -165,11 +154,11 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
       temporaryColor.toArray(colors, index * 3);
     }
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3)); geometry.computeVertexNormals(); geometry.computeBoundingSphere();
-    const mesh = new THREE.Mesh(geometry, terrainMaterial); mesh.name = `${map.englishName} terrain`; mesh.receiveShadow = true; scene.add(mesh);
+    const mesh = new THREE.Mesh(geometry, terrainMaterial); mesh.name = `${map.englishName} terrain`; mesh.receiveShadow = true; mesh.castShadow = id === 'mountains'; scene.add(mesh);
   }
   if (city) terrainPatch(-9000, 9000, -9000, 9000, 12, 12);
   else {
-    terrainPatch(-2400, 2400, -2400, 2400, 256, 256);
+    terrainPatch(-2400, 2400, -2400, 2400, id === 'mountains' ? 384 : 256, id === 'mountains' ? 384 : 256);
     terrainPatch(-9000, -2400, -9000, 9000, 40, 80);
     terrainPatch(2400, 9000, -9000, 9000, 40, 80);
     terrainPatch(-2400, 2400, -9000, -2400, 40, 40);
@@ -189,8 +178,7 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
     const pending = _options.assets.image('pine-tree.webp').then(image => { if (!disposed) { texture.image = image; texture.needsUpdate = true; } });
     void pending.catch(() => {}); pendingTextures.push(pending);
   }
-  const nightUniform = { value: 0 };
-  const warningLights: THREE.Mesh[] = [];
+  let downtownBuildings: ReturnType<typeof createDowntownBuildings> | undefined;
   const streetLights: THREE.Vector3[] = [];
   const localLamps = Array.from({ length: 3 }, () => { const light = new THREE.PointLight('#ffdfab', 0, 75, 2); scene.add(light); return light; });
   function pavement(material: THREE.Material, x: number, z: number, width: number, depth: number, y: number) {
@@ -231,57 +219,7 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
         pavement(white, along, street + lane, 4.2, 0.12, 2.1);
       }
     }
-    const facadeMaterials = ['#668390', '#82979d', '#66747c', '#8d8d82', '#6e8690', '#a2a292'].map(color => {
-      const material = standard(color, 0.45, 0.23);
-      material.onBeforeCompile = shader => {
-        shader.uniforms.cityNight = nightUniform;
-        shader.vertexShader = 'varying vec3 cityPoint; varying vec3 cityNormal;\n' + shader.vertexShader;
-        shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
-          vec4 worldPoint=vec4(transformed,1.0);
-          #ifdef USE_INSTANCING
-            worldPoint=instanceMatrix*worldPoint;
-          #endif
-          cityPoint=(modelMatrix*worldPoint).xyz; cityNormal=normal;
-        `);
-        shader.fragmentShader = 'varying vec3 cityPoint; varying vec3 cityNormal; uniform float cityNight;\n' + shader.fragmentShader;
-        shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-          float side=1.0-smoothstep(0.4,0.8,abs(cityNormal.y));
-          vec2 coordinates=vec2(abs(cityNormal.x)>0.5?cityPoint.z:cityPoint.x,cityPoint.y);
-          vec2 cell=coordinates/vec2(3.6,3.8);
-          vec2 f=fract(cell);vec2 aa=max(fwidth(cell),vec2(0.002));
-          float pane=smoothstep(0.13-aa.x,0.13+aa.x,f.x)*(1.0-smoothstep(0.86-aa.x,0.86+aa.x,f.x))
-            *smoothstep(0.19-aa.y,0.19+aa.y,f.y)*(1.0-smoothstep(0.84-aa.y,0.84+aa.y,f.y))*side;
-          float choice=fract(sin(dot(floor(cell),vec2(12.9898,78.233)))*43758.5453);
-          vec3 reflection=mix(vec3(0.15,0.25,0.29),vec3(0.43,0.60,0.65),smoothstep(4.0,180.0,cityPoint.y));
-          diffuseColor.rgb=mix(diffuseColor.rgb,reflection,pane*0.88);
-          float floorLine=smoothstep(0.94-aa.y,0.94+aa.y,f.y)*side;
-          diffuseColor.rgb*=1.0-floorLine*0.32;
-        `);
-        shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-          totalEmissiveRadiance+=vec3(1.0,0.72+choice*0.17,0.36+choice*0.22)*pane*step(0.42,choice)*cityNight*0.85;
-        `);
-      };
-      material.customProgramCacheKey = () => 'downtown-window-grid-v1'; return material;
-    });
-    for (const building of layout.buildings) {
-      const material = facadeMaterials[building.variant % facadeMaterials.length];
-      const y = building.base + building.height / 2;
-      box(material, building.x, y, building.z, building.width, building.height, building.depth, building.yaw ?? 0);
-      box(concrete, building.x, building.base + 1, building.z, building.width + 1.2, 2, building.depth + 1.2);
-      const roof = building.base + building.height;
-      const details = buildingRoofDetails(building);
-      for (const [part, material] of [[details.cap, concrete], [details.hvac, steel]] as const)
-        box(material, part.x, part.base + part.height / 2, part.z, part.width, part.height, part.depth, part.yaw ?? 0);
-      // Street-facing ground entrances and terraces distinguish blocks from factories.
-      box(dark, building.x, building.base + 2.7, building.z + building.depth / 2 + 0.03, 5.5, 5.4, 0.12, 0, false);
-      box(steel, building.x, building.base + 5.6, building.z + building.depth / 2 + 1.2, 9, 0.25, 2.6);
-      if (details.antenna) {
-        const antenna = details.antenna;
-        cylinder(steel, antenna.x, antenna.base + antenna.height / 2, antenna.z, antenna.width / 2, antenna.height);
-        const beacon = new THREE.Mesh(ownGeometry(new THREE.SphereGeometry(0.5, 8, 6)), ownMaterial(new THREE.MeshBasicMaterial({ color: '#f47b5a' })));
-        beacon.position.set(building.x, roof + 10.3, building.z); scene.add(beacon); warningLights.push(beacon);
-      }
-    }
+    downtownBuildings = createDowntownBuildings(scene, layout.buildings);
     const treeCanopy = standard('#5d7959');
     const carMaterials = ['#c9c4b3', '#485b68', '#9c6656', '#8e9a91'].map(color => standard(color, 0.4, 0.28));
     // Sparse street details remain readable while approaching, without per-window meshes.
@@ -308,7 +246,8 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
     for (const side of [-1, 1]) for (let z = 45; z <= 145; z += 25) pavement(concrete, side * 28, z, 14, 23, 2.09);
   } else {
     // One low-poly batch for the scenery authored alongside collision boxes.
-    const rock = standard(desert ? '#b37451' : '#88928b', 0.97);
+    const rock = !desert && alpineRock ? ownMaterial(createAlpineRockMaterial({ rockTexture: alpineRock })) : standard('#b37451', 0.97);
+    if (desert || !alpineRock) {
     rock.onBeforeCompile = shader => {
       shader.vertexShader = 'varying vec3 strataPoint;\n' + shader.vertexShader;
       shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -327,6 +266,7 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
       `);
     };
     rock.customProgramCacheKey = () => 'exploration-stratified-rock-v1';
+    }
     for (const value of layout.rocks) {
       batch(stoneGeometry, rock, { x: value.x, y: value.base + value.height * 0.47, z: value.z,
         width: value.width, height: value.height, depth: value.depth, yaw: value.yaw ?? 0, color: value.color });
@@ -433,10 +373,10 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
       night = enabled;
       const horizon = enabled ? '#101c2b' : daylight;
       scene.background = new THREE.Color(horizon); scene.fog = new THREE.FogExp2(horizon, enabled ? 0.00025 : desert ? 0.00018 : 0.00014);
-      hemisphere.color.set(enabled ? '#90accb' : '#e8f1f6'); hemisphere.groundColor.set(enabled ? '#303747' : desert ? '#a27d54' : '#556651'); hemisphere.intensity = enabled ? 0.85 : 2.25;
-      sun.color.set(enabled ? '#b0c9e9' : desert ? '#ffe2ab' : '#fff1d9'); sun.intensity = enabled ? 1.25 : 2.6;
+      hemisphere.color.set(enabled ? '#90accb' : '#e8f1f6'); hemisphere.groundColor.set(enabled ? '#303747' : desert ? '#a27d54' : '#556651'); hemisphere.intensity = enabled ? 0.85 : id === 'mountains' ? 1.65 : 2.25;
+      sun.color.set(enabled ? '#b0c9e9' : desert ? '#ffe2ab' : '#fff1d9'); sun.intensity = enabled ? 1.25 : id === 'mountains' ? 2.85 : 2.6;
       atmosphere.uniforms.night.value = enabled ? 1 : 0; atmosphere.uniforms.horizon.value.set(horizon); atmosphere.uniforms.zenith.value.set(enabled ? '#07101d' : zenith);
-      warmLight.emissiveIntensity = enabled ? 2 : 0.15; nightUniform.value = enabled ? 1 : 0;
+      warmLight.emissiveIntensity = enabled ? 2 : 0.15; downtownBuildings?.setNight(enabled);
       pineMaterial?.color.set(enabled ? '#71869e' : '#ffffff');
       ringMaterial.emissive.set(enabled ? '#7c9bac' : '#000000'); ringMaterial.emissiveIntensity = enabled ? 0.5 : 0;
       nightSky.setNight(enabled); localLamps.forEach(light => { light.intensity = 0; });
@@ -452,11 +392,11 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
         localLamps.forEach((light, index) => { const value = nearestLamps[index]; if (value) light.position.copy(value.position); light.intensity = value ? 65 : 0; });
       }
       highlights.forEach((highlight, index) => { highlight.visible = index === nextCheckpoint; if (highlight.visible) highlight.scale.setScalar(1 + Math.sin(time * 1.8) * 0.0025); });
-      warningLights.forEach((light, index) => { light.visible = !night || Math.sin(time * 2.2 + index) > -0.2; });
+      downtownBuildings?.update(time);
     },
     dispose() {
       if (disposed) return; disposed = true;
-      instances.forEach(mesh => mesh.dispose()); nightSky.dispose(); geometries.forEach(value => value.dispose()); materials.forEach(value => value.dispose()); textures.forEach(value => value.dispose()); sun.shadow.map?.dispose(); scene.clear();
+      downtownBuildings?.dispose(); instances.forEach(mesh => mesh.dispose()); nightSky.dispose(); geometries.forEach(value => value.dispose()); materials.forEach(value => value.dispose()); textures.forEach(value => value.dispose()); sun.shadow.map?.dispose(); scene.clear();
     },
   };
 }

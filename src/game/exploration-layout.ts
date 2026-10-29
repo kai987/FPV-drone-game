@@ -1,4 +1,5 @@
 import type { UrbanBox } from './map-layout.ts';
+import { getDowntownBuildingParts, getDowntownRoofDetails } from './downtown-architecture.ts';
 
 export type ExplorationMapId = 'desert' | 'downtown' | 'mountains';
 export interface TerrainPeak { readonly x: number; readonly z: number; readonly height: number; readonly radiusX: number; readonly radiusZ: number; }
@@ -25,11 +26,20 @@ export const DESERT_MESAS: readonly TerrainPeak[] = Object.freeze([
   { x: -1550, z: 1250, height: 150, radiusX: 300, radiusZ: 330 },
 ]);
 export const MOUNTAIN_PEAKS: readonly TerrainPeak[] = Object.freeze([
-  { x: -1250, z: -1050, height: 560, radiusX: 510, radiusZ: 590 },
-  { x: 1050, z: -1450, height: 640, radiusX: 530, radiusZ: 470 },
-  { x: 1550, z: 650, height: 500, radiusX: 590, radiusZ: 520 },
-  { x: -1500, z: 1050, height: 490, radiusX: 580, radiusZ: 510 },
-  { x: 50, z: -2250, height: 470, radiusX: 580, radiusZ: 450 },
+  { x: -1250, z: -1050, height: 665, radiusX: 470, radiusZ: 510 },
+  { x: 1050, z: -1450, height: 738, radiusX: 455, radiusZ: 435 },
+  { x: 1550, z: 650, height: 590, radiusX: 505, radiusZ: 470 },
+  { x: -1500, z: 1050, height: 570, radiusX: 490, radiusZ: 475 },
+  { x: 50, z: -2250, height: 625, radiusX: 450, radiusZ: 390 },
+]);
+const MOUNTAIN_ROTATIONS = [-0.24, 0.35, -0.55, 0.2, -0.1] as const;
+const MOUNTAIN_ORIENTATIONS = MOUNTAIN_ROTATIONS.map(angle => ({ cosine: Math.cos(angle), sine: Math.sin(angle) }));
+/** Linked, narrow ridgelines create saddles between the peaks, leaving the training valley open. */
+export const MOUNTAIN_RIDGES = Object.freeze([
+  { ax: -1250, az: -1050, bx: -1500, bz: 1050, width: 250, height: 300 },
+  { ax: -1250, az: -1050, bx: 50, bz: -2250, width: 245, height: 320 },
+  { ax: 50, az: -2250, bx: 1050, bz: -1450, width: 230, height: 340 },
+  { ax: 1050, az: -1450, bx: 1550, bz: 650, width: 255, height: 320 },
 ]);
 
 export function isExplorationMap(id: string): id is ExplorationMapId {
@@ -45,6 +55,78 @@ function peakHeight(peaks: readonly TerrainPeak[], x: number, z: number): number
   return result;
 }
 
+function alpineHash(x: number, z: number, seed: number): number {
+  let value = Math.imul(x, 374761393) ^ Math.imul(z, 668265263) ^ Math.imul(seed, 1442695041);
+  value = Math.imul(value ^ value >>> 13, 1274126177);
+  return ((value ^ value >>> 16) >>> 0) / 4294967295;
+}
+function alpineNoise(x: number, z: number, seed: number): number {
+  const ix = Math.floor(x), iz = Math.floor(z), fx = x - ix, fz = z - iz;
+  const u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz);
+  const a = alpineHash(ix, iz, seed), b = alpineHash(ix + 1, iz, seed);
+  const c = alpineHash(ix, iz + 1, seed), d = alpineHash(ix + 1, iz + 1, seed);
+  return a + (b - a) * u + (c + (d - c) * u - (a + (b - a) * u)) * v;
+}
+
+function alpineMassHeight(x: number, z: number): number {
+  let height = 0;
+  for (let index = 0; index < MOUNTAIN_PEAKS.length; index++) {
+    const peak = MOUNTAIN_PEAKS[index], { cosine, sine } = MOUNTAIN_ORIENTATIONS[index];
+    const dx = x - peak.x, dz = z - peak.z;
+    let u = (dx * cosine + dz * sine) / peak.radiusX;
+    let v = (-dx * sine + dz * cosine) / peak.radiusZ;
+    const radius = Math.hypot(u, v), taper = Math.min(1, radius);
+    u += Math.sin(z * 0.004 + index * 1.7) * Math.sin(x * 0.0023 + index) * 0.055 * taper;
+    v += Math.sin(x * 0.0041 + index * 2.1) * 0.04 * taper;
+    // Unequal angular spurs break the four planar faces of a perfect pyramid.
+    const angle = Math.atan2(v, u);
+    const lobes = 1 + 0.14 * Math.sin(angle * 3 + index * 1.7) + 0.07 * Math.sin(angle * 7 - index * 1.3);
+    const polygon = Math.max(Math.abs(u) + Math.abs(v) * 0.32, Math.abs(v) * 1.02 + Math.abs(u) * 0.28);
+    const facets = (Math.hypot(u, v) * 0.7 + polygon * 0.3) / lobes;
+    const crown = Math.max(0, 1 - facets) ** 0.86;
+    const skirt = Math.exp(-(u * u + v * v) * 1.65);
+    const gullies = facets >= 1 ? 1 : 1 - 0.12 * Math.abs(Math.sin(angle * 5 + index * 1.7 + Math.sin(angle * 2 + index) * 0.6 + radius * 0.7))
+      * Math.sin(Math.PI * facets);
+    let mass = peak.height * (0.86 * crown + 0.14 * skirt) * gullies;
+    if (crown > 0) {
+      // Erosion is strongest on the flank and vanishes at the summit and foot.
+      // Metre-scaled layers form rock buttresses and branching drainage gullies.
+      const shell = 4 * crown * (1 - crown);
+      const coarse = alpineNoise(dx / 180, dz / 180, index + 11);
+      const medium = alpineNoise(dx / 70, dz / 70, index + 37);
+      const fine = alpineNoise(dx / 28, dz / 28, index + 71);
+      const channel = (1 - Math.abs(Math.sin(angle * 3 + Math.sin(angle * 2 + index) * 0.8 + radius * 0.9))) ** 3;
+      mass += peak.height * shell * (0.25 * (coarse - 0.5) + 0.11 * (medium - 0.5)
+        + 0.035 * (fine - 0.5) - 0.19 * channel);
+    }
+    height = Math.max(height, mass);
+  }
+  for (let index = 0; index < MOUNTAIN_RIDGES.length; index++) {
+    const ridge = MOUNTAIN_RIDGES[index];
+    const dx = ridge.bx - ridge.ax, dz = ridge.bz - ridge.az;
+    const length = Math.hypot(dx, dz);
+    const t = Math.max(0, Math.min(1, ((x - ridge.ax) * dx + (z - ridge.az) * dz) / (length * length)));
+    const envelope = Math.sin(t * Math.PI), phase = index * 1.9;
+    const bend = envelope * (Math.sin(t * 5.3 + phase) * 65 + Math.sin(t * 13.1 - phase) * 24);
+    const centerX = ridge.ax + t * dx - dz / length * bend;
+    const centerZ = ridge.az + t * dz + dx / length * bend;
+    const distance = Math.hypot(x - centerX, z - centerZ);
+    const width = ridge.width * (1 + envelope * (0.18 * Math.sin(t * 11 + phase) + 0.1 * Math.sin(t * 23 - phase)));
+    // Curved, eroded shoulders avoid a single long triangular wall face.
+    const profile = Math.exp(-((distance / width) ** 1.6) * 2.2);
+    const crest = 0.57 + envelope * (0.19 + 0.2 * Math.sin(t * 18 + phase)
+      + 0.11 * Math.sin(t * 39 + phase * 1.7) + 0.05 * Math.sin(t * 71 - phase));
+    let ridgeMass = ridge.height * profile * crest;
+    if (profile > 0.025) {
+      const flank = 4 * profile * (1 - profile);
+      ridgeMass += ridge.height * flank * (0.19 * (alpineNoise(x / 130, z / 130, index + 107) - 0.5)
+        + 0.08 * (alpineNoise(x / 55, z / 55, index + 131) - 0.5));
+    }
+    height = Math.max(height, ridgeMass);
+  }
+  return height;
+}
+
 /** Independent scene reference for the equivalent Rust terrain function. */
 export function explorationGroundHeight(id: ExplorationMapId, x: number, z: number): number {
   if (id === 'downtown') return 2;
@@ -55,21 +137,12 @@ export function explorationGroundHeight(id: ExplorationMapId, x: number, z: numb
   }
   const foothills = 18 + Math.sin(x * 0.0034 + Math.sin(z * 0.002)) * 9
     + Math.sin(z * 0.0045 - x * 0.001) * 7;
-  const peaks = peakHeight(MOUNTAIN_PEAKS, x, z);
-  const ridge = Math.sin(x * 0.011 + z * 0.007) * Math.sin(z * 0.009 - x * 0.004);
-  const crag = (Math.abs(Math.sin(x * 0.016 + z * 0.011)) - 0.5) * 0.018;
-  return foothills + peaks * (1 + ridge * 0.15 + crag);
+  return foothills + alpineMassHeight(x, z);
 }
 
 /** One metre-scaled source for the rendered roof solids and native contacts. */
 export function buildingRoofDetails(building: UrbanBox): BuildingRoofDetails {
-  const roof = building.base + building.height;
-  return {
-    cap: { x: building.x, z: building.z, width: building.width + 0.7, depth: building.depth + 0.7, base: roof, height: 0.6 },
-    hvac: { x: building.x + building.width * 0.15, z: building.z,
-      width: Math.min(9, building.width * 0.2), depth: Math.min(12, building.depth * 0.25), base: roof, height: 2.4 },
-    ...(building.height > 130 ? { antenna: { x: building.x, z: building.z, width: 0.24, depth: 0.24, base: roof, height: 10 } } : {}),
-  };
+  return getDowntownRoofDetails(building);
 }
 
 const CITY_COLORS = ['#8195a0', '#b5ac97', '#6b808d', '#a3b4b7', '#8b7970', '#c0bcae'];
@@ -89,15 +162,10 @@ function cityLayout(): ExplorationLayout {
       buildings.push({ x: x + (lot ? 82 : -82), z: z + ((index * 19) % 41 - 20),
         width: 95 + index % 3 * 9, depth: 150 + index % 4 * 13,
         base: 2, height: 24 + index % 7 * 8 + centrality * (45 + index % 5 * 22),
-        color: CITY_COLORS[index % CITY_COLORS.length], variant: index % 5 });
+        color: CITY_COLORS[index % CITY_COLORS.length], variant: index % 7 });
     }
   }
-  const boxes: UrbanBox[] = [...buildings];
-  for (const building of buildings) {
-    const details = buildingRoofDetails(building);
-    boxes.push(details.cap, details.hvac);
-    if (details.antenna) boxes.push(details.antenna);
-  }
+  const boxes = buildings.flatMap(building => getDowntownBuildingParts(building).solids);
   return { buildings, rocks: [], roads, boxes };
 }
 

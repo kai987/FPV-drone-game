@@ -2,11 +2,11 @@ import { abortableResource, createAssetCache } from './asset-cache.ts';
 
 export type PanoramaResolution = 3548 | 7096;
 export type WorldAsset = 'alpine-panorama-hd.webp' | 'alpine-panorama-mobile.webp'
-  | 'pine-tree.webp' | 'grass-texture.webp' | 'weathered-rock.webp';
+  | 'pine-tree.webp' | 'grass-texture.webp' | 'weathered-rock.webp' | 'alpine-rock-v2.webp' | 'alpine-snow.webp';
 
 export function worldAssetNames(resolution: PanoramaResolution): WorldAsset[] {
   return [resolution === 7096 ? 'alpine-panorama-hd.webp' : 'alpine-panorama-mobile.webp',
-    'pine-tree.webp', 'grass-texture.webp', 'weathered-rock.webp'];
+    'pine-tree.webp', 'grass-texture.webp', 'weathered-rock.webp', 'alpine-rock-v2.webp', 'alpine-snow.webp'];
 }
 
 const images = createAssetCache<WorldAsset, HTMLImageElement>(asset => new Promise((resolve, reject) => {

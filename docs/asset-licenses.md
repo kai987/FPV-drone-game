@@ -61,3 +61,31 @@ node scripts/optimize-textures.mjs
 # 在独立目录验证编码结果，而不修改 public：
 node scripts/optimize-textures.mjs --output-dir /tmp/aeroflow-texture-check
 ```
+
+## 山区岩石与积雪材质（2026-10-30）
+
+这两张资源通过内置 Image Gen 独立生成，用于山区地面的岩石与雪层；没有下载第三方照片或模型。它们是生成的材质图，不是实地摄影扫描或具有实测参数的 PBR 扫描。源码 MIT 许可不作为生成服务或模型权重的许可说明。原始生成图保留在生成输出目录，仓库只发布下面的 WebP。
+
+| 资源 | 原始生成尺寸 | 发布尺寸 | WebP 字节 | SHA256 |
+| --- | --- | --- | ---: | --- |
+| `public/assets/alpine-rock-v2.webp` | 1254×1254 | 1024×1024 | 494,210 | `19c2bffb26a052c42c0a32522a358e0a33885aa16b30d158a11a5c88c9e5e5f1` |
+| `public/assets/alpine-snow.webp` | 1254×1254 | 1024×1024 | 237,878 | `3a86540c6ee7bac8355638b0595d9e7bd4b5c3ca59d3e5aa915c6fc728847100` |
+
+- 原始岩石：`/Users/paulasmith/.codex/generated_images/01a188e3-206d-7ca3-aa30-c25f5b6217b9/exec-b8854e44-34bb-4317-9593-ee29d5e6ffe3.png`。
+- 原始积雪：`/Users/paulasmith/.codex/generated_images/01a188e3-206d-7ca3-aa30-c25f5b6217b9/exec-556ae0c4-de01-48bf-a944-57417780e300.png`。
+- 原始 PNG SHA256：岩石 `c5136aae0d9f3cb817546b5f72e616e65a4920e6826a69fd498c384031af0d09`；积雪 `cb2bb76797a6bde682cc6b96541c2a8e55911bb2f7f56f609c4e60b059519526`。
+- 处理：Pillow 转 RGB，Lanczos 缩小到 1024×1024，`save(format="WEBP", quality=88, method=6)`；没有超分、绘制、拼贴或重新解释图片内容。工具提示的 1024 像素目标没有原生实现，因此明确记录实际原图的 1254 像素尺寸。
+- 加载与渲染：sRGB、RepeatWrapping、Mipmaps、各向异性过滤；岩石采用世界坐标三平面与双尺度混合，雪采用不同尺度的细粒和风成细节。标准 PBR 光照叠加程序法线扰动与粗糙度；没有把图中明暗当成实测高度。积雪覆盖由地形坡度、海拔、朝向和空间风成噪声决定。
+- 图像按平铺用途生成，但没有宣称四边逐像素无缝。三平面、不同尺度和空间变化用于降低连续山壁上的重复感。总增加 732,088 字节压缩资源，图像随项目提供，不在运行时调用生成服务。
+
+### 内置 Image Gen 提示词：高山岩石
+
+```text
+Use case: photorealistic-natural. Asset type: seamless PBR base-color texture for a realistic high-alpine 3D mountain rock surface, square 1024 by 1024. Primary request: a straight-on orthographic material scan of exposed silver-gray alpine granite and gneiss, naturally fractured stone with irregular angular fissures, subtle layered mineral veins, small quartz/feldspar grains, and muted charcoal and cool warm-gray variation. Fill the entire image edge-to-edge with a continuous single rock face. This is a texture swatch photographed evenly under diffuse overcast light, with no perspective, no horizon, no boulders isolated on a background, no cast shadows, no strong directional illumination, no vignette, no depth of field. Medium-scale weathering cracks and fine grain must be detailed and realistic, avoiding extremely dark holes or dramatic cliffs; irregular cracks should support natural repetition on broad cliff faces. All four image edges should tile seamlessly; do not show a border, grid or tiled preview. No green moss, plants, snow, orange sandstone, text, labels, logos or watermark. Neutral de-lit albedo appearance, not an illustration or game screenshot.
+```
+
+### 内置 Image Gen 提示词：积雪
+
+```text
+Use case: photorealistic-natural. Asset type: seamless PBR base-color texture for realistic settled alpine snow on a 3D mountain terrain, square 1024 by 1024. Primary request: a top-down orthographic material scan of dense, wind-packed clean mountain snow, with fine crystalline grain, very subtle shallow sastrugi ripples, scattered tiny granular clumps, and restrained off-white and very pale cool-gray tonal variation. Fill the entire frame edge-to-edge with continuous snow material. Even soft overcast light with almost no baked lighting; keep the image bright but retain visible fine surface details. Shallow wind ripples should be small relative to the swatch, low contrast and irregular, not giant ridges. All four image edges must tile seamlessly; no border, no grid, no tiled preview. No mountain landscape, sky, clouds, horizon, trees, footprints, ski tracks, rocks, ice-blue glacier cracks, shadows from objects, perspective, vignette, text or watermark. This is a realistic de-lit snow albedo texture, not a white wall or fabric and not a render of clouds.
+```

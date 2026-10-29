@@ -6,7 +6,8 @@ import type { MapId } from './map-catalog.ts';
 
 export function bestTimeKey(drone: DroneId, mode: FlightMode, wind: WindSettings, mapId: MapId = 'valley') {
   const weather = wind.strength === 'calm' ? 'calm' : `${wind.strength}:${((wind.direction % 360) + 360) % 360}`;
-  return `aeroflow:v5:best:${mapId}:${drone}:${mode}:${weather}`;
+  const revision = mapId === 'mountains' ? ':sharp-ridges-v2' : mapId === 'downtown' ? ':architecture-v2' : '';
+  return `aeroflow:v5:best:${mapId}${revision}:${drone}:${mode}:${weather}`;
 }
 
 /** Dynamic wind and denser urban maps need fresh records. Calm valley flights remain comparable. */

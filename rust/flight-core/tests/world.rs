@@ -244,6 +244,30 @@ fn desert_dunes_mountain_peaks_and_downtown_have_distinct_ground_profiles() {
 }
 
 #[test]
+fn alpine_crowns_are_sharp_and_connected_by_lower_ridges() {
+    let mut world = world();
+    assert!(world.set_map_kind(5));
+    for (x, z) in [(-1250.0, -1050.0), (1050.0, -1450.0), (1550.0, 650.0)] {
+        let crown = world.ground_height(x, z);
+        assert!(crown > 450.0 && crown < 780.0);
+        for (dx, dz) in [(80.0, 0.0), (-80.0, 0.0), (0.0, 80.0), (0.0, -80.0)] {
+            assert!(crown - world.ground_height(x + dx, z + dz) > 70.0);
+        }
+    }
+    for (x, z) in [
+        (-1375.0, 0.0),
+        (-600.0, -1650.0),
+        (550.0, -1850.0),
+        (1300.0, -400.0),
+    ] {
+        let saddle = world.ground_height(x, z);
+        assert!(saddle > 120.0 && saddle < 450.0);
+        assert!(!world.is_water(x, z));
+    }
+    assert!(world.ground_height(0.0, 80.0) < 35.0);
+}
+
+#[test]
 fn harbor_coast_and_piers_share_exact_dry_union_and_underwater_slope() {
     let mut world = world();
     assert!(world.set_map_kind(2));

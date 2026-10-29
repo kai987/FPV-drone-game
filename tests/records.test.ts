@@ -2,6 +2,20 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { bestTimeKey, readBestTime } from '../src/game/records.ts';
 
+test('revised city solids and alpine courses retain old records without comparing them to the new routes', () => {
+  const wind = { strength: 'calm', direction: 0 } as const;
+  for (const map of ['downtown', 'mountains'] as const) {
+    const previousKey = `aeroflow:v5:best:${map}:freestyle:assisted:calm`;
+    const values: Record<string, string> = { [previousKey]: '32' };
+    const storage = { getItem: (key: string) => values[key] ?? null };
+    assert.notEqual(bestTimeKey('freestyle', 'assisted', wind, map), previousKey);
+    assert.equal(readBestTime(storage, 'freestyle', 'assisted', wind, map), null);
+    values[bestTimeKey('freestyle', 'assisted', wind, map)] = '35';
+    assert.equal(readBestTime(storage, 'freestyle', 'assisted', wind, map), 35);
+    assert.equal(values[previousKey], '32', 'prior achievements are preserved in storage');
+  }
+});
+
 test('wind records separate direction and strength while calm ignores direction', () => {
   const key = (strength: 'calm' | 'breeze' | 'strong', direction: number) => bestTimeKey('freestyle', 'sport', { strength, direction });
   assert.notEqual(key('breeze', 0), key('breeze', 180));
