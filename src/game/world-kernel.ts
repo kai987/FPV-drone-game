@@ -1,6 +1,7 @@
 import { LAKES, RIVER_SAMPLES, WATER_LEVEL } from './landscape.ts';
 import { BRIDGES, CABINS, PASTURES } from './rural-layout.ts';
 import { HARBOR_BREAKWATERS, HARBOR_PIERS, HARBOR_SHORE_X, getMapLayout } from './map-layout.ts';
+import { getExplorationLayout, isExplorationMap } from './exploration-layout.ts';
 import type { UrbanBox } from './map-layout.ts';
 import type { MapId } from './map-catalog.ts';
 import type { Vec3 } from './flight.ts';
@@ -40,7 +41,8 @@ export function createWorldKernel(runtime: RustRuntime, mapId: MapId = 'valley')
   try {
     runtime.view(runtime.call('world_config_ptr', handle), configuration.length).set(configuration);
     if (runtime.call('world_configure', handle) !== 1) throw new Error('World geometry configuration is invalid');
-    if (runtime.call('world_set_map_kind', handle, mapId === 'factory' ? 1 : mapId === 'harbor' ? 2 : 0) !== 1) {
+    const mapKinds: Record<MapId, number> = { valley: 0, factory: 1, harbor: 2, desert: 3, downtown: 4, mountains: 5 };
+    if (runtime.call('world_set_map_kind', handle, mapKinds[mapId]) !== 1) {
       throw new Error('World map configuration is invalid');
     }
   } catch (error) { runtime.call('world_free', handle); throw error; }
@@ -120,7 +122,8 @@ export function createWorldKernel(runtime: RustRuntime, mapId: MapId = 'valley')
   };
   try {
     if (mapId === 'harbor') world.setHarborGeometry(HARBOR_SHORE_X, [...HARBOR_PIERS, ...HARBOR_BREAKWATERS]);
-    if (mapId !== 'valley') world.setBoxes(getMapLayout(mapId).boxes);
+    if (isExplorationMap(mapId)) world.setBoxes(getExplorationLayout(mapId).boxes);
+    else if (mapId !== 'valley') world.setBoxes(getMapLayout(mapId).boxes);
   } catch (error) { world.dispose(); throw error; }
   return world;
 }

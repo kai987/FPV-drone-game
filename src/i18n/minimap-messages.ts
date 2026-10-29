@@ -1,6 +1,15 @@
 import type { MessageCatalog } from './locale';
 
 export const MINIMAP_MESSAGES = {
+  '沙色深浅表示沙丘和台地高度，棕色为岩柱与岩群': ['砂色の濃淡は砂丘と台地の高さ、茶色は岩柱と岩群', 'Sand shades show dune and mesa height; brown shows rock pillars and formations'],
+  '深灰为城市道路，白色条带为斑马线，浅灰为高楼和屋顶': ['濃い灰色は都市の道路、白い縞は横断歩道、明るい灰色は高層ビルと屋上', 'Dark gray shows city streets, white stripes show crosswalks, light gray shows towers and rooftops'],
+  '绿色至白色表示山地高度，灰色为岩壁，白色高处为雪峰': ['緑から白への濃淡は山地の高さ、灰色は岩壁、白い高地は雪峰', 'Green-to-white shades show mountain height; gray shows rock faces and high white areas show snowy peaks'],
+  '沙丘、台地、岩柱与营地': ['砂丘、台地、岩柱、キャンプ', 'dunes, mesas, rock pillars and camps'],
+  '城市道路、十字路口、高楼与广场': ['都市の道路、交差点、高層ビル、広場', 'city streets, intersections, towers and plazas'],
+  '雪峰、山脊、松林与岩壁': ['雪峰、尾根、松林、岩壁', 'snowy peaks, ridges, pine forests and rock faces'],
+  '沙丘 · 台地 · 岩柱': ['砂丘 · 台地 · 岩柱', 'Dunes · Mesas · Pillars'],
+  '高楼 · 大道 · 广场': ['高層ビル · 大通り · 広場', 'Towers · Avenues · Plazas'],
+  '雪峰 · 山脊 · 岩壁': ['雪峰 · 尾根 · 岩壁', 'Peaks · Ridges · Cliffs'],
   '回到无人机': ['機体へ戻る', 'Recenter'],
   '跟随中': ['追従中', 'Following'],
   '跟随': ['追従', 'Follow'],

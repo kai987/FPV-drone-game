@@ -5,6 +5,8 @@ import { CHECKPOINTS } from './courses.ts';
 import { DEFAULT_MAP_ID, getMapSpec } from './map-catalog.ts';
 import type { MapId } from './map-catalog.ts';
 import { createUrbanWorld } from './urban-world.ts';
+import { createExplorationWorld } from './exploration-world.ts';
+import { isExplorationMap } from './exploration-layout.ts';
 import {
   WATER_LEVEL, TERRAIN_SIZE, WORLD_CENTER_Z,
 } from './landscape.ts';
@@ -67,6 +69,7 @@ export interface PanoramaOptions {
 }
 
 export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaOptions: PanoramaOptions = {}, mapId: MapId = DEFAULT_MAP_ID) {
+  if (isExplorationMap(mapId)) return createExplorationWorld(runtime, kernel, getMapSpec(mapId), panoramaOptions);
   if (mapId !== 'valley') return { ...createUrbanWorld(runtime, kernel, getMapSpec(mapId), panoramaOptions), ready: Promise.resolve() };
   const groundHeight = (x: number, z: number) => kernel.groundHeight(x, z);
   const scene = new THREE.Scene();

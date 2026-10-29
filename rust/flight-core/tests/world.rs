@@ -198,7 +198,7 @@ fn malformed_uploaded_geometry_is_rejected_before_building_a_world() {
 fn factory_map_is_flat_dry_and_does_not_inherit_rural_structures() {
     let mut world = world();
     assert!(world.set_map_kind(1));
-    assert!(!world.set_map_kind(3));
+    assert!(!world.set_map_kind(6));
     for (x, z) in [(0.0, 0.0), (100.0, 0.0), (300.0, 0.0), (-1800.0, -2500.0)] {
         near(world.ground_height(x, z), 2.0);
         near(world.surface_height(x, z), 2.0);
@@ -208,6 +208,39 @@ fn factory_map_is_flat_dry_and_does_not_inherit_rural_structures() {
         assert!(world.clearance(x, z, 0.0));
     }
     assert!(world.rural_surface_height(100.0, 0.0).is_none());
+}
+
+#[test]
+fn exploration_worlds_are_dry_and_invalid_kinds_preserve_the_selected_terrain() {
+    let mut world = world();
+    for kind in [3, 4, 5] {
+        assert!(world.set_map_kind(kind));
+        for (x, z) in [(0.0, 80.0), (-1250.0, -1050.0), (1050.0, -1450.0)] {
+            let height = world.ground_height(x, z);
+            assert!(height.is_finite() && height > 0.0);
+            assert_eq!(world.water_distance(x, z), f64::INFINITY);
+            assert!(!world.is_water(x, z));
+            assert!(world.rural_surface_height(x, z).is_none());
+            near(world.flight_surface_height(x, z, f64::INFINITY), height);
+            assert!(!world.set_map_kind(6));
+            near(world.ground_height(x, z), height);
+        }
+    }
+}
+
+#[test]
+fn desert_dunes_mountain_peaks_and_downtown_have_distinct_ground_profiles() {
+    let mut world = world();
+    world.set_map_kind(3);
+    let dune = world.ground_height(0.0, 80.0);
+    let mesa = world.ground_height(1250.0, -1350.0);
+    assert!(mesa > dune + 100.0);
+    world.set_map_kind(5);
+    let foothill = world.ground_height(0.0, 80.0);
+    let summit = world.ground_height(1050.0, -1450.0);
+    assert!(summit > foothill + 500.0 && summit < 780.0);
+    world.set_map_kind(4);
+    near(world.ground_height(1050.0, -1450.0), 2.0);
 }
 
 #[test]

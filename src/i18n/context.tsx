@@ -25,7 +25,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     document.documentElement.lang = LANGUAGE_TAGS[locale];
     document.title = t('AEROFLOW — 第一视角无人机飞行场');
-    document.querySelector('meta[name="description"]')?.setAttribute('content', t('AEROFLOW 第一视角无人机游戏。在松林山谷、工厂和海港中飞行、穿越检查点、体验风场与投弹挑战。'));
+    document.querySelector('meta[name="description"]')?.setAttribute('content', t('AEROFLOW 第一视角无人机游戏。在山谷、工厂、海港、沙漠、市中心和山区六张地图中飞行，体验风场、昼夜与训练挑战。'));
   }, [locale, t]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

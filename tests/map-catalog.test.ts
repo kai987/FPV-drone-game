@@ -29,7 +29,7 @@ test('industrial maps offer four times the flying area while preserving the comp
 });
 
 test('each selectable map has a complete course and usable map bounds', () => {
-  assert.deepEqual(MAPS.map(map => map.id), ['valley', 'factory', 'harbor']);
+  assert.deepEqual(MAPS.map(map => map.id), ['valley', 'factory', 'harbor', 'desert', 'downtown', 'mountains']);
   const allTargetIds = new Set<string>();
   for (const map of MAPS) {
     assert.equal(map.checkpoints.length, 8);

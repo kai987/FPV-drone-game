@@ -27,6 +27,10 @@ import type { WindSettings } from './game/wind';
 import { bestTimeKey, readBestTime } from './game/records';
 import WindPanel, { WindSettingsDialog } from './components/WindPanel';
 
+const MAP_SHORT_LABELS: Record<MapId, string> = {
+  valley: '山谷', factory: '工厂', harbor: '海港', desert: '沙漠', downtown: '市中心', mountains: '山区',
+};
+
 export default function App() {
   const { locale, setLocale, t } = useI18n();
   const translateRef = useRef(t);
@@ -218,8 +222,8 @@ export default function App() {
           <h2><span>{selectedMap.number} /</span> {t(selectedMap.name)}</h2>
           <div className="course-meta"><span>{t('{count} 检查点', { count: selectedMap.checkpoints.length })}</span><i /><span>{t(selectedMap.areaLabel)}</span><i /><span>{t(selectedMap.themeLabel)}</span></div>
           <div className="map-selector">
-            <div className="segment-control" role="group" aria-label={t('选择飞行地图')} aria-describedby="map-switch-help">{MAPS.map(map => <button key={map.id} type="button" disabled={!loaded || !graphicsReady} aria-label={t('切换到{name}', { name: t(map.name) })} aria-pressed={mapId === map.id} className={mapId === map.id ? 'active' : ''} title={t('{name} · 切换地图会返回起点', { name: t(map.name) })} onClick={() => changeMap(map.id)}>{map.id === 'valley' ? t('山谷') : map.id === 'factory' ? t('工厂') : t('海港')}</button>)}</div>
-            <p id="map-switch-help" className="map-switch-help">{loaded ? t('3 张地图已就绪 · 切换会返回起点') : t('首次进入将准备全部 3 张地图')}</p>
+            <div className="segment-control map-options" role="group" aria-label={t('选择飞行地图')} aria-describedby="map-switch-help">{MAPS.map(map => <button key={map.id} type="button" disabled={!loaded || !graphicsReady} aria-label={t('切换到{name}', { name: t(map.name) })} aria-pressed={mapId === map.id} className={mapId === map.id ? 'active' : ''} title={t('{name} · 切换地图会返回起点', { name: t(map.name) })} onClick={() => changeMap(map.id)}>{t(MAP_SHORT_LABELS[map.id])}</button>)}</div>
+            <p id="map-switch-help" className="map-switch-help">{loaded ? t('{count} 张地图已就绪 · 切换会返回起点', { count: MAPS.length }) : t('首次进入将准备全部 {count} 张地图', { count: MAPS.length })}</p>
           </div>
           <div className="segment-control" role="group" aria-label={t('游戏模式')}><button disabled={settingsLocked} aria-pressed={mode === 'race'} className={mode === 'race' ? 'active' : ''} onClick={() => changeMode('race')}>{t('计时挑战')}</button><button disabled={settingsLocked} aria-pressed={mode === 'free'} className={mode === 'free' ? 'active' : ''} onClick={() => changeMode('free')}>{t('自由飞行')}</button></div>
           <h3 className="setting-label">{t('飞行模式')}</h3>

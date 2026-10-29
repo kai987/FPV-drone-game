@@ -42,6 +42,8 @@ svg { flex-shrink: 0; }
 .segment-control button.active { background: #263128; color: #f7f8f3; box-shadow: 0 1px 3px #16231915; }
 .segment-control button:disabled:not(.active) { opacity: .5; }
 .map-selector { margin-bottom: 18px; }
+.map-selector .map-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); height: auto; gap: 3px; }
+.map-selector .map-options button { min-height: 36px; padding: 5px 3px; }
 .map-switch-help { margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .setting-label { font-size: 13px; font-weight: 500; margin: 25px 0 10px; }
 .primary-button { display: flex; align-items: center; justify-content: center; gap: 15px; width: 100%; min-height: 52px; padding: 13px 20px; background: #253128; color: #fafbf6; border-radius: 11px; font-size: 16px; font-weight: 600; }
@@ -502,6 +504,8 @@ html:lang(ja) .course-meta { gap: 9px; font-size: 11px; }
   .app-shell .map-switch-help { display: none; }
   .app-shell .segment-control { height: 44px; min-height: 44px; padding: 0; border-radius: 7px; }
   .app-shell .segment-control button { min-height: 42px; border-radius: 6px; font-size: 11px; }
+  .app-shell .map-selector .map-options { height: auto; min-height: 0; padding: 2px; gap: 2px; }
+  .app-shell .map-selector .map-options button { min-height: 40px; }
   .app-shell .segment-control + .setting-label + .segment-control { margin: 0; }
   .app-shell .launch-button, .app-shell .reset-button { height: 44px; min-height: 44px; margin: 0; padding: 5px 8px; font-size: 11px; border-radius: 7px; }
   .app-shell .launch-button svg { width: 16px; height: 16px; }

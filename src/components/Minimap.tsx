@@ -6,10 +6,12 @@ import { getMapSpec } from '../game/map-catalog';
 import type { MapId } from '../game/map-catalog';
 import { getMapLayout, HARBOR_PIERS, HARBOR_SHORE_X } from '../game/map-layout';
 import type { UrbanBox } from '../game/map-layout';
+import { getExplorationLayout, isExplorationMap } from '../game/exploration-layout';
 import { BRIDGES, CABINS, FISH_SCHOOLS } from '../game/rural-layout';
 import { useI18n } from '../i18n/context';
 import { beginMapDrag, centerMapBounds, clamp, createProjection, formatMapSpan, getMapBounds, getMapCenter, isOutsideBounds, panMapBounds, ZOOM_LEVELS } from './minimap-view.ts';
 import type { MapBounds, MapPoint, MapPosition, MapView, MapViewportSize } from './minimap-view.ts';
+import { DOWNTOWN_CROSSWALKS, EXPLORATION_TERRAIN_PATHS, explorationFootprints } from './exploration-minimap.ts';
 import './Minimap.css';
 
 interface MinimapProps {
@@ -63,7 +65,10 @@ function urbanFootprints(mapId: MapId) {
   }
   return [...footprints.values()];
 }
-const mapFootprints = { valley: [], factory: urbanFootprints('factory'), harbor: urbanFootprints('harbor') };
+const mapFootprints = {
+  valley: [], factory: urbanFootprints('factory'), harbor: urbanFootprints('harbor'),
+  desert: explorationFootprints('desert'), downtown: explorationFootprints('downtown'), mountains: explorationFootprints('mountains'),
+};
 
 function closedPath(points: MapPoint[]) {
   return points.length ? `M ${points.map(({ x, y }) => `${x.toFixed(2)} ${y.toFixed(2)}`).join(' L ')} Z` : '';
@@ -79,7 +84,9 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
   const worldBounds = selectedMap.bounds;
   const layout = getMapLayout(mapId);
   const isValley = mapId === 'valley';
-  const roads = layout.roads;
+  const exploration = isExplorationMap(mapId) ? getExplorationLayout(mapId) : null;
+  const roadSurfaces = exploration?.roads ?? layout.roads.surfaces;
+  const roadCrossings = useMemo(() => mapId === 'downtown' ? DOWNTOWN_CROSSWALKS : layout.roads.markings.filter(marking => marking.kind === 'zebra'), [mapId, layout]);
   const [mapView, setMapView] = useState<MapView>(mode === 'race' ? 'route' : 'world');
   const [zoomIndex, setZoomIndex] = useState(0);
   const [cameraMode, setCameraMode] = useState<MapCameraMode>('overview');
@@ -179,6 +186,7 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
     else if (event.key === '-') { event.preventDefault(); changeZoom(-1); }
     else if (event.key === ' ') event.preventDefault();
   };
+  const showCrossings = mapView !== 'world' || zoom > 2;
   const geography = useMemo(() => {
     const projection = createProjection(bounds);
     const riverLabel = RIVER_SAMPLES[Math.floor(RIVER_SAMPLES.length / 2)];
@@ -200,14 +208,14 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
         const radius = Math.hypot(box.width, box.depth) / 2;
         return box.x + radius >= bounds.minX && box.x - radius <= bounds.maxX && box.z + radius >= bounds.minZ && box.z - radius <= bounds.maxZ;
       }).map(box => ({ ...box, position: projection.project(box.x, box.z), width: box.width * projection.scale, depth: box.depth * projection.scale })),
-      roads: roads.surfaces.filter(intersectsView).map(road => ({ ...road, position: projection.project(road.x, road.z), width: road.width * projection.scale, depth: road.depth * projection.scale })),
-      crossings: roads.markings.filter(marking => marking.kind === 'zebra' && intersectsView(marking)).map(marking => ({ ...marking, position: projection.project(marking.x, marking.z), width: marking.width * projection.scale, depth: marking.depth * projection.scale })),
+      roads: roadSurfaces.filter(intersectsView).map(road => ({ ...road, position: projection.project(road.x, road.z), width: road.width * projection.scale, depth: road.depth * projection.scale })),
+      crossings: (showCrossings ? roadCrossings.filter(intersectsView) : []).map(marking => ({ ...marking, position: projection.project(marking.x, marking.z), width: marking.width * projection.scale, depth: marking.depth * projection.scale })),
       landmarks: layout.landmarks.filter(landmark => !isOutsideBounds(landmark, bounds)).map(landmark => ({ ...landmark, position: projection.project(landmark.x, landmark.z) })),
       shore: projection.project(HARBOR_SHORE_X, worldBounds.minZ),
       seaCorner: projection.project(worldBounds.maxX, worldBounds.maxZ),
       ships: layout.ships.filter(ship => intersectsView({ ...ship, depth: ship.length })).map(ship => ({ ...ship, position: projection.project(ship.x, ship.z), width: ship.width * projection.scale, length: ship.length * projection.scale })),
     };
-  }, [bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ, mapId, isValley, layout, roads, worldBounds]);
+  }, [bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ, mapId, isValley, layout, roadSurfaces, roadCrossings, worldBounds, showCrossings]);
 
   const points = selectedMap.checkpoints.map(({ position }) => geography.project(position.x, position.z));
   const start = geography.project(selectedMap.spawn.x, selectedMap.spawn.z);
@@ -229,8 +237,16 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
   const windLabel = calm ? t('无风') : t('{direction}风', { direction: t(wind.directionLabel) });
   const geographyLabel = isValley ? '蓝色为河流湖泊，浅蓝鱼形标记为鱼群，米色为小屋和桥'
     : mapId === 'factory' ? '深灰为道路，白色条带为斑马线，灰色为厂房和工业设施，金色为堆箱，圆点为厂房和储罐地标'
-      : '蓝色为海面，深灰为道路，白色条带为斑马线，米色为码头，灰色为仓库和货轮，金色为堆箱，圆点为桥吊和灯塔地标';
-  const landscapeLabel = isValley ? '河流、湖泊、小屋、小桥、鱼群' : mapId === 'factory' ? '厂房、储罐、烟囱、堆箱' : '海岸、码头、仓库、堆箱、桥吊、货轮';
+      : mapId === 'harbor' ? '蓝色为海面，深灰为道路，白色条带为斑马线，米色为码头，灰色为仓库和货轮，金色为堆箱，圆点为桥吊和灯塔地标'
+        : mapId === 'desert' ? '沙色深浅表示沙丘和台地高度，棕色为岩柱与岩群'
+          : mapId === 'downtown' ? '深灰为城市道路，白色条带为斑马线，浅灰为高楼和屋顶'
+            : '绿色至白色表示山地高度，灰色为岩壁，白色高处为雪峰';
+  const landscapeLabel = isValley ? '河流、湖泊、小屋、小桥、鱼群' : mapId === 'factory' ? '厂房、储罐、烟囱、堆箱'
+    : mapId === 'harbor' ? '海岸、码头、仓库、堆箱、桥吊、货轮'
+      : mapId === 'desert' ? '沙丘、台地、岩柱与营地' : mapId === 'downtown' ? '城市道路、十字路口、高楼与广场' : '雪峰、山脊、松林与岩壁';
+  const discoveryLabel = isValley ? '鱼群 · V 俯视' : mapId === 'factory' ? '厂房 · 储罐 · 烟囱'
+    : mapId === 'harbor' ? '码头 · 桥吊 · 货轮' : mapId === 'desert' ? '沙丘 · 台地 · 岩柱'
+      : mapId === 'downtown' ? '高楼 · 大道 · 广场' : '雪峰 · 山脊 · 岩壁';
   const landmarkLabel = (label: string) => {
     const numbered = label.match(/^(储罐|桥吊) (\d+)$/);
     if (numbered) return t(numbered[1] === '储罐' ? '储罐 {number}' : '桥吊 {number}', { number: numbered[2] });
@@ -303,8 +319,11 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
             <rect x={geography.left} y={geography.top} width={geography.width} height={geography.height} rx="3" />
           </clipPath>
         </defs>
-        <rect x={geography.left} y={geography.top} width={geography.width} height={geography.height} rx="3" fill={isValley ? '#273e2d' : '#35413c'} fillOpacity="0.65" stroke="#a5b89a" strokeOpacity="0.16" strokeWidth="0.6" />
+        <rect x={geography.left} y={geography.top} width={geography.width} height={geography.height} rx="3" fill={isValley ? '#273e2d' : mapId === 'desert' ? '#bda46b' : '#35413c'} fillOpacity="0.65" stroke="#a5b89a" strokeOpacity="0.16" strokeWidth="0.6" />
         <g clipPath={`url(#${clipId})`}>
+          {isExplorationMap(mapId) && <g transform={`translate(${geography.project(0, 0).x} ${geography.project(0, 0).y}) scale(${geography.scale})`} aria-hidden="true">
+            {EXPLORATION_TERRAIN_PATHS[mapId].map(level => <path key={level.color} d={level.path} fill={level.color} fillOpacity="0.8" />)}
+          </g>}
           <rect width="180" height="150" fill={`url(#${gridId})`} />
           {!isValley && <>
             {mapId === 'harbor' && <rect x={geography.shore.x} y={geography.shore.y} width={geography.seaCorner.x - geography.shore.x} height={geography.seaCorner.y - geography.shore.y} fill="#6094a8" fillOpacity="0.72"><title>{t('海岸与港口水区')}</title></rect>}
@@ -401,9 +420,12 @@ export default function Minimap({ telemetry, mode, mapId }: MinimapProps) {
         <span>{t(outsideView ? '视窗外' : mode === 'free' ? cameraMode === 'manual' ? '浏览范围' : zoom > 1 ? '跟随范围' : '探索范围' : target ? '下个检查点' : '航线完成')}</span>
         <strong>{mode === 'race' && target ? `${distance} m` : mode === 'race' ? `${selectedMap.checkpoints.length} / ${selectedMap.checkpoints.length}` : formatMapSpan(bounds)}</strong>
       </div>
-      <div className="map-discovery" aria-label={isValley ? t('浅蓝鱼形标记是鱼群，沿河飞到木桥下游，低空悬停，按 V 或手机视角按钮切换俯视观察') : t('{name}地标，{landmarks}；放大地图查看位置，按 V 切换俯视观察', { name: t(selectedMap.name), landmarks: t(mapId === 'factory' ? '厂房、储罐、烟囱和堆箱' : '码头、桥吊、堆箱、货轮和灯塔') })}>
-        <svg viewBox="-8 -4 15 8" aria-hidden="true">{isValley ? <path d="M -4 0 C -1 -4 3 -4 6 0 C 3 4 -1 4 -4 0 L -7 -3 L -7 3 Z" fill="currentColor" /> : <path d="M -6 3 L -6 -1 L -2 -3 L -2 -1 L 2 -3 L 2 3 Z M 3 3 L 3 -4 L 5 -4 L 5 3 Z" fill="currentColor" />}</svg>
-        <span>{t(isValley ? '鱼群 · V 俯视' : mapId === 'factory' ? '厂房 · 储罐 · 烟囱' : '码头 · 桥吊 · 货轮')}</span>
+      <div className="map-discovery" aria-label={isValley ? t('浅蓝鱼形标记是鱼群，沿河飞到木桥下游，低空悬停，按 V 或手机视角按钮切换俯视观察') : t('{name}地标，{landmarks}；放大地图查看位置，按 V 切换俯视观察', { name: t(selectedMap.name), landmarks: t(landscapeLabel) })}>
+        <svg viewBox="-8 -4 15 8" aria-hidden="true">{isValley ? <path d="M -4 0 C -1 -4 3 -4 6 0 C 3 4 -1 4 -4 0 L -7 -3 L -7 3 Z" fill="currentColor" />
+          : mapId === 'desert' || mapId === 'mountains' ? <path d="M -7 3 L -2 -4 L 2 1 L 4 -2 L 7 3 Z" fill="currentColor" />
+            : mapId === 'downtown' ? <path d="M -6 3 V -1 H -3 V 3 M -2 3 V -4 H 1 V 3 M 2 3 V -2 H 5 V 3 Z" fill="currentColor" />
+              : <path d="M -6 3 L -6 -1 L -2 -3 L -2 -1 L 2 -3 L 2 3 Z M 3 3 L 3 -4 L 5 -4 L 5 3 Z" fill="currentColor" />}</svg>
+        <span>{t(discoveryLabel)}</span>
       </div>
     </div>
   );

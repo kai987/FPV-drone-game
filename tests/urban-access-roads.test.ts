@@ -250,15 +250,15 @@ test('resident urban map resources stay within the three-map preload budget afte
   } finally { fixtures.forEach(fixture => fixture.dispose()); }
 });
 
-test('three resident native worlds and services fit one small WASM allocation with no extra map runtimes', () => {
+test('all resident native worlds and services fit one small WASM allocation with no extra map runtimes', () => {
   const runtime = createRustRuntime(flightModule);
   const residents = MAPS.map(map => {
     const world = createWorldKernel(runtime, map.id);
     return { map, world, flight: createWorldFlightSimulation(runtime, world.handle), weapons: createWeaponSimulation(runtime, world, map.targets) };
   });
   try {
-    assert.equal(new Set(residents.map(resident => resident.world.handle)).size, 3);
-    assert.ok(runtime.memory.buffer.byteLength < 8 * 1024 * 1024, 'the three map simulations fit within 8MiB of shared native memory');
+    assert.equal(new Set(residents.map(resident => resident.world.handle)).size, MAPS.length);
+    assert.ok(runtime.memory.buffer.byteLength < 8 * 1024 * 1024, 'all map simulations fit within 8MiB of shared native memory');
     for (const { map, world, weapons } of residents) {
       assert.equal(world.intersectsObstacle(map.spawn), false);
       assert.equal(weapons.state.ammo, 6);

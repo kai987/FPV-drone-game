@@ -2,6 +2,15 @@ import type { MessageCatalog } from './locale';
 
 /** Display metadata stays separate from the numeric flight and landscape catalogs. */
 export const CATALOG_MESSAGES = {
+  '赤沙沙漠': ['赤砂の砂漠', 'Red Dune Desert'],
+  '城市中心': ['都市中心部', 'City Centre'],
+  '雪岭山区': ['雪嶺の山岳地帯', 'Alpine Ridges'],
+  '掠过起伏沙丘、风蚀岩柱与荒漠营地。': ['起伏のある砂丘、風に削られた岩柱、砂漠のキャンプを巡ります。', 'Skim rolling dunes, wind-carved rock pillars, and desert camps.'],
+  '沿着城市大道穿行，探索高楼、广场与屋顶。': ['都市の大通りを飛び、高層ビル、広場、屋上を探索します。', 'Follow city avenues and explore high-rises, plazas, and rooftops.'],
+  '沿着高山峡谷攀升，穿越雪峰、松林与岩壁。': ['高山の峡谷を上昇し、雪峰、松林、岩壁を巡ります。', 'Climb alpine valleys among snowy peaks, pine forests, and rock faces.'],
+  '荒漠': ['砂漠地帯', 'Desert'],
+  '都市': ['都市', 'Urban'],
+  '高山': ['高山', 'Alpine'],
   'CINE 轻影': ['CINE ライト', 'CINE Light'],
   'FLOW 自由式': ['FLOW フリースタイル', 'FLOW Freestyle'],
   'RACE 疾风': ['RACE 疾風', 'RACE Swift'],

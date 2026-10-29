@@ -9,7 +9,7 @@ Play online: [GitHub Pages](https://kai987.github.io/FPV-drone-game/) · [Sites]
 ## Features
 
 - Seven fictional FPV drones with distinct shapes, colors, and handling. Hangar thumbnails, the rotatable large preview, and the flying drone share the same 3D model. Browse hardware settings and game flight parameters.
-- Three independent maps, each with eight checkpoint rings, five practice targets, and its own minimap. Choose a timed challenge or free flight, and Assisted or Sport handling.
+- Six independent maps, each with eight checkpoint rings, five practice targets, and its own minimap. Choose a timed challenge or free flight, and Assisted or Sport handling.
 - Calm, Breeze, Moderate, and Strong wind with eight base origin directions. Takeoff starts at the base direction, then the actual direction shifts smoothly over time. Wind speed also varies with time, position, and altitude. Headwind, tailwind, and crosswind affect actual ground speed and trajectory. Live instrument degrees show where wind comes from; the compass beside the minimap shows where it blows. Pause freezes the wind field.
 - The original six aircraft carry six bombs with automatic reloading, smoke and debris on land, and splashes and ripples on water. GUARDIAN carries an underslung machine gun with muzzle flashes, tracers, impacts, and automatic reloading. The first hit on each target earns 100 points.
 - Day/night switching, a drone searchlight, lit windows, urban streetlights, and a harbor lighthouse. Optional motor, checkpoint, and bombing audio is muted by default.
@@ -18,21 +18,27 @@ Play online: [GitHub Pages](https://kai987.github.io/FPV-drone-game/) · [Sites]
 
 Both handling modes automatically hover in calm air. Wind causes drift that needs correction. Sport offers higher speed, more inertia, and stronger banking feedback. This is an accessible game model, not a professional Acro/Rate, gravity-based flight, or real aerodynamic simulator.
 
-## Three maps
+## Six maps
 
 | Map | Flying envelope | Area | Scenery |
 | --- | --- | --- | --- |
 | Pine Valley · PINE VALLEY | 3.6 × 3.6 km | 12.96 km²; approximately 13 km² in the UI | Rolling terrain, pine woods, meadows, a river, Emerald Lake, and Pine Shadow Lake |
 | Industrial Factory · IRON WORKS | 7.2 × 7.2 km | 51.84 km²; approximately 52 km² in the UI | Industrial avenues, outer production districts, tanks, chimneys, pipes, and logistics yards |
 | Harbor · SEA PORT | 7.2 × 7.2 km | 51.84 km²; approximately 52 km² in the UI | Coastal warehouses, container piers, gantry cranes, cargo ships, and open sea |
+| Red Dune Desert · DUNE FRONTIER | 4.8 × 4.8 km | 23.04 km²; approximately 23 km² in the UI | Rolling dunes, red mesas, rock pillars, cacti, and camps |
+| City Centre · CITY CENTRE | 4.8 × 4.8 km | 23.04 km²; approximately 23 km² in the UI | High-rises, glass facades, grid avenues, crosswalks, and plazas |
+| Alpine Ridges · ALPINE RIDGES | 4.8 × 4.8 km | 23.04 km²; approximately 23 km² in the UI | Alpine valleys, snowy peaks, ridges, pine forests, and rock faces |
 
-All maps have a 450 m altitude ceiling. The factory and harbor have about four times their original area, retaining their spawn points and training routes. New districts and facilities provide the expansion; buildings are not scaled up.
+The mountain map has an 800 m altitude ceiling; all other maps have a 450 m ceiling. The factory and harbor have about four times their original area, retaining their spawn points and training routes. New districts and facilities provide the expansion; buildings are not scaled up.
 
 - **Valley:** Three country cabins, a wooden bridge, walking and grazing cattle and sheep, and river/lake fish schools. Water features multiscale waves, river-aligned texture flow, shallow-water transitions, and reflected sky and mountains. Rocks show mineral grains, cracks, and moss, with shrubs and gravel along the banks.
 - **Factory:** 190 buildings, 41 tanks, 15 chimneys, 40 trucks, 30 pipe segments, and 1,023 containers, with 101 buildings in the central district. Fly below elevated structures or land on supported roofs.
 - **Harbor:** 125 warehouses, nine piers, nine gantry cranes, 27 trucks, four cargo ships, two breakwaters, and 2,932 containers, with 54 warehouses in the central district. Each of the six new piers is 960 m long. The sea has waves, reflections, and shore foam; the lighthouse has a rotating beam at night.
+- **Desert:** Follow an independent route over rolling dunes and wind-carved mesas. Red rock pillars, rock formations, cacti, and camps create a landscape distinct from the valley.
+- **Downtown:** Fly along avenues between high-rises and explore plazas and rooftops. Roads, building footprints, and supported roofs share the same layout; windows and streetlights illuminate at night.
+- **Mountains:** Climb through valleys between ridges and snowy peaks, pine woods, and rock faces. Rust terrain heights drive rendering, flight support, and projectile ground queries consistently.
 - **Roads:** Each industrial map retains 21 main-road crossroads with zebra crossings and stop bars on all four approaches. Shared service roads connect the loading entrances of all 190 factory buildings and 125 harbor warehouses, avoiding buildings, cargo, tanks and the shoreline. The factory adds 148 T-junctions and 11 crossroads; the harbor adds 88 T-junctions and 7 crossroads. Long service roads have center dashes and junctions have zebra crossings; only the terminating approach stops at a T-junction. The 3D pavement, ground cutouts and minimap share the complete metre-scaled road layout.
-- **Switching:** On first entry, all three maps prepare their scenes, textures, Rust services, and day/night shaders, with per-map progress. Flying is enabled only after all are ready. Switching reuses cached scenes, returns to the selected map's spawn point, and resets the route, timer, ammunition, and score. Drone, game/handling mode, wind, day/night, sound, language, and camera view are retained.
+- **Switching:** On first entry, all six maps prepare their scenes, textures, Rust services, and day/night shaders, with per-map progress. Flying is enabled only after all are ready. Switching reuses cached scenes, returns to the selected map's spawn point, and resets the route, timer, ammunition, and score. Drone, game/handling mode, wind, day/night, sound, language, and camera view are retained.
 
 ## Seven drones
 
@@ -139,7 +145,7 @@ One game shares one WASM instance and WebGL context. Each map owns independent w
 
 Maps are scenes generated from shared configuration and procedural models, not complete 3D map files packed into Rust. Industrial buildings, rotated cargo, piers, breakwaters, and ship hulls use the same metre-based layout for rendering, the minimap, and Rust collisions. Nine piers and two breakwaters are uploaded once into Rust's land union, keeping terrain/water classification and support heights consistent.
 
-Initial loading reuses decoded images, overlaps texture downloads with scene preparation, and serially compiles and warms all three maps' day/night GPU resources. Trees use instanced billboards. Basic urban structures are instanced by material; details use 600 m spatial chunks and a 450 m visibility margin around their bounding spheres. Night streetlights use a fixed pool of eight lights. All map and rendering resources are released when leaving the game.
+Initial loading reuses decoded images, overlaps texture downloads with scene preparation, and serially compiles and warms all six maps' day/night GPU resources. Trees use instanced billboards. Basic urban structures are instanced by material; details use 600 m spatial chunks and a 450 m visibility margin around their bounding spheres. Night streetlights use a fixed pool of eight lights. All map and rendering resources are released when leaving the game.
 
 The idle background updates at about 12 FPS. Paused and finished scenes render on demand; the main scene stops drawing behind the hangar, guide, or wind dialog and while the page is hidden. Day/night and camera changes still redraw a paused scene, and resuming never catches up paused time. A lost WebGL context clears movement and firing input and pauses flight. Restoring the view preserves position, ammunition, and score until manual resume. Startup interruptions and runtime errors display a reload action.
 
@@ -163,6 +169,7 @@ src/game/*-simulation.ts    Flight, weapon, scene, and animation adapters
 src/game/world-kernel.ts    Shared geography and Rust world queries
 src/game/map-*.ts           Map catalog, layouts, and preparation cache
 src/game/urban-*.ts         Urban scenery, roads, sea, and sky
+src/game/exploration-*.ts   Shared desert, downtown, and mountain layout, terrain, and rendering
 src/game/drone*.ts          Drone configuration and shared 3D models
 src/game/world.ts           Map entry point and valley scenery
 src/game/landscape.ts       Valley bounds, rivers/lakes, and terrain reference
@@ -182,7 +189,7 @@ docs/asset-licenses.md      Asset sources and offline processing records
 
 Coverage includes numerical compatibility across seven drones, two handling modes, four wind strengths, eight directions, and 30/60/120 fps; complete Valley and urban eight-ring routes using ordinary controls; pause, invalid time steps, bounds, bridges, roofs/decks, elevated and rotated-object collisions, weapon lifecycles, layered impact surfaces, records and language storage, map caching, and resource cleanup. Seeded scenery, complete terrain heights/colors, water textures/flow, batched fish/livestock/explosion animation, expanded-map roads, berths, land/water boundaries, and minimap bounds are also checked.
 
-Browser checks include three-map preloading, map/drone switching, day/night, bombing, language changes, minimap/touch interaction at desktop and mobile sizes, page overflow, and the console. Browser viewport checks are not physical-phone GPU benchmarks, and real drone performance is outside validation scope.
+Browser checks include six-map preloading, map/drone switching, day/night, bombing, language changes, minimap/touch interaction at desktop and mobile sizes, page overflow, and the console. Browser viewport checks are not physical-phone GPU benchmarks, and real drone performance is outside validation scope.
 
 ## Artwork and license
 

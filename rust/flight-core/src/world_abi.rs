@@ -58,7 +58,8 @@ pub unsafe extern "C" fn world_configure(handle: usize) -> u32 {
     1
 }
 /// # Safety
-/// handle must be live and configured. kind is valley=0, factory=1, harbor=2.
+/// handle must be live and configured. kind is valley=0, factory=1, harbor=2,
+/// desert=3, downtown=4, mountains=5.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn world_set_map_kind(handle: usize, kind: u32) -> u32 {
     let buffer = unsafe { &mut *(handle as *mut WorldBuffers) };

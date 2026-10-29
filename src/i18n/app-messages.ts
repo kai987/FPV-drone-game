@@ -2,7 +2,7 @@ import type { MessageCatalog } from './locale';
 
 export const APP_MESSAGES = {
   'AEROFLOW — 第一视角无人机飞行场': ['AEROFLOW — FPVドローン飛行場', 'AEROFLOW — FPV drone playground'],
-  'AEROFLOW 第一视角无人机游戏。在松林山谷、工厂和海港中飞行、穿越检查点、体验风场与投弹挑战。': ['AEROFLOW FPVドローンゲーム。松林の谷、工場、港を飛び、チェックポイント、風の影響、爆弾投下チャレンジを楽しめます。', 'An FPV drone game. Fly through Pine Valley, the factory and the harbor, pass checkpoints, experience wind and try bombing challenges.'],
+  'AEROFLOW 第一视角无人机游戏。在山谷、工厂、海港、沙漠、市中心和山区六张地图中飞行，体验风场、昼夜与训练挑战。': ['AEROFLOW FPVドローンゲーム。谷、工場、港、砂漠、都市中心部、山岳地帯の6マップで、変化する風、昼夜の景色、飛行トレーニングを楽しめます。', 'An FPV drone game with six maps: valley, factory, harbor, desert, city centre and mountains. Explore changing wind, day and night, and flight training challenges.'],
   '界面语言': ['表示言語', 'Interface language'],
   'AEROFLOW 首页': ['AEROFLOW ホーム', 'AEROFLOW home'],
   '主导航': ['メインナビゲーション', 'Main navigation'],
@@ -29,8 +29,11 @@ export const APP_MESSAGES = {
   '山谷': ['山谷', 'Valley'],
   '工厂': ['工場', 'Factory'],
   '海港': ['港', 'Harbor'],
-  '3 张地图已就绪 · 切换会返回起点': ['3マップ準備完了 · 変更するとスタート地点へ', '3 maps ready · Switching returns to start'],
-  '首次进入将准备全部 3 张地图': ['初回起動時に3マップを準備します', 'Preparing all 3 maps on first entry'],
+  '沙漠': ['砂漠', 'Desert'],
+  '市中心': ['都心', 'Downtown'],
+  '山区': ['山岳', 'Mountains'],
+  '{count} 张地图已就绪 · 切换会返回起点': ['{count}マップ準備完了 · 変更するとスタート地点へ', '{count} maps ready · Switching returns to start'],
+  '首次进入将准备全部 {count} 张地图': ['初回起動時に{count}マップを準備します', 'Preparing all {count} maps on first entry'],
   '游戏模式': ['ゲームモード', 'Game mode'],
   '计时挑战': ['タイムアタック', 'Time trial'],
   '自由飞行': ['自由飛行', 'Free flight'],

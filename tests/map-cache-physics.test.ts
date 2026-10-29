@@ -28,7 +28,7 @@ function residentMap(runtime: RustRuntime, mapId: MapId) {
   };
 }
 
-test('three resident map simulations preserve inactive flight and weapon state during alternating updates and resets', () => {
+test('all six resident map simulations preserve inactive flight and weapon state during alternating updates and resets', () => {
   const runtime = createRustRuntime(module);
   const maps = MAPS.map(spec => residentMap(runtime, spec.id));
   try {

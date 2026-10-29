@@ -63,6 +63,9 @@ pub enum MapKind {
     Valley,
     Factory,
     Harbor,
+    Desert,
+    Downtown,
+    Mountains,
 }
 /// A solid scene-authored cuboid. Dimensions and base are world-space metres;
 /// yaw follows Three.js's positive rotation around Y.
@@ -253,6 +256,43 @@ fn gaussian(x: f64, z: f64, cx: f64, cz: f64, rx: f64, rz: f64) -> f64 {
     (-(((x - cx) / rx).powi(2) + ((z - cz) / rz).powi(2))).exp()
 }
 
+// Independent native counterpart of exploration-layout.ts; WASM integration
+// tests compare both the whole terrain envelope and multi-chunk samples.
+const DESERT_MESAS: [(f64, f64, f64, f64, f64); 4] = [
+    (-1350.0, -1000.0, 135.0, 290.0, 220.0),
+    (1250.0, -1350.0, 165.0, 310.0, 260.0),
+    (1550.0, 850.0, 120.0, 340.0, 240.0),
+    (-1550.0, 1250.0, 150.0, 300.0, 330.0),
+];
+const MOUNTAIN_PEAKS: [(f64, f64, f64, f64, f64); 5] = [
+    (-1250.0, -1050.0, 560.0, 510.0, 590.0),
+    (1050.0, -1450.0, 640.0, 530.0, 470.0),
+    (1550.0, 650.0, 500.0, 590.0, 520.0),
+    (-1500.0, 1050.0, 490.0, 580.0, 510.0),
+    (50.0, -2250.0, 470.0, 580.0, 450.0),
+];
+fn exploration_peaks(peaks: &[(f64, f64, f64, f64, f64)], x: f64, z: f64) -> f64 {
+    peaks
+        .iter()
+        .map(|&(cx, cz, height, rx, rz)| height * gaussian(x, z, cx, cz, rx, rz))
+        .sum()
+}
+fn desert_height(x: f64, z: f64) -> f64 {
+    let dune = 0.5 + 0.5 * (x * 0.008 + (z * 0.003).sin() * 1.1).sin();
+    8.0 + dune * dune * 21.0
+        + (z * 0.004 - x * 0.0015).sin() * 4.0
+        + (x * 0.025 + z * 0.018).sin() * 0.65
+        + exploration_peaks(&DESERT_MESAS, x, z)
+}
+fn mountains_height(x: f64, z: f64) -> f64 {
+    let foothills =
+        18.0 + (x * 0.0034 + (z * 0.002).sin()).sin() * 9.0 + (z * 0.0045 - x * 0.001).sin() * 7.0;
+    let peaks = exploration_peaks(&MOUNTAIN_PEAKS, x, z);
+    let ridge = (x * 0.011 + z * 0.007).sin() * (z * 0.009 - x * 0.004).sin();
+    let crag = ((x * 0.016 + z * 0.011).sin().abs() - 0.5) * 0.018;
+    foothills + peaks * (1.0 + ridge * 0.15 + crag)
+}
+
 #[derive(Debug)]
 pub struct World {
     pub water_level: f64,
@@ -324,6 +364,9 @@ impl World {
             0 => MapKind::Valley,
             1 => MapKind::Factory,
             2 => MapKind::Harbor,
+            3 => MapKind::Desert,
+            4 => MapKind::Downtown,
+            5 => MapKind::Mountains,
             _ => return false,
         };
         true
@@ -490,7 +533,9 @@ impl World {
     }
     pub fn water_distance(&self, x: f64, z: f64) -> f64 {
         match self.map_kind {
-            MapKind::Factory => return f64::INFINITY,
+            MapKind::Factory | MapKind::Desert | MapKind::Downtown | MapKind::Mountains => {
+                return f64::INFINITY;
+            }
             MapKind::Harbor => {
                 return harbor_water_distance(x, z, self.harbor_shore_x, &self.harbor_lands);
             }
@@ -508,7 +553,9 @@ impl World {
     }
     pub fn ground_height(&self, x: f64, z: f64) -> f64 {
         match self.map_kind {
-            MapKind::Factory => return 2.0,
+            MapKind::Factory | MapKind::Downtown => return 2.0,
+            MapKind::Desert => return desert_height(x, z),
+            MapKind::Mountains => return mountains_height(x, z),
             MapKind::Harbor => {
                 let distance = self.water_distance(x, z);
                 return if distance >= 0.0 {

@@ -86,3 +86,16 @@ test('live notices translate nested names and preserve scores without mutating t
   assert.deepEqual(notice, original);
   assert.equal(translateNotice('en', ''), '');
 });
+
+test('map loading copy uses the live catalog count and all six destinations have distinct localized names', () => {
+  for (const locale of ['zh', 'ja', 'en'] as const) {
+    const names = MAPS.map(map => translate(locale, map.name));
+    assert.equal(new Set(names).size, MAPS.length);
+    for (const key of ['{count} 张地图已就绪 · 切换会返回起点', '首次进入将准备全部 {count} 张地图']) {
+      const copy = translate(locale, key, { count: MAPS.length });
+      assert.ok(copy.includes(String(MAPS.length)), copy);
+      assert.ok(!copy.includes('{count}'), copy);
+    }
+    for (const key of ['沙漠', '市中心', '山区']) assert.ok(translate(locale, key));
+  }
+});
