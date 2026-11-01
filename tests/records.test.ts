@@ -16,6 +16,17 @@ test('revised city solids and alpine courses retain old records without comparin
   }
 });
 
+test('broken alpine ridges preserve the previous terrain record without using it for the revised course', () => {
+  const wind = { strength: 'breeze', direction: 315 } as const;
+  const previousKey = 'aeroflow:v5:best:mountains:sharp-ridges-v2:freestyle:assisted:breeze:315';
+  const values: Record<string, string> = { [previousKey]: '48' };
+  const storage = { getItem: (key: string) => values[key] ?? null };
+  assert.equal(readBestTime(storage, 'freestyle', 'assisted', wind, 'mountains'), null);
+  values[bestTimeKey('freestyle', 'assisted', wind, 'mountains')] = '51';
+  assert.equal(readBestTime(storage, 'freestyle', 'assisted', wind, 'mountains'), 51);
+  assert.equal(values[previousKey], '48');
+});
+
 test('wind records separate direction and strength while calm ignores direction', () => {
   const key = (strength: 'calm' | 'breeze' | 'strong', direction: number) => bestTimeKey('freestyle', 'sport', { strength, direction });
   assert.notEqual(key('breeze', 0), key('breeze', 180));

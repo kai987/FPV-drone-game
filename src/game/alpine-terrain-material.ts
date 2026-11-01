@@ -70,7 +70,7 @@ const ALPINE_MATERIAL_GLSL = /* glsl */ `
 
 /** Generated rock/snow albedos are combined with live PBR light and shadows. */
 export function createAlpineTerrainMaterial(textures: AlpineTerrainTextures): THREE.MeshStandardMaterial {
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.91, metalness: 0 });
+  const material = new THREE.MeshStandardMaterial({ roughness: 0.91, metalness: 0 });
   material.name = 'Alpine granite, wind-packed snow and meadow';
   material.onBeforeCompile = shader => {
     shader.uniforms.alpineGrass = { value: textures.grassTexture };

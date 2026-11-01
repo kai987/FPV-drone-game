@@ -136,10 +136,13 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
       samples[index * 2 + 1] = positions.getZ(index) + (minZ + maxZ) / 2;
     }
     const heights = kernel.sampleTerrain(samples).heights;
-    const colors = new Float32Array(positions.count * 3);
+    // The textured alpine shader derives its albedo from position and normal.
+    // Avoid four extra JS height queries per vertex for unused fallback colors.
+    const colors = texturedAlpine ? undefined : new Float32Array(positions.count * 3);
     for (let index = 0; index < positions.count; index++) {
       const x = samples[index * 2], z = samples[index * 2 + 1], y = heights[index];
       positions.setXYZ(index, x, y, z);
+      if (!colors) continue;
       if (desert) {
         const variation = Math.sin(x * 0.0021 + z * 0.0011) * 0.14 + Math.cos(z * 0.004) * 0.08;
         temporaryColor.copy(sandLow).lerp(sandHigh, THREE.MathUtils.clamp(0.45 + y / 220 + variation, 0, 1));
@@ -153,16 +156,21 @@ export function createExplorationWorld(_runtime: RustRuntime, kernel: WorldKerne
       }
       temporaryColor.toArray(colors, index * 3);
     }
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3)); geometry.computeVertexNormals(); geometry.computeBoundingSphere();
+    if (colors) geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.computeVertexNormals(); geometry.computeBoundingSphere();
     const mesh = new THREE.Mesh(geometry, terrainMaterial); mesh.name = `${map.englishName} terrain`; mesh.receiveShadow = true; mesh.castShadow = id === 'mountains'; scene.add(mesh);
   }
   if (city) terrainPatch(-9000, 9000, -9000, 9000, 12, 12);
   else {
-    terrainPatch(-2400, 2400, -2400, 2400, id === 'mountains' ? 384 : 256, id === 'mountains' ? 384 : 256);
+    const terrainSegments = id === 'mountains' ? 384 : 256;
+    terrainPatch(-2400, 2400, -2400, 2400, terrainSegments, terrainSegments);
     terrainPatch(-9000, -2400, -9000, 9000, 40, 80);
     terrainPatch(2400, 9000, -9000, 9000, 40, 80);
-    terrainPatch(-2400, 2400, -9000, -2400, 40, 40);
-    terrainPatch(-2400, 2400, 2400, 9000, 40, 40);
+    // Northern crest chains reach the map edge. Share their boundary vertices
+    // with the distant landscape so coarse outer sampling cannot open a crack.
+    const outerEdgeSegments = id === 'mountains' ? terrainSegments : 40;
+    terrainPatch(-2400, 2400, -9000, -2400, outerEdgeSegments, 40);
+    terrainPatch(-2400, 2400, 2400, 9000, outerEdgeSegments, 40);
   }
 
   const concrete = standard('#c2c2b4'), dark = standard('#303a3e', 0.8), white = standard('#eeecd8'), steel = standard('#53636b', 0.55, 0.5);
