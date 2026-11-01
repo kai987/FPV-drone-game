@@ -5,15 +5,18 @@ import { useI18n } from '../i18n/context';
 import { TouchGestureController, TOUCH_GESTURE_RADIUS } from './touch-gesture';
 import type { TouchFlightAxes, TouchFlightAxis, TouchGestureSnapshot } from './touch-gesture';
 import { isTouchPointer, useTouchInput } from './useTouchInput';
+import { DEFAULT_TOUCH_SETTINGS } from './touch-settings';
+import type { TouchSettings } from './touch-settings';
 import './TouchControls.css';
 
 interface TouchControlsProps {
   onAxis: (axis: TouchFlightAxis, value: number) => void;
+  settings?: TouchSettings;
 }
 
 const AXES: TouchFlightAxis[] = ['forward', 'strafe', 'climb', 'yaw'];
 
-export default function TouchControls({ onAxis }: TouchControlsProps) {
+export default function TouchControls({ onAxis, settings = DEFAULT_TOUCH_SETTINGS }: TouchControlsProps) {
   const { t } = useI18n();
   const controllerRef = useRef<TouchGestureController | null>(null);
   if (controllerRef.current === null) controllerRef.current = new TouchGestureController();
@@ -87,6 +90,9 @@ export default function TouchControls({ onAxis }: TouchControlsProps) {
   }, []);
 
   useLayoutEffect(() => { if (!enabled) reset(); }, [enabled]);
+  useLayoutEffect(() => {
+    reset(); controller.configure(settings);
+  }, [settings.sensitivity, settings.accelerationMs, settings.invertVertical]);
 
   function position(event: PointerEvent<HTMLDivElement>) {
     const bounds = event.currentTarget.getBoundingClientRect();

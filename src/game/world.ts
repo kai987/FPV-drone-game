@@ -21,6 +21,7 @@ import type { WorldKernel } from './world-kernel.ts';
 import { createSceneSimulation } from './scene-simulation.ts';
 import { preloadWorldAssets } from './world-assets.ts';
 import type { WorldAsset, WorldAssets } from './world-assets.ts';
+import type { GraphicsQuality } from './graphics-quality.ts';
 
 export { groundHeight } from './landscape.ts';
 
@@ -66,6 +67,7 @@ export interface PanoramaOptions {
   resolution?: 3548 | 7096;
   maxAnisotropy?: number;
   assets?: WorldAssets;
+  quality?: GraphicsQuality;
 }
 
 export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaOptions: PanoramaOptions = {}, mapId: MapId = DEFAULT_MAP_ID) {
@@ -115,8 +117,9 @@ export function createWorld(runtime: RustRuntime, kernel: WorldKernel, panoramaO
   const sun = new THREE.DirectionalLight('#fff2d7', 2.55);
   sun.position.set(-180, 282, 235);
   sun.target.position.set(0, 0, 55);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  const shadowSize = panoramaOptions.quality?.shadowMapSize ?? 2048;
+  sun.castShadow = shadowSize > 0;
+  sun.shadow.mapSize.set(shadowSize || 512, shadowSize || 512);
   sun.shadow.camera.left = -270;
   sun.shadow.camera.right = 270;
   sun.shadow.camera.top = 270;

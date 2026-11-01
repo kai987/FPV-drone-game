@@ -1,6 +1,7 @@
 import type { UrbanBox } from './map-layout.ts';
 import { getDowntownBuildingParts, getDowntownRoofDetails } from './downtown-architecture.ts';
-import { ALPINE_MASSIFS } from './alpine-massifs.ts';
+import { ALPINE_MASSIFS, MOUNTAIN_RIDGES } from './alpine-massifs.ts';
+export { MOUNTAIN_PEAKS, MOUNTAIN_RIDGES } from './alpine-massifs.ts';
 
 export type ExplorationMapId = 'desert' | 'downtown' | 'mountains';
 export interface TerrainPeak { readonly x: number; readonly z: number; readonly height: number; readonly radiusX: number; readonly radiusZ: number; }
@@ -26,21 +27,6 @@ export const DESERT_MESAS: readonly TerrainPeak[] = Object.freeze([
   { x: 1550, z: 850, height: 120, radiusX: 340, radiusZ: 240 },
   { x: -1550, z: 1250, height: 150, radiusX: 300, radiusZ: 330 },
 ]);
-export const MOUNTAIN_PEAKS: readonly TerrainPeak[] = Object.freeze([
-  { x: -1250, z: -1050, height: 665, radiusX: 470, radiusZ: 510 },
-  { x: 1050, z: -1450, height: 738, radiusX: 455, radiusZ: 435 },
-  { x: 1550, z: 650, height: 590, radiusX: 505, radiusZ: 470 },
-  { x: -1500, z: 1050, height: 570, radiusX: 490, radiusZ: 475 },
-  { x: 50, z: -2250, height: 625, radiusX: 450, radiusZ: 390 },
-]);
-/** Linked, narrow ridgelines create saddles between the peaks, leaving the training valley open. */
-export const MOUNTAIN_RIDGES = Object.freeze([
-  { ax: -1250, az: -1050, bx: -1500, bz: 1050, width: 250, height: 300 },
-  { ax: -1250, az: -1050, bx: 50, bz: -2250, width: 245, height: 320 },
-  { ax: 50, az: -2250, bx: 1050, bz: -1450, width: 230, height: 340 },
-  { ax: 1050, az: -1450, bx: 1550, bz: 650, width: 255, height: 320 },
-]);
-
 export function isExplorationMap(id: string): id is ExplorationMapId {
   return id === 'desert' || id === 'downtown' || id === 'mountains';
 }

@@ -29,6 +29,8 @@ export interface RendererPerformanceInfo {
 export interface RenderPerformanceOptions {
   isMobile: boolean;
   devicePixelRatio: number;
+  /** Preset/device budget; adaptive resolution may reduce this, never exceed it. */
+  maxPixelRatio?: number;
 }
 
 const SAMPLE_WINDOW_MS = 1_000;
@@ -73,9 +75,10 @@ export class RenderPerformanceMonitor {
   private submissionTotal = 0;
   private latest: Readonly<RenderPerformanceSnapshot>;
 
-  constructor({ isMobile, devicePixelRatio }: RenderPerformanceOptions) {
+  constructor({ isMobile, devicePixelRatio, maxPixelRatio = 1.75 }: RenderPerformanceOptions) {
     this.targetFps = isMobile ? 30 : 60;
-    const maximum = Math.min(Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1, 1.75);
+    const ceiling = Number.isFinite(maxPixelRatio) && maxPixelRatio > 0 ? Math.min(maxPixelRatio, 1.75) : 1.75;
+    const maximum = Math.min(Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1, ceiling);
     this.levels = [...new Set(PIXEL_RATIO_LEVELS.map(ratio => Math.min(ratio, maximum)))];
     this.level = this.levels.length - 1;
     this.latest = {

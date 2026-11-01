@@ -29,14 +29,15 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function displacement(value: number) {
+function displacement(value: number, sensitivity: number) {
+  value *= sensitivity;
   const distance = Math.abs(value);
   return distance <= TOUCH_GESTURE_DEAD_ZONE ? 0
     : Math.sign(value) * clamp((distance - TOUCH_GESTURE_DEAD_ZONE) / (TOUCH_GESTURE_RADIUS - TOUCH_GESTURE_DEAD_ZONE), 0, 1);
 }
 
-function throttleAt(finger: GestureFinger, now: number) {
-  const fraction = clamp((now - finger.pressedAt) / TOUCH_GESTURE_RAMP_MS, 0, 1);
+function throttleAt(finger: GestureFinger, now: number, accelerationMs: number) {
+  const fraction = clamp((now - finger.pressedAt) / accelerationMs, 0, 1);
   const eased = fraction * fraction * (3 - 2 * fraction);
   return INITIAL_THROTTLE + (1 - INITIAL_THROTTLE) * eased;
 }
@@ -49,10 +50,20 @@ function approach(current: number, target: number, step: number) {
 
 /** Two independently owned pointer roles; a remaining finger is never promoted. */
 export class TouchGestureController {
+  private settings: TouchSettings;
   private flight: GestureFinger | null = null;
   private attitude: GestureFinger | null = null;
   private axes: TouchFlightAxes = { ...ZERO };
   private lastSampleAt: number | null = null;
+
+  constructor(settings?: Partial<TouchSettings>) {
+    this.settings = normalizeTouchSettings(settings);
+  }
+
+  configure(settings: TouchSettings): void {
+    this.settings = normalizeTouchSettings(settings);
+    this.reset();
+  }
 
   get active() {
     return this.flight !== null || this.attitude !== null;
@@ -106,7 +117,7 @@ export class TouchGestureController {
     return {
       axes: { ...this.axes },
       fingers: [this.flight, this.attitude].filter((finger): finger is GestureFinger => finger !== null).map(finger => ({ ...finger })),
-      throttle: this.flight ? throttleAt(this.flight, Number.isFinite(now) ? now : this.flight.pressedAt) : 0,
+      throttle: this.flight ? throttleAt(this.flight, Number.isFinite(now) ? now : this.flight.pressedAt, this.settings.accelerationMs) : 0,
     };
   }
 
@@ -116,21 +127,21 @@ export class TouchGestureController {
     this.lastSampleAt = this.active ? Math.max(now, this.lastSampleAt ?? now) : null;
     const target = { ...ZERO };
     if (this.flight) {
-      const horizontal = displacement(this.flight.x - this.flight.originX);
-      const vertical = displacement(this.flight.originY - this.flight.y);
+      const horizontal = displacement(this.flight.x - this.flight.originX, this.settings.sensitivity);
+      const vertical = displacement((this.flight.originY - this.flight.y) * (this.settings.invertVertical ? -1 : 1), this.settings.sensitivity);
       // Blend from forward cruising to the dragged direction without a jump at
       // the dead zone. Upward travel preserves cruising; downward travel brakes
       // through neutral, while a full sideways drag remains a pure strafe.
       const cruising = 1 - Math.abs(horizontal);
       const forward = cruising * (1 - Math.abs(vertical)) + vertical;
       const length = Math.max(1, Math.hypot(forward, horizontal));
-      const throttle = throttleAt(this.flight, now);
+      const throttle = throttleAt(this.flight, now, this.settings.accelerationMs);
       target.forward = forward / length * throttle;
       target.strafe = horizontal / length * throttle;
     }
     if (this.attitude) {
-      target.climb = displacement(this.attitude.originY - this.attitude.y);
-      target.yaw = -displacement(this.attitude.x - this.attitude.originX);
+      target.climb = displacement((this.attitude.originY - this.attitude.y) * (this.settings.invertVertical ? -1 : 1), this.settings.sensitivity);
+      target.yaw = -displacement(this.attitude.x - this.attitude.originX, this.settings.sensitivity);
     }
     const step = AXIS_SLEW_PER_SECOND * delta;
     for (const axis of Object.keys(ZERO) as TouchFlightAxis[]) {
@@ -144,3 +155,5 @@ export class TouchGestureController {
     return this.snapshot(now);
   }
 }
+import { normalizeTouchSettings } from './touch-settings.ts';
+import type { TouchSettings } from './touch-settings.ts';

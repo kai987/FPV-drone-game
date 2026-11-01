@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Camera, Globe, ChevronDown, Drone, Maximize, Minimize, Moon, Pause, Play, RotateCcw, Sun, Volume2, VolumeX, Trophy, Wind } from 'lucide-react';
+import { ArrowRight, Camera, Globe, ChevronDown, Drone, Maximize, Minimize, Moon, Pause, Play, RotateCcw, SlidersHorizontal, Sun, Volume2, VolumeX, Trophy, Wind } from 'lucide-react';
 import { FlightEngine } from './game/engine';
 import { useI18n } from './i18n/context';
 import { isLocale } from './i18n/locale';
@@ -7,7 +7,7 @@ import type { NoticeMessage } from './i18n/locale';
 import { translateNotice } from './i18n/messages';
 import type { MapLoadProgress } from './game/map-cache';
 import { loadFlightCore } from './game/load-flight-core';
-import { DEFAULT_MAP_ID, MAPS, getMapSpec } from './game/map-catalog';
+import { MAPS, getMapSpec } from './game/map-catalog';
 import type { MapId } from './game/map-catalog';
 import { EMPTY_TELEMETRY, formatTime } from './game/types';
 import type { CameraMode, FlightMode, RaceMode, Status } from './game/types';
@@ -19,13 +19,17 @@ import TouchControls from './components/TouchControls';
 import AimControls from './components/AimControls';
 import WeaponPanel from './components/WeaponPanel';
 import DroneHangar from './components/DroneHangar';
-import { DEFAULT_DRONE_ID, getDroneSpec } from './game/drone-catalog';
+import { getDroneSpec } from './game/drone-catalog';
 import type { DroneId } from './game/drone-catalog';
 
-import { DEFAULT_WIND_SETTINGS } from './game/wind';
 import type { WindSettings } from './game/wind';
 import { bestTimeKey, readBestTime } from './game/records';
 import WindPanel, { WindSettingsDialog } from './components/WindPanel';
+import PreferencesDialog from './components/PreferencesDialog';
+import type { AdjustablePreferences } from './components/PreferencesDialog';
+import { defaultFlightPreferences, readFlightPreferences, saveFlightPreferences } from './game/preferences';
+import type { QualityPreset } from './game/graphics-quality';
+import type { TouchSettings } from './components/touch-settings';
 
 const MAP_SHORT_LABELS: Record<MapId, string> = {
   valley: '山谷', factory: '工厂', harbor: '海港', desert: '沙漠', downtown: '市中心', mountains: '山区',
@@ -40,20 +44,29 @@ export default function App() {
   const noticeTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const hangarTrigger = useRef<HTMLButtonElement>(null);
   const guideTrigger = useRef<HTMLButtonElement>(null);
+  const preferencesTrigger = useRef<HTMLButtonElement>(null);
+  const [initialPreferences] = useState(() => {
+    try { return readFlightPreferences(localStorage); } catch { return defaultFlightPreferences(); }
+  });
   const [status, setStatus] = useState<Status>('ready');
   const [telemetry, setTelemetry] = useState(EMPTY_TELEMETRY);
-  const [mode, setMode] = useState<RaceMode>('race');
-  const [flightMode, setFlightMode] = useState<FlightMode>('assisted');
-  const [cameraMode, setCameraMode] = useState<CameraMode>('chase');
-  const [sound, setSound] = useState(false);
-  const [night, setNight] = useState(false);
+  const [mode, setMode] = useState<RaceMode>(initialPreferences.mode);
+  const [flightMode, setFlightMode] = useState<FlightMode>(initialPreferences.flightMode);
+  const [cameraMode, setCameraMode] = useState<CameraMode>(initialPreferences.cameraMode);
+  const [sound, setSound] = useState(initialPreferences.sound);
+  const [night, setNight] = useState(initialPreferences.night);
   const [fullscreen, setFullscreen] = useState(false);
   const [guide, setGuide] = useState(false);
   const [hangar, setHangar] = useState(false);
   const [weatherOpen, setWeatherOpen] = useState(false);
-  const [windSettings, setWindSettings] = useState<WindSettings>({ ...DEFAULT_WIND_SETTINGS });
-  const [droneId, setDroneId] = useState<DroneId>(DEFAULT_DRONE_ID);
-  const [mapId, setMapId] = useState<MapId>(DEFAULT_MAP_ID);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [qualityPreset, setQualityPreset] = useState<QualityPreset>(initialPreferences.qualityPreset);
+  const [touchSettings, setTouchSettings] = useState<TouchSettings>(initialPreferences.touch);
+  const [restartSerial, setRestartSerial] = useState(0);
+  const [storageAvailable, setStorageAvailable] = useState(true);
+  const [windSettings, setWindSettings] = useState<WindSettings>(initialPreferences.windSettings);
+  const [droneId, setDroneId] = useState<DroneId>(initialPreferences.droneId);
+  const [mapId, setMapId] = useState<MapId>(initialPreferences.mapId);
   const [notice, setNotice] = useState<NoticeMessage>('');
   const [error, setError] = useState<NoticeMessage>('');
   const [graphics, setGraphics] = useState<GraphicsState>('ready');
@@ -62,7 +75,7 @@ export default function App() {
   const [best, setBest] = useState<Record<string, number>>({});
   const [finishedRecordKey, setFinishedRecordKey] = useState<string | null>(null);
   const settingsLocked = status === 'flying' || status === 'paused';
-  const modalOpen = hangar || guide || weatherOpen;
+  const modalOpen = hangar || guide || weatherOpen || preferencesOpen;
   const graphicsReady = graphics === 'ready' && !error;
   const selectedDrone = getDroneSpec(droneId);
   const selectedMap = getMapSpec(mapId);
@@ -77,6 +90,12 @@ export default function App() {
     setNotice(message); clearTimeout(noticeTimeout.current);
     noticeTimeout.current = setTimeout(() => setNotice(''), 3600);
   };
+  useEffect(() => {
+    try {
+      setStorageAvailable(saveFlightPreferences(localStorage, { version: 1, mapId, droneId, mode, flightMode,
+        cameraMode, windSettings, night, sound, qualityPreset, touch: touchSettings }));
+    } catch { setStorageAvailable(false); }
+  }, [mapId, droneId, mode, flightMode, cameraMode, windSettings, night, sound, qualityPreset, touchSettings]);
   useEffect(() => {
     let cancelled = false;
     const loading = new AbortController();
@@ -115,7 +134,7 @@ export default function App() {
               return { ...current, [key]: seconds };
             });
           },
-        }, loadFlightCore(), settings.current.mapId, loading.signal, loadingStarted);
+        }, loadFlightCore(), settings.current.mapId, loading.signal, loadingStarted, qualityPreset);
         if (cancelled) { game.dispose(); return; }
         engine.current = game;
         const translate = translateRef.current;
@@ -128,12 +147,6 @@ export default function App() {
         await game.preloadMaps(progress => { if (!cancelled) setMapProgress(progress); });
         if (cancelled) return;
         setNotice(''); clearTimeout(noticeTimeout.current);
-        const activeGame = game;
-        void activeGame.audio.enable(settings.current.sound).catch(() => {
-          if (!cancelled && engine.current === activeGame && settings.current.sound) {
-            setSound(false); notify('浏览器暂未允许声音播放');
-          }
-        });
         setLoaded(true);
       } catch (failure) {
         game?.dispose();
@@ -151,7 +164,27 @@ export default function App() {
       cancelled = true; loading.abort(); clearTimeout(noticeTimeout.current); game?.dispose();
       if (engine.current === game) engine.current = null;
     };
-  }, []);
+  }, [qualityPreset, restartSerial]);
+  useEffect(() => {
+    const game = engine.current;
+    if (!loaded || !sound || !game) return;
+    // Restored sound is only a preference. Create/resume audio inside the next
+    // real input handler, never as a side effect of loading or restoring state.
+    const stopListening = () => {
+      window.removeEventListener('pointerdown', unlock, true);
+      window.removeEventListener('keydown', unlock, true);
+    };
+    const unlock = () => {
+      stopListening();
+      if (engine.current !== game) return;
+      void game.audio.enable(true).catch(() => {
+        if (engine.current === game && settings.current.sound) { setSound(false); notify('浏览器暂未允许声音播放'); }
+      });
+    };
+    window.addEventListener('pointerdown', unlock, { capture: true, once: true });
+    window.addEventListener('keydown', unlock, { capture: true, once: true });
+    return stopListening;
+  }, [loaded, sound]);
   useEffect(() => { if (engine.current) { engine.current.mode = mode; engine.current.flightMode = flightMode; } }, [mode, flightMode, loaded]);
   useEffect(() => { engine.current?.setWind(windSettings); }, [windSettings, loaded]);
   useEffect(() => { engine.current?.setNight(night); }, [night, loaded]);
@@ -177,6 +210,30 @@ export default function App() {
     engine.current?.pause(); setHangar(true);
   };
   const openWeather = () => { engine.current?.pause(); setWeatherOpen(true); };
+  const openPreferences = () => {
+    preferencesTrigger.current?.focus({ preventScroll: true });
+    engine.current?.pause(); setPreferencesOpen(true);
+  };
+  const applyPreferences = (next: AdjustablePreferences) => {
+    const rebuild = next.qualityPreset !== qualityPreset;
+    if (rebuild) setLoaded(false);
+    else if (next.sound !== sound) {
+      const game = engine.current;
+      void game?.audio.enable(next.sound).catch(() => {
+        if (engine.current === game) { setSound(false); notify('浏览器暂未允许声音播放'); }
+      });
+    }
+    setQualityPreset(next.qualityPreset); setTouchSettings(next.touch); setSound(next.sound);
+    setPreferencesOpen(false);
+    if (!rebuild) notify('设置已应用');
+  };
+  const resetPreferences = () => {
+    const defaults = defaultFlightPreferences();
+    setLoaded(false); setPreferencesOpen(false);
+    setMapId(defaults.mapId); setDroneId(defaults.droneId); setMode(defaults.mode); setFlightMode(defaults.flightMode);
+    setCameraMode(defaults.cameraMode); setWindSettings(defaults.windSettings); setNight(defaults.night); setSound(defaults.sound);
+    setQualityPreset(defaults.qualityPreset); setTouchSettings(defaults.touch); setRestartSerial(current => current + 1);
+  };
   const applyWind = (settings: WindSettings) => {
     engine.current?.setWind(settings); setWindSettings(settings); setWeatherOpen(false);
     notify(settingsLocked ? '风况已更新 · 继续飞行体验风偏' : '风况已更新 · 准备起飞');
@@ -212,7 +269,9 @@ export default function App() {
   return <div className={`app-shell${night ? ' night' : ''}`}>
     <header className="topbar">
       <a className="brand" href="./" aria-label={t('AEROFLOW 首页')}><Drone size={32} strokeWidth={1.8} /><span>AEROFLOW</span></a>
-      <nav aria-label={t('主导航')}><button className={!guide ? 'nav-link selected' : 'nav-link'} onClick={() => setGuide(false)}>{t('飞行场')}</button><button ref={guideTrigger} className={guide ? 'nav-link selected' : 'nav-link'} onClick={() => { guideTrigger.current?.focus({ preventScroll: true }); engine.current?.pause(); setGuide(true); }}>{t('操作指南')}</button></nav>
+      <nav aria-label={t('主导航')}><button className={!guide ? 'nav-link selected' : 'nav-link'} onClick={() => setGuide(false)}>{t('飞行场')}</button><button ref={guideTrigger} className={`nav-link guide-entry${guide ? ' selected' : ''}`} onClick={() => { guideTrigger.current?.focus({ preventScroll: true }); engine.current?.pause(); setGuide(true); }}>{t('操作指南')}</button>
+        <button ref={preferencesTrigger} className="preferences-entry" type="button" aria-label={t('打开设置')} title={t('设置')} aria-haspopup="dialog" aria-expanded={preferencesOpen} onClick={openPreferences}><SlidersHorizontal size={18} aria-hidden="true" /><span>{t('设置')}</span></button>
+      </nav>
       <div className="header-actions"><label className="language-picker"><Globe size={16} aria-hidden="true" /><select aria-label={t("界面语言")} value={locale} onChange={event => { if (isLocale(event.target.value)) setLocale(event.target.value); }}><option value="zh" lang="zh-CN">中文</option><option value="ja" lang="ja">日本語</option><option value="en" lang="en">English</option></select></label><button ref={hangarTrigger} className="drone-hangar-toggle" type="button" aria-label={t('{name}，打开机库与参数', { name: t(selectedDrone.name) })} title={t('{name} · 机库与参数', { name: t(selectedDrone.name) })} aria-haspopup="dialog" aria-expanded={hangar} onClick={openHangar}><Drone size={16} aria-hidden="true" /><span className="hangar-entry-label">{t('机库')}</span><span className="hangar-entry-model">{t(selectedDrone.name)}</span><ChevronDown size={12} aria-hidden="true" /></button><button className="day-night-toggle" type="button" aria-label={night ? t('切换到日间') : t('切换到夜间')} aria-pressed={night} title={`N · ${night ? t('切换到日间') : t('切换到夜间')}`} onClick={() => setNight(current => !current)}>{night ? <Moon size={17} aria-hidden="true" /> : <Sun size={17} aria-hidden="true" />}<span>{night ? t('夜间') : t('日间')}</span></button><button className="icon-button" aria-label={sound ? t('关闭声音') : t('开启声音')} aria-pressed={sound} onClick={toggleSound}>{sound ? <Volume2 size={21} /> : <VolumeX size={21} />}</button><span className="vertical-rule" /><button className="icon-button" aria-label={fullscreen ? t('退出全屏') : t('进入全屏')} onClick={() => void toggleFullscreen()}>{fullscreen ? <Minimize size={21} /> : <Maximize size={21} />}</button></div>
     </header>
     <main className="game-layout">
@@ -249,7 +308,7 @@ export default function App() {
           {status === 'finished' && graphicsReady ? <div className="state-overlay"><div className="state-panel finish-panel"><Trophy className="state-icon" size={32} /><h2>{t('漂亮的一次飞行。')}</h2><p>{t('{count} 个检查点全部完成', { count: selectedMap.checkpoints.length })}</p><strong className="finish-time">{formatTime(telemetry.elapsed)}</strong><div className="finish-best">{!telemetry.recordEligible ? t('本轮调整过风况，不计入个人最佳') : finishedRecordKey === bestTimeKey(droneId, flightMode, windSettings, mapId) ? t('本图同风况最佳 · {time}', { time: formatTime(personalBest ?? telemetry.elapsed) }) : t('本轮已完成 · 新风况用于下次起飞')}</div><button className="primary-button" onClick={() => engine.current?.start()}>{t('再飞一次')}<ArrowRight size={19} /></button><button className="text-button" onClick={() => { setMode('free'); if (engine.current) { engine.current.mode = 'free'; engine.current.start(); } }}>{t('在{name}自由探索', { name: t(selectedMap.name) })}</button></div></div> : null}
           <div className={`flight-notice ${notice ? 'visible' : ''}`} role="status">{translateNotice(locale, notice)}</div>
           <WindPanel wind={telemetry.wind} airSpeed={telemetry.airSpeed} onOpen={openWeather} />
-          {status === 'flying' ? <TouchControls onAxis={(axis, value) => engine.current?.setTouch(axis, value)} /> : null}
+          {status === 'flying' ? <TouchControls settings={touchSettings} onAxis={(axis, value) => engine.current?.setTouch(axis, value)} /> : null}
           {status === 'flying' && telemetry.weapons.kind === 'machine-gun' ? <AimControls onAim={(dx, dy) => engine.current?.aim(dx, dy)} /> : null}
           {status === 'flying' ? <button className="mobile-pause icon-button" aria-label={t('暂停飞行')} onClick={() => engine.current?.pause()}><Pause size={19} /></button> : null}
         </div>
@@ -264,5 +323,8 @@ export default function App() {
     {weatherOpen ? <WindSettingsDialog settings={windSettings} activeFlight={settingsLocked} onApply={applyWind} onClose={() => setWeatherOpen(false)} /> : null}
     {guide ? <ControlsGuide onClose={() => setGuide(false)} /> : null}
     {hangar ? <DroneHangar droneId={droneId} flightMode={flightMode} status={status} available={loaded && graphicsReady} onApply={applyDrone} onClose={() => setHangar(false)} /> : null}
+    {preferencesOpen ? <PreferencesDialog value={{ qualityPreset, touch: touchSettings, sound }} storageAvailable={storageAvailable}
+      onApply={applyPreferences} onReset={resetPreferences} onClose={() => setPreferencesOpen(false)}
+      onOpenGuide={() => { preferencesTrigger.current?.focus({ preventScroll: true }); setPreferencesOpen(false); setGuide(true); }} /> : null}
   </div>;
 }
