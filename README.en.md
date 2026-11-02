@@ -218,6 +218,8 @@ Coverage includes numerical compatibility across seven drones, two handling mode
 
 CI runs Playwright’s Chromium smoke suite at desktop 1440×960 and mobile-equivalent 390×844. Browser checks cover six-map preparation, map/drone/day-night/settings interactions, rendered output, and console health. Mobile viewport and touch emulation are not physical-device GPU benchmarks; Safari on physical iPhone/iPad devices remains unverified. Real drone performance is outside the test scope.
 
+Linux CI uses software rendering, with a 60-second limit for actions and captures. Touch-flight evidence is captured after the gesture assertions and a pause. To exercise the same rendering path locally after a production build, run `CI=1 PLAYWRIGHT_SOFTWARE_WEBGL=1 npm run test:e2e`.
+
 ## Artwork and license
 
 The snowy-mountain, pine-valley, and blue-sky panorama began as a 1774×887 image generated with built-in Image Gen, then received 4× Real-ESRGAN upscaling. A 7096×3548 HD WebP or 3548×1774 mobile version is selected according to graphics quality, primary input, viewport width, and GPU capability. This is enhanced artwork, not native 7K/8K photography. The sky follows the camera, forests below the horizon transition into fog, and rivers/lakes share the panorama for reflections.

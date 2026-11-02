@@ -1,5 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
+const softwareWebGL = process.platform === 'linux' || process.env.PLAYWRIGHT_SOFTWARE_WEBGL === '1';
+
 export default defineConfig({
   testDir: './e2e',
   timeout: process.env.CI ? 360_000 : 180_000,
@@ -12,13 +14,14 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://127.0.0.1:4183',
-    actionTimeout: 15_000,
+    // CI uses CPU rendering; compositor-backed clicks and captures can exceed 15s.
+    actionTimeout: process.env.CI ? 60_000 : 15_000,
     navigationTimeout: 30_000,
     locale: 'en-US',
     trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
     screenshot: 'only-on-failure',
     channel: 'chromium',
-    launchOptions: { args: process.platform === 'linux'
+    launchOptions: { args: softwareWebGL
       ? ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--disable-dev-shm-usage'] : [] },
   },
   projects: [

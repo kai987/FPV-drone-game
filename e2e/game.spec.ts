@@ -200,6 +200,10 @@ test('landscape touch devices keep the mobile texture budget and gestures releas
   await expect(page.locator('.touch-gesture-flight')).toHaveCount(0);
   await expect.poll(() => number(page, 'speed'), { timeout: 20_000 }).toBeLessThan(15);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-  await info.attach('touch-flight', { body: await page.screenshot(), contentType: 'image/png' });
   await cdp.detach();
+  // The gesture assertions run in flight. Capture the evidence after pausing so
+  // SwiftShader's continuous flight frames do not compete with the screenshot.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.pause-panel')).toBeVisible();
+  await info.attach('touch-flight-paused', { body: await page.screenshot(), contentType: 'image/png' });
 });
