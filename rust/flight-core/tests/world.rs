@@ -237,22 +237,44 @@ fn desert_dunes_mountain_peaks_and_downtown_have_distinct_ground_profiles() {
     assert!(mesa > dune + 100.0);
     world.set_map_kind(5);
     let foothill = world.ground_height(0.0, 80.0);
-    let summit = world.ground_height(1050.0, -1450.0);
+    let summit = world.ground_height(1120.0, -1475.0);
     assert!(summit > foothill + 500.0 && summit < 780.0);
     world.set_map_kind(4);
     near(world.ground_height(1050.0, -1450.0), 2.0);
 }
 
 #[test]
-fn alpine_crowns_are_sharp_and_connected_by_lower_ridges() {
+fn alpine_folded_massifs_have_offset_summits_and_unequal_faces() {
     let mut world = world();
     assert!(world.set_map_kind(5));
-    for (x, z) in [(-1250.0, -1050.0), (1050.0, -1450.0), (1550.0, 650.0)] {
-        let crown = world.ground_height(x, z);
-        assert!(crown > 450.0 && crown < 780.0);
-        for (dx, dz) in [(80.0, 0.0), (-80.0, 0.0), (0.0, 80.0), (0.0, -80.0)] {
-            assert!(crown - world.ground_height(x + dx, z + dz) > 70.0);
+    for (cx, cz) in [
+        (-1250.0, -1050.0),
+        (1050.0, -1450.0),
+        (1550.0, 650.0),
+        (-1500.0, 1050.0),
+        (50.0, -2250.0),
+    ] {
+        let mut summit = (cx, cz, f64::NEG_INFINITY);
+        for ix in -25..=25 {
+            for iz in -25..=25 {
+                let x = cx + f64::from(ix) * 20.0;
+                let z = cz + f64::from(iz) * 20.0;
+                let y = world.ground_height(x, z);
+                if y > summit.2 {
+                    summit = (x, z, y);
+                }
+            }
         }
+        assert!(summit.2 > 530.0 && summit.2 < 780.0);
+        assert!((summit.0 - cx).hypot(summit.1 - cz) > 35.0);
+        let mut smallest = f64::INFINITY;
+        let mut largest = f64::NEG_INFINITY;
+        for (dx, dz) in [(80.0, 0.0), (-80.0, 0.0), (0.0, 80.0), (0.0, -80.0)] {
+            let drop = summit.2 - world.ground_height(summit.0 + dx, summit.1 + dz);
+            smallest = smallest.min(drop);
+            largest = largest.max(drop);
+        }
+        assert!(largest - smallest > 70.0 && smallest < 200.0 && largest > 190.0);
     }
     for (x, z) in [
         (-1375.0, 0.0),

@@ -1,6 +1,7 @@
 //! Numeric map queries. Scene-authored geometry is uploaded once; all runtime
 //! surface selection, water contours and obstacle broad/narrow phases are native.
 
+use crate::alpine_data::{ALPINE_MASSIFS, MOUNTAIN_RIDGES};
 use crate::flight::Vec3;
 use std::collections::HashMap;
 
@@ -264,27 +265,6 @@ const DESERT_MESAS: [(f64, f64, f64, f64, f64); 4] = [
     (1550.0, 850.0, 120.0, 340.0, 240.0),
     (-1550.0, 1250.0, 150.0, 300.0, 330.0),
 ];
-const MOUNTAIN_PEAKS: [(f64, f64, f64, f64, f64); 5] = [
-    (-1250.0, -1050.0, 665.0, 470.0, 510.0),
-    (1050.0, -1450.0, 738.0, 455.0, 435.0),
-    (1550.0, 650.0, 590.0, 505.0, 470.0),
-    (-1500.0, 1050.0, 570.0, 490.0, 475.0),
-    (50.0, -2250.0, 625.0, 450.0, 390.0),
-];
-// Fixed orientations are precomputed to keep terrain batches and flight queries cheap.
-const MOUNTAIN_ORIENTATIONS: [(f64, f64); 5] = [
-    (0.97133797485202955, -0.23770262642713458),
-    (0.93937271284737889, 0.34289780745545134),
-    (0.85252452205950568, -0.52268722893065922),
-    (0.98006657784124163, 0.19866933079506122),
-    (0.99500416527802582, -0.099833416646828155),
-];
-const MOUNTAIN_RIDGES: [(f64, f64, f64, f64, f64, f64); 4] = [
-    (-1250.0, -1050.0, -1500.0, 1050.0, 250.0, 300.0),
-    (-1250.0, -1050.0, 50.0, -2250.0, 245.0, 320.0),
-    (50.0, -2250.0, 1050.0, -1450.0, 230.0, 340.0),
-    (1050.0, -1450.0, 1550.0, 650.0, 255.0, 320.0),
-];
 fn exploration_peaks(peaks: &[(f64, f64, f64, f64, f64)], x: f64, z: f64) -> f64 {
     peaks
         .iter()
@@ -322,49 +302,63 @@ fn mountains_height(x: f64, z: f64) -> f64 {
     let foothills =
         18.0 + (x * 0.0034 + (z * 0.002).sin()).sin() * 9.0 + (z * 0.0045 - x * 0.001).sin() * 7.0;
     let mut height: f64 = 0.0;
-    for (index, &(cx, cz, peak_height, rx, rz)) in MOUNTAIN_PEAKS.iter().enumerate() {
-        let (cosine, sine) = MOUNTAIN_ORIENTATIONS[index];
-        let dx = x - cx;
-        let dz = z - cz;
-        let mut u = (dx * cosine + dz * sine) / rx;
-        let mut v = (-dx * sine + dz * cosine) / rz;
-        let radius = u.hypot(v);
-        let taper = radius.min(1.0);
-        let phase = index as f64;
-        u += (z * 0.004 + phase * 1.7).sin() * (x * 0.0023 + phase).sin() * 0.055 * taper;
-        v += (x * 0.0041 + phase * 2.1).sin() * 0.04 * taper;
-        let angle = v.atan2(u);
-        let lobes = 1.0
-            + 0.14 * (angle * 3.0 + phase * 1.7).sin()
-            + 0.07 * (angle * 7.0 - phase * 1.3).sin();
-        let polygon = (u.abs() + v.abs() * 0.32).max(v.abs() * 1.02 + u.abs() * 0.28);
-        let facets = (u.hypot(v) * 0.7 + polygon * 0.3) / lobes;
-        let crown = (1.0 - facets).max(0.0).powf(0.86);
-        let skirt = (-(u * u + v * v) * 1.65).exp();
-        let gullies = if facets >= 1.0 {
-            1.0
-        } else {
-            1.0 - 0.12
-                * (angle * 5.0 + phase * 1.7 + (angle * 2.0 + phase).sin() * 0.6 + radius * 0.7)
-                    .sin()
-                    .abs()
-                * (std::f64::consts::PI * facets).sin()
-        };
-        let mut mass = peak_height * (0.86 * crown + 0.14 * skirt) * gullies;
-        if crown > 0.0 {
-            let shell = 4.0 * crown * (1.0 - crown);
-            let coarse = alpine_noise(dx / 180.0, dz / 180.0, index as u32 + 11);
-            let medium = alpine_noise(dx / 70.0, dz / 70.0, index as u32 + 37);
-            let fine = alpine_noise(dx / 28.0, dz / 28.0, index as u32 + 71);
-            let channel = (1.0
-                - (angle * 3.0 + (angle * 2.0 + phase).sin() * 0.8 + radius * 0.9)
-                    .sin()
-                    .abs())
-            .powi(3);
-            mass += peak_height
-                * shell
-                * (0.25 * (coarse - 0.5) + 0.11 * (medium - 0.5) + 0.035 * (fine - 0.5)
-                    - 0.19 * channel);
+    for (index, fold) in ALPINE_MASSIFS.iter().enumerate() {
+        // Bounds are derived once from the crest nodes and maximum shoulder width.
+        let (min_x, max_x, min_z, max_z) = fold.bounds;
+        if x < min_x || x > max_x || z < min_z || z > max_z {
+            continue;
+        }
+        let coarse = alpine_noise(x / 155.0, z / 155.0, index as u32 + 11);
+        let fracture = (alpine_noise(x / 95.0, z / 95.0, index as u32 + 37) - 0.5) * 0.12
+            + (alpine_noise(x / 42.0, z / 42.0, index as u32 + 71) - 0.5) * 0.04;
+        let mut mass: f64 = 0.0;
+        for crest_nodes in fold.crests {
+            for pair in crest_nodes.windows(2) {
+                let (ax, az, ah, al, ar) = pair[0];
+                let (bx, bz, bh, bl, br) = pair[1];
+                let dx = bx - ax;
+                let dz = bz - az;
+                let length_squared = dx * dx + dz * dz;
+                let length = length_squared.sqrt();
+                let px = x - ax;
+                let pz = z - az;
+                let t = ((px * dx + pz * dz) / length_squared).clamp(0.0, 1.0);
+                let bend = 4.0 * t * (1.0 - t) * (coarse - 0.5) * 38.0;
+                let distance =
+                    (px - dx * t + dz / length * bend).hypot(pz - dz * t - dx / length * bend);
+                let signed_normal = (dx * pz - dz * px) / length - bend;
+                let direction = (0.5 + 0.5 * signed_normal / distance.max(32.0)).clamp(0.0, 1.0);
+                let blend = direction * direction * (3.0 - 2.0 * direction);
+                let left = al + (bl - al) * t;
+                let right = ar + (br - ar) * t;
+                let width = (right + (left - right) * blend) * (0.88 + coarse * 0.24);
+                let r = distance / width;
+                if r >= 1.0 {
+                    continue;
+                }
+                let inner = 0.16 + coarse * 0.04;
+                let outer = 0.58 + coarse * 0.04;
+                let profile = if r < inner {
+                    1.0 - 0.12 * r / inner
+                } else if r < outer {
+                    let t = (r - inner) / (outer - inner);
+                    let eased = t * 0.45 + t * t * (3.0 - 2.0 * t) * 0.55;
+                    0.88 - eased * 0.62
+                } else {
+                    0.26 * ((1.0 - r) / (1.0 - outer)).powf(1.6)
+                };
+                let crest = ah + (bh - ah) * t;
+                let broken_crest = crest + 4.0 * t * (1.0 - t) * (coarse - 0.5) * 36.0;
+                mass = mass.max(
+                    broken_crest * profile + crest * 4.0 * profile * (1.0 - profile) * fracture,
+                );
+            }
+        }
+        for &(cx, cz, rx, rz, depth) in fold.cirques {
+            let u = (x - cx) / rx;
+            let v = (z - cz) / rz;
+            let bowl = (1.0 - u * u - v * v).max(0.0);
+            mass -= depth * bowl.powf(1.4);
         }
         height = height.max(mass);
     }

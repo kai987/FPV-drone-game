@@ -2,12 +2,14 @@ import * as THREE from 'three';
 import { getDowntownBuildingParts } from './downtown-architecture.ts';
 import type { DowntownBuildingInput, DowntownFacade } from './downtown-architecture.ts';
 import type { UrbanBox } from './map-layout.ts';
+import type { Vec3 } from './flight.ts';
+import { sceneryChunkKey, updateDetailVisibility } from './scenery-chunks.ts';
 
 interface Pose extends UrbanBox { color?: string; }
-interface Batch { material: THREE.Material; geometry: THREE.BufferGeometry; poses: Pose[]; shadows: boolean; }
+interface Batch { material: THREE.Material; geometry: THREE.BufferGeometry; poses: Pose[]; shadows: boolean; detail: boolean; }
 
 /** Batched, metre-scaled architecture; the same stepped pieces are uploaded to Rust. */
-export function createDowntownBuildings(scene: THREE.Scene, buildings: readonly DowntownBuildingInput[]) {
+export function createDowntownBuildings(scene: THREE.Scene, buildings: readonly DowntownBuildingInput[], detailDistance = 480) {
   const group = new THREE.Group(); group.name = 'Downtown architecture and street-facing detail'; scene.add(group);
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
   const ownGeometry = <T extends THREE.BufferGeometry>(value: T): T => { geometries.add(value); return value; };
@@ -18,6 +20,7 @@ export function createDowntownBuildings(scene: THREE.Scene, buildings: readonly 
   const night = { value: 0 };
   const lights: { material: THREE.MeshStandardMaterial; day: number; night: number }[] = [];
   const beacons: THREE.InstancedMesh[] = [];
+  const detailChunks: THREE.InstancedMesh[] = [];
   const standard = (color: string, roughness = 0.8, metalness = 0.05) => ownMaterial(new THREE.MeshStandardMaterial({ color, roughness, metalness }));
   const trim = standard('#c8c5b8', 0.78), darkTrim = standard('#4b5354', 0.55, 0.35), roof = standard('#8c9390', 0.94);
   const metal = standard('#8a9697', 0.58, 0.45), planter = standard('#637c5a', 0.98), canopy = standard('#42646c', 0.45, 0.28);
@@ -25,14 +28,15 @@ export function createDowntownBuildings(scene: THREE.Scene, buildings: readonly 
   lights.push({ material: lobby, day: 0.03, night: 0.23 });
   const beacon = ownMaterial(new THREE.MeshStandardMaterial({ color: '#b7654e', emissive: '#e76544', emissiveIntensity: 0.2, roughness: 0.4 }));
   lights.push({ material: beacon, day: 0.2, night: 0.8 });
-  const add = (material: THREE.Material, value: Pose, geometry: THREE.BufferGeometry = unitBox, shadows = true) => {
-    const key = `${geometry.uuid}:${material.uuid}:${shadows}`;
+  const add = (material: THREE.Material, value: Pose, geometry: THREE.BufferGeometry = unitBox, shadows = true, decorative = false) => {
+    const detail = decorative && material !== beacon;
+    const key = `${geometry.uuid}:${material.uuid}:${shadows}:${detail}:${sceneryChunkKey(value.x, value.z, detail)}`;
     let entry = batches.get(key);
-    if (!entry) { entry = { material, geometry, poses: [], shadows }; batches.set(key, entry); }
+    if (!entry) { entry = { material, geometry, poses: [], shadows, detail }; batches.set(key, entry); }
     entry.poses.push(value);
   };
   const box = (material: THREE.Material, x: number, base: number, z: number, width: number, height: number, depth: number, shadows = true, color?: string) =>
-    add(material, { x, z, width, depth, base, height, color }, unitBox, shadows);
+    add(material, { x, z, width, depth, base, height, color }, unitBox, shadows, true);
   const body = (material: THREE.Material, value: UrbanBox, color?: string) => add(material, { ...value, color });
   const facadeMaterials = new Map<string, THREE.MeshStandardMaterial>();
   const palettes: Record<DowntownFacade, readonly string[]> = {
@@ -182,6 +186,8 @@ export function createDowntownBuildings(scene: THREE.Scene, buildings: readonly 
       if (pose.color) mesh.setColorAt(index, color.set(pose.color));
     });
     mesh.castShadow = entry.shadows; mesh.receiveShadow = true; mesh.computeBoundingSphere();
+    mesh.userData.sceneryDetail = entry.detail;
+    if (entry.detail) detailChunks.push(mesh);
     mesh.name = `Downtown architectural batch ${instances.length + 1}`; group.add(mesh); instances.push(mesh);
     if (entry.material === beacon) beacons.push(mesh);
   }
@@ -190,7 +196,10 @@ export function createDowntownBuildings(scene: THREE.Scene, buildings: readonly 
   return {
     group,
     setNight(enabled: boolean) { night.value = enabled ? 1 : 0; lights.forEach(light => { light.material.emissiveIntensity = enabled ? light.night : light.day; }); },
-    update(time: number) { beacons.forEach(mesh => { mesh.visible = Math.sin(time * 1.6) > -0.8; }); },
+    update(time: number, viewPosition?: Vec3) {
+      updateDetailVisibility(detailChunks, viewPosition, detailDistance);
+      beacons.forEach(mesh => { mesh.visible = Math.sin(time * 1.6) > -0.8; });
+    },
     dispose() {
       if (disposed) return; disposed = true;
       instances.forEach(mesh => mesh.dispose()); geometries.forEach(value => value.dispose()); materials.forEach(value => value.dispose()); textures.forEach(value => value.dispose());

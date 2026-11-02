@@ -7,10 +7,10 @@ const TERRAIN_PALETTES = {
   mountains: ['#324b3b', '#4a6248', '#697959', '#858a6f', '#97988b', '#b9c2bc', '#e0e8e5'],
 };
 
-/** A handful of cached SVG paths replace hundreds of terrain rectangles per telemetry update. */
+/** Cached color bands retain narrow alpine ridges without per-frame terrain sampling. */
 function terrainPaths(id: 'desert' | 'mountains') {
   const bounds = getMapSpec(id).bounds;
-  const cells = 32;
+  const cells = id === 'mountains' ? 64 : 32;
   const width = (bounds.maxX - bounds.minX) / cells;
   const depth = (bounds.maxZ - bounds.minZ) / cells;
   const palette = TERRAIN_PALETTES[id];

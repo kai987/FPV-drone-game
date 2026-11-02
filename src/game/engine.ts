@@ -38,6 +38,8 @@ import { GUN_CAPACITY, GUN_RANGE, GUN_SHOTS_PER_SECOND } from './gun';
 import { createGunVisuals } from './gun-visuals';
 import { RenderLoop, renderModeFor } from './render-loop';
 import type { GraphicsState } from './render-loop';
+import { resolveGraphicsQuality } from './graphics-quality';
+import type { GraphicsQuality, QualityPreset } from './graphics-quality';
 
 export interface EngineEvents {
   telemetry: (value: Telemetry) => void;
@@ -112,9 +114,7 @@ export class FlightEngine {
   private previousPose = createFlightState();
   private displayPose = createFlightState();
   private readonly simulationClock = new FixedSimulationClock();
-  private readonly renderPerformance = new RenderPerformanceMonitor({
-    devicePixelRatio: window.devicePixelRatio, isMobile: matchMedia('(pointer: coarse)').matches,
-  });
+  private readonly renderPerformance: RenderPerformanceMonitor;
   private status: Status = 'ready';
   private keys = new Set<string>();
   private lastTime = 0;
@@ -137,11 +137,12 @@ export class FlightEngine {
   get droneId(): DroneId { return this.selectedDroneId; }
   get windSettings(): Readonly<WindSettings> { return this.currentWind; }
   get recordEligible(): boolean { return this.unchangedWind; }
+  get qualityPreset(): QualityPreset { return this.quality.preset; }
 
   /** Start the selected images before WASM/CPU work, sharing the actual renderer and decoded Images. */
   static async create(host: HTMLDivElement, events: EngineEvents, flightCore: Promise<WebAssembly.Module>,
     mapId: MapId = DEFAULT_MAP_ID, signal: AbortSignal = new AbortController().signal,
-    startedAt = performance.now()): Promise<FlightEngine> {
+    startedAt = performance.now(), qualityPreset: QualityPreset = 'auto'): Promise<FlightEngine> {
     // The shared module may reject even if WebGL fails before its await is reached.
     void flightCore.catch(() => {});
     const metrics = createLoadingMetrics(startedAt);
@@ -150,10 +151,13 @@ export class FlightEngine {
     let assets: WorldAssets | undefined;
     try {
       if (signal.aborted) throw new DOMException('Loading cancelled', 'AbortError');
-      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
-      const resolution = host.getBoundingClientRect().width * renderer.getPixelRatio() > 900
-        && renderer.capabilities.maxTextureSize >= 7096 ? 7096 : 3548;
+      const device = { isMobile: matchMedia('(pointer: coarse)').matches, devicePixelRatio: window.devicePixelRatio,
+        viewportWidth: host.getBoundingClientRect().width, maxTextureSize: 0 };
+      const initialQuality = resolveGraphicsQuality(qualityPreset, device);
+      renderer = new THREE.WebGLRenderer({ antialias: initialQuality.antialias, powerPreference: 'high-performance' });
+      const quality = resolveGraphicsQuality(qualityPreset, { ...device, maxTextureSize: renderer.capabilities.maxTextureSize });
+      renderer.setPixelRatio(quality.maxPixelRatio);
+      const resolution = quality.panoramaResolution;
       stopRenderer();
       const stopTextures = metrics.measure('textures');
       assets = preloadWorldAssets(resolution);
@@ -166,7 +170,7 @@ export class FlightEngine {
       }
       metrics.record('wasm', startedAt);
       if (signal.aborted) throw new DOMException('Loading cancelled', 'AbortError');
-      return new FlightEngine(host, events, core, mapId, renderer, assets, metrics, resolution);
+      return new FlightEngine(host, events, core, mapId, renderer, assets, metrics, quality);
     } catch (error) {
       assets?.dispose(); renderer?.dispose();
       if (renderer && !renderer.getContext().isContextLost()) renderer.forceContextLoss();
@@ -176,10 +180,12 @@ export class FlightEngine {
 
   private constructor(private host: HTMLDivElement, private events: EngineEvents, flightCore: WebAssembly.Module,
     mapId: MapId, renderer: THREE.WebGLRenderer, private assets: WorldAssets,
-    private loadingMetrics: LoadingMetrics, resolution: 3548 | 7096) {
+    private loadingMetrics: LoadingMetrics, private readonly quality: GraphicsQuality) {
     this.renderer = renderer;
+    this.renderPerformance = new RenderPerformanceMonitor({ devicePixelRatio: window.devicePixelRatio,
+      isMobile: quality.targetFps === 30, maxPixelRatio: quality.maxPixelRatio });
     this.renderer.setPixelRatio(this.renderPerformance.pixelRatio);
-    this.panoramaResolution = resolution;
+    this.panoramaResolution = quality.panoramaResolution;
     let maps: FlightEngine['maps'] | undefined;
     try {
       this.runtime = createRustRuntime(flightCore);
@@ -200,11 +206,13 @@ export class FlightEngine {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = quality.shadowMapSize > 0;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.setAttribute('aria-label', `三维${this.mapSpec.name}飞行画面，飞行时点击可启用鼠标视角`);
     this.renderer.domElement.dataset.flightCore = 'rust-wasm';
     this.renderer.domElement.dataset.numericServices = 'world,weapons,scene,particles,ecology';
+    this.renderer.domElement.dataset.qualityPreset = quality.preset;
+    this.renderer.domElement.dataset.graphicsBudget = JSON.stringify(quality);
     this.renderer.domElement.dataset.textureResolution = mapId === 'valley' ? String(this.panoramaResolution) : 'procedural';
     this.renderer.domElement.dataset.mapId = mapId;
     this.renderer.domElement.dataset.preloadedMaps = '';
@@ -250,6 +258,7 @@ export class FlightEngine {
         resolution: this.panoramaResolution,
         maxAnisotropy: this.renderer.capabilities.getMaxAnisotropy(),
         assets: this.assets,
+        quality: this.quality,
       }, id);
       kernel.setObstacles(world.obstacles);
       simulation = createWorldFlightSimulation(this.runtime, kernel.handle);

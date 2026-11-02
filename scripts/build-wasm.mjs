@@ -2,11 +2,16 @@ import { copyFile, mkdir, readFile, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { syncAlpineData } from './generate-alpine-data.mjs';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const targetDirectory = join(projectRoot, 'rust/flight-core/target');
 const outputFile = join(projectRoot, 'src/game/generated/flight_core.wasm');
 const artifactFile = join(targetDirectory, 'wasm32-unknown-unknown/release/flight_core.wasm');
+
+// Builds regenerate placement constants; validation can opt into a read-only
+// stale check so CI does not silently repair a hand-edited generated file.
+await syncAlpineData({ root: projectRoot, check: process.argv.includes('--check-generated') });
 
 const build = spawnSync('cargo', [
   'build', '--release', '--locked', '--target', 'wasm32-unknown-unknown',

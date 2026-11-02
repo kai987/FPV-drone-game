@@ -39,6 +39,19 @@ jobs:
         run: npm run check
       - name: Build Rust/WASM and Vite site
         run: npm run build
+      - name: Install browser test runtime
+        run: npx playwright install --with-deps chromium
+      - name: Verify desktop and touch flight before publishing
+        run: npm run test:e2e
+      - name: Keep browser test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-browser-test-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload built site

@@ -445,7 +445,8 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
 
   const hemisphere = new THREE.HemisphereLight('#e4f0f3', '#737764', 2.25); scene.add(hemisphere);
   const sun = new THREE.DirectionalLight('#fff0d5', 2.6); sun.position.set(-180, 285, 235); sun.target.position.set(0, 0, 55);
-  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  const shadowSize = _panoramaOptions.quality?.shadowMapSize ?? 2048;
+  sun.castShadow = shadowSize > 0; sun.shadow.mapSize.set(shadowSize || 512, shadowSize || 512);
   sun.shadow.camera.left = sun.shadow.camera.bottom = -240; sun.shadow.camera.right = sun.shadow.camera.top = 240;
   sun.shadow.camera.near = 10; sun.shadow.camera.far = 750; sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.38;
   scene.add(sun, sun.target);
@@ -558,9 +559,9 @@ export function createUrbanWorld(runtime: RustRuntime, kernel: WorldKernel, map:
         detailView.set(viewPosition.x, viewPosition.y, viewPosition.z);
         for (const chunk of detailChunks) {
           const sphere = chunk.boundingSphere!;
-          chunk.visible = detailView.distanceToSquared(sphere.center) < (sphere.radius + 450) ** 2;
+          chunk.visible = detailView.distanceToSquared(sphere.center) < (sphere.radius + (_panoramaOptions.quality?.detailDistance ?? 450)) ** 2;
         }
-        for (const sign of buildingSigns) sign.visible = detailView.distanceToSquared(sign.position) < 460 ** 2;
+        for (const sign of buildingSigns) sign.visible = detailView.distanceToSquared(sign.position) < (_panoramaOptions.quality?.detailDistance ?? 460) ** 2;
       }
       if (focus) {
         const nearby = night ? lampSites.filter(site => (site.x - focus.x) ** 2 + (site.z - focus.z) ** 2 < 130 ** 2)

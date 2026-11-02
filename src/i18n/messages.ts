@@ -4,10 +4,11 @@ import { GUIDE_MESSAGES } from './guide-messages.ts';
 import { HANGAR_MESSAGES } from './hangar-messages.ts';
 import { MINIMAP_MESSAGES } from './minimap-messages.ts';
 import { PANEL_MESSAGES } from './panel-messages.ts';
+import { SETTINGS_MESSAGES } from './settings-messages.ts';
 import { interpolate } from './locale.ts';
 import type { Locale, LocalizedMessage, MessageCatalog, MessageParams, NoticeMessage } from './locale.ts';
 
-export const MESSAGE_GROUPS = [APP_MESSAGES, CATALOG_MESSAGES, GUIDE_MESSAGES, HANGAR_MESSAGES, MINIMAP_MESSAGES, PANEL_MESSAGES];
+export const MESSAGE_GROUPS = [APP_MESSAGES, CATALOG_MESSAGES, GUIDE_MESSAGES, HANGAR_MESSAGES, MINIMAP_MESSAGES, PANEL_MESSAGES, SETTINGS_MESSAGES];
 export const MESSAGES: MessageCatalog = Object.assign({}, ...MESSAGE_GROUPS);
 
 export function translate(locale: Locale, source: string, params?: MessageParams): string {

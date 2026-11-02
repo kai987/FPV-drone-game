@@ -5,3 +5,5 @@ dist/
 *.tsbuildinfo
 rust/flight-core/target/
 src/game/generated/
+playwright-report/
+test-results/

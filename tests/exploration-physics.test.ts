@@ -160,12 +160,12 @@ test('natural landmarks are distinct, finite and well below the mountain altitud
   const desertHeights = samples.map(point => explorationGroundHeight('desert', point.x, point.z));
   const mountainHeights = samples.map(point => explorationGroundHeight('mountains', point.x, point.z));
   assert.ok(Math.max(...desertHeights) - Math.min(...desertHeights) > 140);
-  assert.ok(Math.max(...mountainHeights) - Math.min(...mountainHeights) > 600);
   assert.ok(Math.max(...mountainHeights) < 780);
   let envelopeMaximum = -Infinity;
   for (let x = -2400; x <= 2400; x += 20) for (let z = -2400; z <= 2400; z += 20) {
     envelopeMaximum = Math.max(envelopeMaximum, explorationGroundHeight('mountains', x, z));
   }
   assert.ok(envelopeMaximum > 700 && envelopeMaximum < 780, 'sharper ridgelines remain below the 800 m ceiling');
+  assert.ok(envelopeMaximum - Math.min(...mountainHeights) > 600, 'displaced summits retain the full alpine relief');
   assert.ok([...desertHeights, ...mountainHeights].every(height => Number.isFinite(height) && height > -2));
 });

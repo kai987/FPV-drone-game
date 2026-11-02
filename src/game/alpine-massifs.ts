@@ -1,0 +1,48 @@
+// @generated from data/alpine-terrain.json; do not edit by hand.
+// Regenerate with: node scripts/generate-alpine-data.mjs
+export type AlpineCrest = readonly [x: number, z: number, height: number, leftShoulder: number, rightShoulder: number];
+export type AlpineCirque = readonly [x: number, z: number, radiusX: number, radiusZ: number, depth: number];
+export interface AlpineMassif { readonly crests: readonly (readonly AlpineCrest[])[]; readonly cirques: readonly AlpineCirque[]; }
+export interface AlpinePeak { readonly x: number; readonly z: number; readonly height: number; readonly radiusX: number; readonly radiusZ: number; }
+export interface AlpineRidge { readonly ax: number; readonly az: number; readonly bx: number; readonly bz: number; readonly width: number; readonly height: number; }
+
+export const MOUNTAIN_PEAKS: readonly AlpinePeak[] = Object.freeze([
+  { x: -1250, z: -1050, height: 665, radiusX: 470, radiusZ: 510 },
+  { x: 1050, z: -1450, height: 738, radiusX: 455, radiusZ: 435 },
+  { x: 1550, z: 650, height: 590, radiusX: 505, radiusZ: 470 },
+  { x: -1500, z: 1050, height: 570, radiusX: 490, radiusZ: 475 },
+  { x: 50, z: -2250, height: 625, radiusX: 450, radiusZ: 390 },
+]);
+export const MOUNTAIN_RIDGES: readonly AlpineRidge[] = Object.freeze([
+  { ax: -1250, az: -1050, bx: -1500, bz: 1050, width: 250, height: 300 },
+  { ax: -1250, az: -1050, bx: 50, bz: -2250, width: 245, height: 320 },
+  { ax: 50, az: -2250, bx: 1050, bz: -1450, width: 230, height: 340 },
+  { ax: 1050, az: -1450, bx: 1550, bz: 650, width: 255, height: 320 },
+]);
+export const ALPINE_MASSIFS: readonly AlpineMassif[] = [
+  { crests: [
+    [[-1490, -1550, 319.2, 250, 190], [-1400, -1385, 485.45, 260, 190], [-1345, -1230, 438.9, 255, 170], [-1195, -1085, 665, 280, 175], [-1235, -900, 518.7, 265, 175], [-1095, -700, 339.15, 230, 170]],
+    [[-1345, -1230, 438.9, 180, 150], [-1610, -1120, 432.25, 180, 150], [-1700, -870, 252.7, 160, 130]],
+    [[-1235, -900, 518.7, 150, 160], [-990, -870, 412.3, 160, 150], [-950, -635, 186.2, 135, 120]],
+  ], cirques: [[-1360, -955, 170, 190, 135], [-1020, -1250, 130, 175, 90]] },
+  { crests: [
+    [[630, -1600, 369, 160, 280], [795, -1505, 583.02, 170, 285], [940, -1580, 472.32, 180, 275], [1120, -1475, 738, 165, 290], [1245, -1345, 553.5, 175, 280], [1440, -1260, 369, 150, 250]],
+    [[940, -1580, 472.32, 150, 150], [895, -1320, 464.94, 160, 150], [750, -1140, 243.54, 130, 130]],
+    [[1245, -1345, 553.5, 140, 160], [1335, -1125, 472.32, 145, 155], [1520, -1060, 206.64, 125, 130]],
+  ], cirques: [[920, -1280, 170, 180, 170], [1325, -1525, 130, 180, 120]] },
+  { crests: [
+    [[1210, 310, 271.4, 230, 150], [1370, 400, 477.9, 245, 160], [1475, 580, 407.1, 230, 155], [1630, 700, 590, 255, 165], [1660, 885, 424.8, 230, 150], [1835, 1060, 212.4, 190, 145]],
+    [[1475, 580, 407.1, 150, 155], [1260, 750, 395.3, 165, 145], [1170, 950, 182.9, 125, 130]],
+    [[1630, 700, 590, 145, 160], [1860, 580, 430.7, 155, 140], [1990, 690, 206.5, 130, 120]],
+  ], cirques: [[1430, 780, 170, 190, 140], [1820, 770, 150, 140, 100]] },
+  { crests: [
+    [[-1860, 750, 210.9, 175, 260], [-1720, 870, 404.7, 190, 275], [-1580, 970, 513, 185, 280], [-1400, 1070, 433.2, 180, 270], [-1320, 1255, 570, 190, 280], [-1110, 1310, 239.4, 160, 230]],
+    [[-1580, 970, 513, 155, 155], [-1735, 1170, 370.5, 155, 145], [-1775, 1440, 171, 130, 125]],
+    [[-1400, 1070, 433.2, 140, 155], [-1320, 850, 359.1, 150, 145], [-1110, 810, 171, 130, 130]],
+  ], cirques: [[-1400, 910, 170, 170, 140], [-1680, 1280, 160, 160, 105]] },
+  { crests: [
+    [[-450, -2190, 225, 150, 240], [-260, -2265, 468.75, 160, 250], [-110, -2175, 406.25, 165, 260], [75, -2290, 625, 175, 270], [220, -2240, 487.5, 180, 240], [405, -2370, 568.75, 165, 230], [560, -2335, 237.5, 150, 210]],
+    [[-110, -2175, 406.25, 150, 145], [-125, -1980, 375, 160, 140], [-280, -1895, 162.5, 125, 120]],
+    [[220, -2240, 487.5, 145, 145], [350, -2045, 412.5, 150, 145], [510, -1950, 187.5, 125, 130]],
+  ], cirques: [[-90, -2050, 190, 150, 130], [330, -2160, 140, 160, 110]] },
+];

@@ -14,6 +14,7 @@ Play online: [GitHub Pages](https://kai987.github.io/FPV-drone-game/) · [Sites]
 - The original six aircraft carry six bombs with automatic reloading, smoke and debris on land, and splashes and ripples on water. GUARDIAN carries an underslung machine gun with muzzle flashes, tracers, impacts, and automatic reloading. The first hit on each target earns 100 points.
 - Day/night switching, a drone searchlight, lit windows, urban streetlights, and a harbor lighthouse. Optional motor, checkpoint, and bombing audio is muted by default.
 - A draggable, zoomable minimap, live telemetry, pause/restart, fullscreen, and multitouch mobile controls.
+- A settings dialog with Auto / Low / Medium / High graphics, touch sensitivity, acceleration time, and vertical inversion. The browser remembers map, drone, and other preferences.
 - Instantly switch the header selector between **中文 / 日本語 / English**. Chinese is the default. The language is stored as `zh / ja / en` under `aeroflow-language` in localStorage. Switching preserves flight position and progress, the map, ammunition, wind, minimap view, and the existing 3D renderer. Flying and language switching still work when local storage is unavailable.
 
 Both handling modes automatically hover in calm air. Wind causes drift that needs correction. Sport offers higher speed, more inertia, and stronger banking feedback. This is an accessible game model, not a professional Acro/Rate, gravity-based flight, or real aerodynamic simulator.
@@ -36,7 +37,7 @@ The mountain map has an 800 m altitude ceiling; all other maps have a 450 m ceil
 - **Harbor:** 125 warehouses, nine piers, nine gantry cranes, 27 trucks, four cargo ships, two breakwaters, and 2,932 containers, with 54 warehouses in the central district. Each of the six new piers is 960 m long. The sea has waves, reflections, and shore foam; the lighthouse has a rotating beam at night.
 - **Desert:** Follow an independent route over rolling dunes and wind-carved mesas. Red rock pillars, rock formations, cacti, and camps create a landscape distinct from the valley.
 - **Downtown:** The 198 lots use seven architectural forms, including curtain-wall offices, podiums and setbacks, twin towers, courtyard housing, masonry blocks, hotels, and crowned towers. Facades have mullions, sunshades, balconies, shop entrances, and rooftop equipment. Night lighting varies by building, floor, and room. Structural pieces and stepped roof support share the Rust collision geometry.
-- **Mountains:** Fly between sharp summits, steep rock faces, undulating ridges, saddles, and pine woods. Dedicated alpine rock and wind-packed snow textures blend by slope, aspect, and elevation, exposing rock on cliffs and retaining snow on shelves. Rust terrain heights drive rendering, flight support, and projectile ground queries consistently.
+- **Mountains:** Explore asymmetric multi-summit crowns, branching broken ridgelines, glacial cirques, and stepped cliffs. Unequal peak positions, elevations, and shoulder widths replace regular cone silhouettes. Dedicated alpine rock and wind-packed snow textures blend by slope, aspect, and elevation, exposing rock on cliffs and retaining snow on shelves. Rust and rendering use common terrain calculations, with finer ridgelines also shown on the minimap.
 - **Roads:** Each industrial map retains 21 main-road crossroads with zebra crossings and stop bars on all four approaches. Shared service roads connect the loading entrances of all 190 factory buildings and 125 harbor warehouses, avoiding buildings, cargo, tanks and the shoreline. The factory adds 148 T-junctions and 11 crossroads; the harbor adds 88 T-junctions and 7 crossroads. Long service roads have center dashes and junctions have zebra crossings; only the terminating approach stops at a T-junction. The 3D pavement, ground cutouts and minimap share the complete metre-scaled road layout.
 - **Switching:** On first entry, all six maps prepare their scenes, textures, Rust services, and day/night shaders, with per-map progress. Flying is enabled only after all are ready. Switching reuses cached scenes, returns to the selected map's spawn point, and resets the route, timer, ammunition, and score. Drone, game/handling mode, wind, day/night, sound, language, and camera view are retained.
 
@@ -81,9 +82,24 @@ VECTOR is inspired by the [2017 DRL RacerX record report](https://www.guinnesswo
 | Minimap overview | Click the magnification or Route/Overview preset to return to 1× |
 | Interface language | Header 中文 / 日本語 / English selector |
 
-Click the 3D scene during flight to enable mouse look. Esc releases the mouse and pauses. Switching browser tabs or losing window focus also pauses automatically. After takeoff on mobile, control flight with gestures on the flight view. Hold one finger to accelerate gradually from low speed; input reaches the selected aircraft and mode’s maximum after about two seconds. Drag up/down for forward/backward flight and left/right to strafe. Drag a second finger up/down to climb/descend and left/right to turn; both fingers can work together. Releasing a finger clears its axes and flight physics slows the aircraft. Assisted mode brakes faster, and wind can still cause drift. Bombing, wind direction, and the minimap sit in a panel below the flight view. Dragging or zooming the minimap does not steer the aircraft. Inputs, selectors, and modal dialogs isolate flight shortcuts to prevent accidental movement or bombing while using the interface.
+Click the 3D scene during flight to enable mouse look. Esc releases the mouse and pauses. Switching browser tabs or losing window focus also pauses automatically. After takeoff on mobile, control flight with gestures on the flight view. Hold one finger to accelerate gradually from low speed; input reaches the selected aircraft and mode’s maximum after about two seconds by default. Drag up/down for forward/backward flight and left/right to strafe. Drag a second finger up/down to climb/descend and left/right to turn; both fingers can work together. Releasing a finger clears its axes and flight physics slows the aircraft. Assisted mode brakes faster, and wind can still cause drift. Bombing, wind direction, and the minimap sit in a panel below the flight view. Dragging or zooming the minimap does not steer the aircraft. Inputs, selectors, and modal dialogs isolate flight shortcuts to prevent accidental movement or bombing while using the interface.
 
 Touch gestures are enabled only when the primary pointer is coarse; narrowing a desktop window keeps mouse and keyboard controls. Gesture areas accept touch input only and clear active gestures when the input capability changes.
+
+### Graphics and control preferences
+
+Open settings from the header. Every quality preset retains preparation of all six maps before flight. Changing quality returns to the current map’s spawn point, resets position, ammunition, and run progress, and prepares all maps again.
+
+| Quality | Panorama texture width | DPR cap | Shadow-map side |
+| --- | --- | --- | --- |
+| Auto | Touch-primary 3548; otherwise 3548 or 7096 | Touch-primary 1.25; otherwise 1.75 | Touch-primary 512; otherwise 1024 |
+| Low | 3548 | 1.0 | Shadows off |
+| Medium | 3548 | 1.5 | 1024 |
+| High | 7096, or 3548 under GPU limits | 1.75 | 2048 |
+
+The rendering pixel ratio also never exceeds the device’s own DPR. Auto detects the primary input capability; desktop panorama selection additionally uses viewport width and GPU limits. Only High uses 2048 shadows. Quality controls pixel ratio, shadows, and decorative visibility distance without changing flight physics or courses.
+
+Touch sensitivity ranges from 0.5× to 2.0× (default 1), and acceleration to maximum input ranges from 500 to 4000 ms (default 2000 ms), with optional vertical-input inversion. `aeroflow:preferences` stores map, drone, game/handling mode, base wind, day/night, camera, sound, quality, and touch settings. Position, ammunition, and progress are not saved; reopening starts at spawn. A saved sound-on preference still requires a user gesture before audio plays. Flying remains available when storage is blocked.
 
 ### Flight, wind, and target practice tips
 
@@ -114,12 +130,17 @@ Open the address printed in the terminal, normally [http://127.0.0.1:5173/](http
 ```sh
 npm run build:wasm # Build Rust and update WASM separately
 npm test           # Build WASM, run native Cargo and Node tests
-npm run check      # npm test, then TypeScript checks
+npm run check:generated # Read-only comparison of canonical and generated terrain
+npm run check      # Generated-data check, npm test, then TypeScript checks
 npm run build      # Build WASM, check TypeScript, generate dist/
 npm run preview    # Preview existing dist/, normally http://127.0.0.1:4173/
+npm run test:e2e:install # Install Chromium on first use
+npm run test:e2e         # Playwright browser smoke tests
 ```
 
-Development, tests, checks, and production builds all generate WASM first. The development server does not watch Rust source. After Rust changes, run `npm run build:wasm` or restart `npm run dev`. `src/game/generated/flight_core.wasm`, Cargo's `target/`, `node_modules/`, and `dist/` are ignored build/dependency outputs that the commands above recreate from a fresh checkout.
+The canonical alpine layout is [`data/alpine-terrain.json`](./data/alpine-terrain.json). `node scripts/generate-alpine-data.mjs` emits tracked TS/Rust constants; ordinary WASM builds regenerate them as well. `npm run check:generated` and `npm run check` reject stale or hand-edited outputs without repairing and hiding the drift. Independent TS and Rust mathematics, 1481-point height comparisons, multi-summit shape tests, and continuity checks remain in place.
+
+Development, tests, and production builds generate WASM. `check` first verifies generated-data consistency, then runs the same tests. The development server does not watch Rust source. After Rust changes, run `npm run build:wasm` or restart `npm run dev`. `src/game/generated/flight_core.wasm`, Cargo's `target/`, `node_modules/`, and `dist/` are ignored build/dependency outputs that the commands above recreate from a fresh checkout.
 
 Game artwork ships with the repository; no generative AI is called at runtime. Fonts may load from Google Fonts and fall back to system fonts offline or when unavailable. There are no account, database, paid API, or server-secret dependencies.
 
@@ -130,11 +151,15 @@ Game artwork ships with the repository; no generative AI is called at runtime. F
 GitHub Pages setup:
 
 1. In **Settings → Pages → Build and deployment → Source**, choose **GitHub Actions**.
-2. Push changes to `main`. [pages.yml](./.github/workflows/pages.yml) installs Node.js 24 and Rust 1.93.0's WASM target, then runs `npm ci`, `npm run check`, and `npm run build`.
+2. Push changes to `main`. [pages.yml](./.github/workflows/pages.yml) installs Node.js 24 and Rust 1.93.0's WASM target, then runs `npm ci`, `npm run check`, `npm run build`, and `npm run test:e2e`.
 3. The workflow uploads `dist/` as the Pages artifact and deploys to the `github-pages` environment. Failed checks or builds prevent publication.
 4. Confirm both `build` and `deploy` succeed, then open the [Pages game](https://kai987.github.io/FPV-drone-game/) and verify loading and takeoff.
 
 You can also select `main` in **Actions → Deploy game to GitHub Pages → Run workflow** to redeploy manually. Other branches are not published; pushes and pull requests use the separate [ci.yml](./.github/workflows/ci.yml) checks. `dist/` and generated WASM are not committed. Ordinary CI success does not establish deployment completion. Workflow reference: [GitHub custom Pages workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+
+The build writes `version.json` into `dist/`, and settings shows the build ID from the same `BUILD_INFO`. `sourceRevision` is the build repository’s Git HEAD; `sourceDirty` records uncommitted changes; `sourceFingerprint` fingerprints source and the actual WASM. Dirty builds are labelled, and only clean builds link to a source commit. To compare GitHub Pages and Sites, check `buildId` and those three fields from the same production `dist/`. Sites’ storage commit belongs to a separate Git history and is not automatically the GitHub source SHA.
+
+A GitHub commit link is shown only when origin is verified as this GitHub repository. Separate Site repository histories show a text revision instead of inventing a GitHub link.
 
 ## Rust and rendering architecture
 
@@ -145,19 +170,21 @@ One game shares one WASM instance and WebGL context. Each map owns independent w
 
 Maps are scenes generated from shared configuration and procedural models, not complete 3D map files packed into Rust. Industrial buildings, rotated cargo, piers, breakwaters, and ship hulls use the same metre-based layout for rendering, the minimap, and Rust collisions. Nine piers and two breakwaters are uploaded once into Rust's land union, keeping terrain/water classification and support heights consistent.
 
-Initial loading reuses decoded images, overlaps texture downloads with scene preparation, and serially compiles and warms all six maps' day/night GPU resources. Trees use instanced billboards. Basic urban structures are instanced by material; details use 600 m spatial chunks and a 450 m visibility margin around their bounding spheres. Night streetlights use a fixed pool of eight lights. All map and rendering resources are released when leaving the game.
+Initial loading reuses decoded images, overlaps texture downloads with scene preparation, and serially compiles and warms all six maps’ day/night GPU resources. Trees use instanced billboards. Basic urban structures are instanced by material; urban and alpine decorations use spatial chunks with visibility distance selected by graphics quality. Night streetlights use a fixed pool of eight lights. All map and rendering resources are released when leaving the game.
 
 The idle background updates at about 12 FPS. Paused and finished scenes render on demand; the main scene stops drawing behind the hangar, guide, or wind dialog and while the page is hidden. Day/night and camera changes still redraw a paused scene, and resuming never catches up paused time. A lost WebGL context clears movement and firing input and pauses flight. Restoring the view preserves position, ammunition, and score until manual resume. Startup interruptions and runtime errors display a reload action.
 
 Original TypeScript mathematics and frozen older scene/explosion equations remain independent test references. Production uses Rust services and shows a load failure instead of silently switching to JS physics. WASM calculations still run synchronously on the main thread, without a Worker. No FPS improvement is claimed for the Rust migration or map optimization; performance changes require separate measurement.
 
-During flight, the game measures FPS, frame intervals, CPU time for simulation, scene updates and render submission, plus draw and resource counts. Sustained slow pacing lowers rendering pixel ratio in stages; stable pacing allows cautious recovery. Coarse-pointer devices target 30 FPS and other devices target 60 FPS, with pixel ratio capped by device DPR and 1.75. Reports update about once a second in the game canvas `data-performance-metrics`. These are CPU and frame-pacing measurements, not GPU execution time or a guarantee of reaching the target FPS.
+During flight, the game measures FPS, frame intervals, CPU time for simulation, scene updates and render submission, plus draw and resource counts. Sustained slow pacing lowers rendering pixel ratio in stages; stable pacing allows cautious recovery. Coarse-pointer devices target 30 FPS and other devices target 60 FPS, with pixel ratio capped by device DPR and the selected quality preset. Reports update about once a second in the game canvas `data-performance-metrics`. These are CPU and frame-pacing measurements, not GPU execution time or a guarantee of reaching the target FPS.
 
 ### Main directories
 
 ```text
 rust-toolchain.toml          Rust version and WASM target
 rust/flight-core/            Rust core, batch ABI, and native tests
+data/alpine-terrain.json     Canonical alpine layout
+scripts/generate-alpine-data.mjs Generate/check TS and Rust terrain constants
 scripts/build-wasm.mjs       Build and update WASM
 scripts/optimize-textures.mjs Offline texture re-encoding
 src/App.tsx                 Page, settings, and game state
@@ -185,15 +212,17 @@ docs/asset-licenses.md      Asset sources and offline processing records
 
 ## Validation
 
-`npm run check` runs native Cargo tests, Node tests using the real WASM file, and TypeScript checks. `npm run build` validates production output. Test counts grow with features; use the command results as the current count.
+`npm run check` checks generated-data freshness, runs native Cargo tests and Node tests using the real WASM file, and checks TypeScript. `npm run build` validates production output; `npm run test:e2e` runs Chromium browser smoke tests. Test counts grow with features; use command results as the current count.
 
 Coverage includes numerical compatibility across seven drones, two handling modes, four wind strengths, eight directions, and 30/60/120 fps; complete Valley and urban eight-ring routes using ordinary controls; pause, invalid time steps, bounds, bridges, roofs/decks, elevated and rotated-object collisions, weapon lifecycles, layered impact surfaces, records and language storage, map caching, and resource cleanup. Seeded scenery, complete terrain heights/colors, water textures/flow, batched fish/livestock/explosion animation, expanded-map roads, berths, land/water boundaries, and minimap bounds are also checked.
 
-Browser checks include six-map preloading, map/drone switching, day/night, bombing, language changes, minimap/touch interaction at desktop and mobile sizes, page overflow, and the console. Browser viewport checks are not physical-phone GPU benchmarks, and real drone performance is outside validation scope.
+CI runs Playwright’s Chromium smoke suite at desktop 1440×960 and mobile-equivalent 390×844. Browser checks cover six-map preparation, map/drone/day-night/settings interactions, rendered output, and console health. Mobile viewport and touch emulation are not physical-device GPU benchmarks; Safari on physical iPhone/iPad devices remains unverified. Real drone performance is outside the test scope.
+
+Linux CI uses software rendering, with a 60-second limit for actions and captures. Touch-flight evidence is captured after the gesture assertions and a pause. To exercise the same rendering path locally after a production build, run `CI=1 PLAYWRIGHT_SOFTWARE_WEBGL=1 npm run test:e2e`.
 
 ## Artwork and license
 
-The snowy-mountain, pine-valley, and blue-sky panorama began as a 1774×887 image generated with built-in Image Gen, then received 4× Real-ESRGAN upscaling. A 7096×3548 HD WebP or 3548×1774 mobile version is selected according to viewport width and GPU capability. This is enhanced artwork, not native 7K/8K photography. The sky follows the camera, forests below the horizon transition into fog, and rivers/lakes share the panorama for reflections.
+The snowy-mountain, pine-valley, and blue-sky panorama began as a 1774×887 image generated with built-in Image Gen, then received 4× Real-ESRGAN upscaling. A 7096×3548 HD WebP or 3548×1774 mobile version is selected according to graphics quality, primary input, viewport width, and GPU capability. This is enhanced artwork, not native 7K/8K photography. The sky follows the camera, forests below the horizon transition into fog, and rivers/lakes share the panorama for reflections.
 
 Transparent pines, grass, and weathered-rock textures are also generated artwork converted offline to WebP. Pine RGBA values are preserved pixel for pixel; grass and rocks retain their original dimensions. Texture optimization did not replace the HD panorama. Encoding tools are offline utilities, not player or build dependencies. Sources, processing commands, license notes, and SHA256 values are documented in the [asset records](./docs/asset-licenses.md) and [design notes](./docs/design.md).
 

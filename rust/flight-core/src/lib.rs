@@ -4,6 +4,7 @@
 //! turns left. This deliberately preserves the existing arcade flight model.
 
 mod abi;
+mod alpine_data;
 pub mod effects;
 mod effects_abi;
 pub mod flight;

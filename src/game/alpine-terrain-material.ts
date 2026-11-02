@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { AlpineDetail } from './graphics-quality.ts';
 
 export interface AlpineTerrainTextures {
   grassTexture: THREE.Texture;
@@ -68,10 +69,36 @@ const ALPINE_MATERIAL_GLSL = /* glsl */ `
   ${ALPINE_FIELD_GLSL}
 `;
 
+// Five image samples retain the same snowline and cliff/meadow distinction on
+// small GPUs, without the multi-scale joints, drift layers or derivative bump.
+const LIGHT_ALPINE_COLOR_GLSL = /* glsl */ `
+  #include <color_fragment>
+  vec3 alpineN = normalize(alpineSurfaceNormal);
+  vec3 alpineWeights = pow(abs(alpineN), vec3(4.0));
+  alpineWeights /= max(dot(alpineWeights, vec3(1.0)), 0.001);
+  vec2 alpineXZ = alpinePoint.xz;
+  float alpineMacro = alpineNoise(alpineXZ * 0.007);
+  vec3 alpineFineStone = alpineTriplanar(alpineRock, alpinePoint / 12.0, alpineWeights);
+  vec3 alpineStone = alpineFineStone * mix(0.72, 1.06, alpineMacro);
+  vec3 alpineMeadow = texture2D(alpineGrass, alpineXZ / 12.0).rgb * vec3(1.22, 1.29, 1.10);
+  float alpineUpright = clamp(alpineN.y, 0.0, 1.0);
+  float alpineRocky = clamp(smoothstep(0.08, 0.40, 1.0 - alpineUpright)
+    + smoothstep(180.0, 390.0, alpinePoint.y) * 0.72, 0.0, 1.0);
+  float alpineAspect = dot(alpineN, normalize(vec3(0.55, 0.0, 0.83)));
+  float alpineSnowLine = 335.0 + (alpineMacro - 0.5) * 100.0 + alpineAspect * 43.0;
+  float alpineElevationSnow = smoothstep(alpineSnowLine - 34.0, alpineSnowLine + 105.0, alpinePoint.y);
+  float alpineHolding = mix(0.10, 1.0, smoothstep(0.19, 0.80, alpineUpright));
+  float alpineSnowCover = smoothstep(0.10, 0.66, alpineElevationSnow * alpineHolding * 0.82);
+  vec3 alpinePackedSnow = texture2D(alpineSnow, alpineXZ / 8.0).rgb;
+  diffuseColor.rgb = mix(mix(alpineMeadow, alpineStone, alpineRocky), alpinePackedSnow, alpineSnowCover);
+  float alpineStoneHeight = alpineLuminance(alpineFineStone);
+  float alpineSnowHeight = alpineLuminance(alpinePackedSnow);
+`;
+
 /** Generated rock/snow albedos are combined with live PBR light and shadows. */
-export function createAlpineTerrainMaterial(textures: AlpineTerrainTextures): THREE.MeshStandardMaterial {
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.91, metalness: 0 });
-  material.name = 'Alpine granite, wind-packed snow and meadow';
+export function createAlpineTerrainMaterial(textures: AlpineTerrainTextures, detail: AlpineDetail = 'high'): THREE.MeshStandardMaterial {
+  const material = new THREE.MeshStandardMaterial({ roughness: 0.91, metalness: 0 });
+  material.name = `Alpine granite, wind-packed snow and meadow (${detail})`;
   material.onBeforeCompile = shader => {
     shader.uniforms.alpineGrass = { value: textures.grassTexture };
     shader.uniforms.alpineRock = { value: textures.rockTexture };
@@ -83,7 +110,7 @@ export function createAlpineTerrainMaterial(textures: AlpineTerrainTextures): TH
       alpineSurfaceNormal = normal;
     `);
     shader.fragmentShader = ALPINE_MATERIAL_GLSL + shader.fragmentShader;
-    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `
+    let colorFragment = `
       #include <color_fragment>
       vec3 alpineN = normalize(alpineSurfaceNormal);
       vec3 alpineWeights = pow(abs(alpineN), vec3(4.0));
@@ -151,7 +178,12 @@ export function createAlpineTerrainMaterial(textures: AlpineTerrainTextures): TH
         alpineSnowHeight * 0.025 + alpineDrifts * 0.018, alpineSnowCover);
       float alpinePixelMetres = max(length(dFdx(alpinePoint)), length(dFdy(alpinePoint)));
       float alpineReliefFade = 1.0 - smoothstep(0.10, 1.7, alpinePixelMetres);
-    `);
+    `;
+    if (detail === 'medium') {
+      colorFragment = colorFragment.replace('alpineJoints(alpineFace / 43.0 + alpineJointWarp * 0.57)', '0.0')
+        .replaceAll('alpineFbm(', 'alpineNoise(');
+    }
+    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', detail === 'low' ? LIGHT_ALPINE_COLOR_GLSL : colorFragment);
     shader.fragmentShader = shader.fragmentShader.replace('#include <roughnessmap_fragment>', `
       #include <roughnessmap_fragment>
       // Clear snow has a softer highlight than rough, fractured rock, without
@@ -160,20 +192,20 @@ export function createAlpineTerrainMaterial(textures: AlpineTerrainTextures): TH
       roughnessFactor = mix(mix(0.98, alpineRockRoughness, alpineRocky),
         0.69 + (1.0 - alpineSnowHeight) * 0.16, alpineSnowCover);
     `);
-    shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>', `
+    if (detail === 'high') shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>', `
       #include <normal_fragment_maps>
       vec2 alpineHeightGradient = vec2(dFdx(alpineSurfaceHeight), dFdy(alpineSurfaceHeight)) * alpineReliefFade;
       normal = alpinePerturb(-vViewPosition, normal, alpineHeightGradient, faceDirection);
     `);
   };
-  material.customProgramCacheKey = () => 'alpine-granite-snow-pbr-triplanar-v6';
+  material.customProgramCacheKey = () => `alpine-granite-snow-pbr-triplanar-v7-${detail}`;
   return material;
 }
 
 /** Generated loose-stone albedo uses transformed instance coordinates, not unit meshes. */
-export function createAlpineRockMaterial({ rockTexture }: Pick<AlpineTerrainTextures, 'rockTexture'>): THREE.MeshStandardMaterial {
+export function createAlpineRockMaterial({ rockTexture }: Pick<AlpineTerrainTextures, 'rockTexture'>, detail: AlpineDetail = 'high'): THREE.MeshStandardMaterial {
   const material = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.94, metalness: 0 });
-  material.name = 'Alpine fractured granite rock';
+  material.name = `Alpine fractured granite rock (${detail})`;
   material.onBeforeCompile = shader => {
     shader.uniforms.alpineRock = { value: rockTexture };
     shader.vertexShader = 'varying vec3 alpineRockPoint; varying vec3 alpineRockNormal;\n' + shader.vertexShader;
@@ -202,7 +234,14 @@ export function createAlpineRockMaterial({ rockTexture }: Pick<AlpineTerrainText
       uniform sampler2D alpineRock;
       ${ALPINE_FIELD_GLSL}
     ` + shader.fragmentShader;
-    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `
+    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', detail === 'low' ? `
+      #include <color_fragment>
+      vec3 alpineLooseWeights = pow(abs(normalize(alpineRockNormal)), vec3(4.0));
+      alpineLooseWeights /= max(dot(alpineLooseWeights, vec3(1.0)), 0.001);
+      vec3 alpineLooseFine = alpineTriplanar(alpineRock, alpineRockPoint / 7.0, alpineLooseWeights);
+      float alpineLooseHeight = alpineLuminance(alpineLooseFine);
+      diffuseColor.rgb = alpineLooseFine;
+    ` : `
       #include <color_fragment>
       vec3 alpineLooseWeights = pow(abs(normalize(alpineRockNormal)), vec3(4.0));
       alpineLooseWeights /= max(dot(alpineLooseWeights, vec3(1.0)), 0.001);
@@ -210,7 +249,7 @@ export function createAlpineRockMaterial({ rockTexture }: Pick<AlpineTerrainText
       vec3 alpineLooseLarge = alpineTriplanar(alpineRock,
         (alpineRockPoint.zxy + vec3(8.2, 23.7, -18.9)) / 25.0, alpineLooseWeights.zxy);
       float alpineLooseHeight = alpineLuminance(alpineLooseFine);
-      float alpineLooseMottling = alpineFbm(alpineRockPoint.xz * 0.07);
+      float alpineLooseMottling = ${detail === 'high' ? 'alpineFbm' : 'alpineNoise'}(alpineRockPoint.xz * 0.07);
       vec3 alpineLooseColour = alpineLooseFine * mix(vec3(0.9), alpineLooseLarge * 0.65 + 0.73, 0.25);
       alpineLooseColour *= mix(vec3(0.94, 0.98, 1.04), vec3(1.05, 1.01, 0.95), alpineLooseMottling);
       diffuseColor.rgb = alpineLooseColour * mix(vec3(1.0), diffuseColor.rgb * 1.5, 0.12);
@@ -221,12 +260,12 @@ export function createAlpineRockMaterial({ rockTexture }: Pick<AlpineTerrainText
       #include <roughnessmap_fragment>
       roughnessFactor = 0.84 + (1.0 - alpineLooseHeight) * 0.14;
     `);
-    shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>', `
+    if (detail === 'high') shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>', `
       #include <normal_fragment_maps>
       normal = alpinePerturb(-vViewPosition, normal,
         vec2(dFdx(alpineLooseRelief), dFdy(alpineLooseRelief)), faceDirection);
     `);
   };
-  material.customProgramCacheKey = () => 'alpine-loose-granite-triplanar-v1';
+  material.customProgramCacheKey = () => `alpine-loose-granite-triplanar-v2-${detail}`;
   return material;
 }

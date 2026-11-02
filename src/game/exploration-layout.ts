@@ -1,5 +1,7 @@
 import type { UrbanBox } from './map-layout.ts';
 import { getDowntownBuildingParts, getDowntownRoofDetails } from './downtown-architecture.ts';
+import { ALPINE_MASSIFS, MOUNTAIN_RIDGES } from './alpine-massifs.ts';
+export { MOUNTAIN_PEAKS, MOUNTAIN_RIDGES } from './alpine-massifs.ts';
 
 export type ExplorationMapId = 'desert' | 'downtown' | 'mountains';
 export interface TerrainPeak { readonly x: number; readonly z: number; readonly height: number; readonly radiusX: number; readonly radiusZ: number; }
@@ -25,23 +27,6 @@ export const DESERT_MESAS: readonly TerrainPeak[] = Object.freeze([
   { x: 1550, z: 850, height: 120, radiusX: 340, radiusZ: 240 },
   { x: -1550, z: 1250, height: 150, radiusX: 300, radiusZ: 330 },
 ]);
-export const MOUNTAIN_PEAKS: readonly TerrainPeak[] = Object.freeze([
-  { x: -1250, z: -1050, height: 665, radiusX: 470, radiusZ: 510 },
-  { x: 1050, z: -1450, height: 738, radiusX: 455, radiusZ: 435 },
-  { x: 1550, z: 650, height: 590, radiusX: 505, radiusZ: 470 },
-  { x: -1500, z: 1050, height: 570, radiusX: 490, radiusZ: 475 },
-  { x: 50, z: -2250, height: 625, radiusX: 450, radiusZ: 390 },
-]);
-const MOUNTAIN_ROTATIONS = [-0.24, 0.35, -0.55, 0.2, -0.1] as const;
-const MOUNTAIN_ORIENTATIONS = MOUNTAIN_ROTATIONS.map(angle => ({ cosine: Math.cos(angle), sine: Math.sin(angle) }));
-/** Linked, narrow ridgelines create saddles between the peaks, leaving the training valley open. */
-export const MOUNTAIN_RIDGES = Object.freeze([
-  { ax: -1250, az: -1050, bx: -1500, bz: 1050, width: 250, height: 300 },
-  { ax: -1250, az: -1050, bx: 50, bz: -2250, width: 245, height: 320 },
-  { ax: 50, az: -2250, bx: 1050, bz: -1450, width: 230, height: 340 },
-  { ax: 1050, az: -1450, bx: 1550, bz: 650, width: 255, height: 320 },
-]);
-
 export function isExplorationMap(id: string): id is ExplorationMapId {
   return id === 'desert' || id === 'downtown' || id === 'mountains';
 }
@@ -68,36 +53,61 @@ function alpineNoise(x: number, z: number, seed: number): number {
   return a + (b - a) * u + (c + (d - c) * u - (a + (b - a) * u)) * v;
 }
 
+// Compile the authored crest chains once. A folded massif has several displaced
+// high points and unequal shoulders instead of a radius around one cone apex.
+const ALPINE_FOLDS = ALPINE_MASSIFS.map(massif => {
+  const nodes = massif.crests.flat(), padding = Math.max(...nodes.flatMap(node => [node[3], node[4]])) * 1.12 + 20;
+  return { ...massif, minX: Math.min(...nodes.map(node => node[0])) - padding,
+    maxX: Math.max(...nodes.map(node => node[0])) + padding,
+    minZ: Math.min(...nodes.map(node => node[1])) - padding, maxZ: Math.max(...nodes.map(node => node[1])) + padding,
+    segments: massif.crests.flatMap(crest => crest.slice(1).map((b, i) => {
+      const a = crest[i], dx = b[0] - a[0], dz = b[1] - a[1], lengthSquared = dx * dx + dz * dz;
+      return { a, b, dx, dz, lengthSquared, length: Math.sqrt(lengthSquared) };
+    })) };
+});
 function alpineMassHeight(x: number, z: number): number {
   let height = 0;
-  for (let index = 0; index < MOUNTAIN_PEAKS.length; index++) {
-    const peak = MOUNTAIN_PEAKS[index], { cosine, sine } = MOUNTAIN_ORIENTATIONS[index];
-    const dx = x - peak.x, dz = z - peak.z;
-    let u = (dx * cosine + dz * sine) / peak.radiusX;
-    let v = (-dx * sine + dz * cosine) / peak.radiusZ;
-    const radius = Math.hypot(u, v), taper = Math.min(1, radius);
-    u += Math.sin(z * 0.004 + index * 1.7) * Math.sin(x * 0.0023 + index) * 0.055 * taper;
-    v += Math.sin(x * 0.0041 + index * 2.1) * 0.04 * taper;
-    // Unequal angular spurs break the four planar faces of a perfect pyramid.
-    const angle = Math.atan2(v, u);
-    const lobes = 1 + 0.14 * Math.sin(angle * 3 + index * 1.7) + 0.07 * Math.sin(angle * 7 - index * 1.3);
-    const polygon = Math.max(Math.abs(u) + Math.abs(v) * 0.32, Math.abs(v) * 1.02 + Math.abs(u) * 0.28);
-    const facets = (Math.hypot(u, v) * 0.7 + polygon * 0.3) / lobes;
-    const crown = Math.max(0, 1 - facets) ** 0.86;
-    const skirt = Math.exp(-(u * u + v * v) * 1.65);
-    const gullies = facets >= 1 ? 1 : 1 - 0.12 * Math.abs(Math.sin(angle * 5 + index * 1.7 + Math.sin(angle * 2 + index) * 0.6 + radius * 0.7))
-      * Math.sin(Math.PI * facets);
-    let mass = peak.height * (0.86 * crown + 0.14 * skirt) * gullies;
-    if (crown > 0) {
-      // Erosion is strongest on the flank and vanishes at the summit and foot.
-      // Metre-scaled layers form rock buttresses and branching drainage gullies.
-      const shell = 4 * crown * (1 - crown);
-      const coarse = alpineNoise(dx / 180, dz / 180, index + 11);
-      const medium = alpineNoise(dx / 70, dz / 70, index + 37);
-      const fine = alpineNoise(dx / 28, dz / 28, index + 71);
-      const channel = (1 - Math.abs(Math.sin(angle * 3 + Math.sin(angle * 2 + index) * 0.8 + radius * 0.9))) ** 3;
-      mass += peak.height * shell * (0.25 * (coarse - 0.5) + 0.11 * (medium - 0.5)
-        + 0.035 * (fine - 0.5) - 0.19 * channel);
+  for (let index = 0; index < ALPINE_FOLDS.length; index++) {
+    const fold = ALPINE_FOLDS[index];
+    if (x < fold.minX || x > fold.maxX || z < fold.minZ || z > fold.maxZ) continue;
+    const coarse = alpineNoise(x / 155, z / 155, index + 11);
+    const fracture = (alpineNoise(x / 95, z / 95, index + 37) - 0.5) * 0.12
+      + (alpineNoise(x / 42, z / 42, index + 71) - 0.5) * 0.04;
+    let mass = 0;
+    for (const segment of fold.segments) {
+      const { a, b, dx, dz, lengthSquared, length } = segment;
+      const px = x - a[0], pz = z - a[1];
+      const t = Math.max(0, Math.min(1, (px * dx + pz * dz) / lengthSquared));
+      const bend = 4 * t * (1 - t) * (coarse - 0.5) * 38;
+      const distance = Math.hypot(px - dx * t + dz / length * bend, pz - dz * t - dx / length * bend);
+      const signedNormal = (dx * pz - dz * px) / length - bend;
+      // Smoothly join unequal shoulders across the bent crest and around its
+      // end caps: choosing a width by a hard side sign creates height jumps.
+      const direction = Math.max(0, Math.min(1, 0.5 + 0.5 * signedNormal / Math.max(distance, 32)));
+      const blend = direction * direction * (3 - 2 * direction);
+      const left = a[3] + (b[3] - a[3]) * t, right = a[4] + (b[4] - a[4]) * t;
+      const width = (right + (left - right) * blend) * (0.88 + coarse * 0.24);
+      const r = distance / width;
+      if (r >= 1) continue;
+      const inner = 0.16 + coarse * 0.04, outer = 0.58 + coarse * 0.04;
+      let profile: number;
+      if (r < inner) profile = 1 - 0.12 * r / inner;
+      else if (r < outer) {
+        const t = (r - inner) / (outer - inner), eased = t * 0.45 + t * t * (3 - 2 * t) * 0.55;
+        profile = 0.88 - eased * 0.62;
+      } else profile = 0.26 * ((1 - r) / (1 - outer)) ** 1.6;
+      const crest = a[2] + (b[2] - a[2]) * t;
+      const brokenCrest = crest + 4 * t * (1 - t) * (coarse - 0.5) * 36;
+      // A continuous cliff band gives way to a lower scree apron. Its transition
+      // spans dozens of metres, remaining representable by the terrain mesh.
+      mass = Math.max(mass, brokenCrest * profile + crest * 4 * profile * (1 - profile) * fracture);
+    }
+    // Off-axis glacial bowls cut headwalls and hanging shoulders into the folds;
+    // neither the outline nor the erosion is symmetric about a single summit.
+    for (const [cx, cz, rx, rz, depth] of fold.cirques) {
+      const u = (x - cx) / rx, v = (z - cz) / rz;
+      const bowl = Math.max(0, 1 - u * u - v * v);
+      mass -= depth * bowl ** 1.4;
     }
     height = Math.max(height, mass);
   }

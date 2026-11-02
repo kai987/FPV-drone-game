@@ -55,7 +55,8 @@ test('real Three.js city batches represent structural pieces and release their o
       boxes.push({ x: position.x, y: position.y, z: position.z, width: scale.x, height: scale.y, depth: scale.z });
     }
   });
-  assert.ok(meshes.length < 60, `architecture uses ${meshes.length} batches`);
+  assert.ok(meshes.length < 900, `architecture uses ${meshes.length} regional batches`);
+  assert.ok(meshes.every(mesh => mesh.frustumCulled && mesh.boundingSphere!.radius < 1100), 'batches have local bounds instead of spanning the entire city');
   assert.ok(boxes.length < 20_000, 'detail remains instanced rather than adding individual windows');
   const representatives = new Map(getExplorationLayout('downtown').buildings.map(building => [getDowntownBuildingParts(building).archetype, building]));
   for (const building of representatives.values()) for (const part of getDowntownBuildingParts(building).solids) {
@@ -64,6 +65,12 @@ test('real Three.js city batches represent structural pieces and release their o
       && Math.abs(box.y - part.base - part.height / 2) < 0.002 && Math.abs(box.width - part.width) < 0.002
       && Math.abs(box.height - part.height) < 0.002 && Math.abs(box.depth - part.depth) < 0.002), 'native structural piece also exists in the rendered model');
   }
+  city.update(0, { x: 10000, y: 500, z: 10000 });
+  assert.ok(meshes.some(mesh => mesh.userData.sceneryDetail && !mesh.visible), 'far decorations are removed from draw traversal');
+  assert.ok(meshes.filter(mesh => !mesh.userData.sceneryDetail).every(mesh => mesh.visible), 'physical building silhouettes and roof support stay rendered at every distance');
+  const nearDetail = meshes.find(mesh => mesh.userData.sceneryDetail)!;
+  city.update(0, nearDetail.boundingSphere!.center);
+  assert.equal(nearDetail.visible, true, 'nearby facade and rooftop detail returns');
   let releasedGeometry = 0, releasedMaterial = 0, releasedTexture = 0;
   geometries.forEach(value => value.addEventListener('dispose', () => releasedGeometry++));
   materials.forEach(value => value.addEventListener('dispose', () => releasedMaterial++));

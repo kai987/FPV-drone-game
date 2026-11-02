@@ -2,22 +2,60 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { MOUNTAIN_PEAKS, MOUNTAIN_RIDGES, explorationGroundHeight } from '../src/game/exploration-layout.ts';
+import { ALPINE_MASSIFS } from '../src/game/alpine-massifs.ts';
 import { createRustRuntime } from '../src/game/rust-runtime.ts';
 import { createWorldKernel } from '../src/game/world-kernel.ts';
 
 const module = await WebAssembly.compile(await readFile(new URL('../src/game/generated/flight_core.wasm', import.meta.url)));
 
-test('alpine summits have a narrow crown and remain flyable beneath the altitude ceiling', () => {
+test('massif summits are displaced and retain unequal shoulders beneath the altitude ceiling', () => {
   const world = createWorldKernel(createRustRuntime(module), 'mountains');
   try {
     for (const peak of MOUNTAIN_PEAKS) {
-      const summit = world.groundHeight(peak.x, peak.z);
-      assert.ok(summit > 450 && summit < 780, 'summits retain room beneath the 800 m flight limit');
-      for (const [dx, dz] of [[80, 0], [-80, 0], [0, 80], [0, -80]]) {
-        const flank = world.groundHeight(peak.x + dx, peak.z + dz);
-        assert.ok(summit - flank > 70, `the summit at ${peak.x}/${peak.z} must have a visible shoulder, not a rounded dome`);
-        assert.ok(Math.abs(flank - explorationGroundHeight('mountains', peak.x + dx, peak.z + dz)) < 1e-8);
+      let summit = { x: peak.x, z: peak.z, y: -Infinity };
+      for (let x = peak.x - 550; x <= peak.x + 550; x += 10) for (let z = peak.z - 550; z <= peak.z + 550; z += 10) {
+        const y = world.groundHeight(x, z);
+        if (y > summit.y) summit = { x, z, y };
       }
+      assert.ok(summit.y > 530 && summit.y < 780, 'all five massif regions retain real summits below the 800 m ceiling');
+      assert.ok(Math.hypot(summit.x - peak.x, summit.z - peak.z) > 35, 'the summit is displaced from the old radial cone centre');
+      const drops = [[80, 0], [-80, 0], [0, 80], [0, -80]].map(([dx, dz]) => {
+        const flank = world.groundHeight(summit.x + dx, summit.z + dz);
+        assert.ok(Math.abs(flank - explorationGroundHeight('mountains', summit.x + dx, summit.z + dz)) < 1e-8);
+        return summit.y - flank;
+      });
+      assert.ok(Math.max(...drops) - Math.min(...drops) > 70, 'a high crest has an unequal long shoulder and an abrupt opposing face');
+      assert.ok(Math.min(...drops) < 200 && Math.max(...drops) > 190, 'shoulders and cliffs coexist instead of four equally falling cone sides');
+    }
+  } finally { world.dispose(); }
+});
+
+test('each massif has separated prominent skyline crests instead of one triangular outline', () => {
+  const world = createWorldKernel(createRustRuntime(module), 'mountains');
+  try {
+    for (const peak of MOUNTAIN_PEAKS) {
+      const prominent: number[] = [];
+      // A projected upper envelope tests what the silhouette actually contains,
+      // independently of the authored crest nodes or their construction method.
+      for (const axis of ['x', 'z']) {
+        const skyline: number[] = [];
+        for (let along = -500; along <= 500; along += 20) {
+          let maximum = -Infinity;
+          for (let across = -550; across <= 550; across += 20)
+            maximum = Math.max(maximum, world.groundHeight(peak.x + (axis === 'x' ? along : across), peak.z + (axis === 'z' ? along : across)));
+          skyline.push(maximum);
+        }
+        const summit = Math.max(...skyline);
+        let count = 0;
+        for (let i = 2; i < skyline.length - 2; i++) {
+          if (skyline[i] < summit * 0.6 || skyline[i] < skyline[i - 1] || skyline[i] <= skyline[i + 1]) continue;
+          const left = Math.min(...skyline.slice(Math.max(0, i - 8), i));
+          const right = Math.min(...skyline.slice(i + 1, i + 9));
+          if (skyline[i] - Math.max(left, right) > 32) count++;
+        }
+        prominent.push(count);
+      }
+      assert.ok(Math.max(...prominent) >= 2, `the massif near ${peak.x}/${peak.z} has multiple substantial crests and a real separating col`);
     }
   } finally { world.dispose(); }
 });
@@ -83,5 +121,21 @@ test('mountain flanks include metre-scaled erosion and buttresses rather than sm
       if (Math.max(...curvature) > 4 && curvature.reduce((sum, value) => sum + value, 0) > 15) brokenFaces++;
     }
     assert.ok(brokenFaces >= 6, 'erosion changes the shape of multiple distinct rock faces at 20–200 m scales');
+  } finally { world.dispose(); }
+});
+
+test('bent crest shoulders and end caps have continuous support across either side', () => {
+  const world = createWorldKernel(createRustRuntime(module), 'mountains');
+  try {
+    for (const massif of ALPINE_MASSIFS) for (const crest of massif.crests) for (let index = 1; index < crest.length; index++) {
+      const a = crest[index - 1], b = crest[index], dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz);
+      for (const t of [-0.08, 0, 0.2, 0.6, 1, 1.08]) for (const offset of [-15, -5, 0, 5, 15]) {
+        const x = a[0] + dx * t - dz / length * offset, z = a[1] + dz * t + dx / length * offset;
+        const left = world.groundHeight(x - dz / length * 0.001, z + dx / length * 0.001);
+        const right = world.groundHeight(x + dz / length * 0.001, z - dx / length * 0.001);
+        assert.ok(Math.abs(left - right) < 0.1, `crossing two millimetres near ${x}/${z} must not jump between unequal shoulder widths`);
+        assert.ok(Math.abs(left - explorationGroundHeight('mountains', x - dz / length * 0.001, z + dx / length * 0.001)) < 1e-8);
+      }
+    }
   } finally { world.dispose(); }
 });
