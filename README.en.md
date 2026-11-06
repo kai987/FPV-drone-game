@@ -84,6 +84,8 @@ VECTOR is inspired by the [2017 DRL RacerX record report](https://www.guinnesswo
 
 Click the 3D scene during flight to enable mouse look. Esc releases the mouse and pauses. Switching browser tabs or losing window focus also pauses automatically. After takeoff on mobile, control flight with gestures on the flight view. Hold one finger to accelerate gradually from low speed; input reaches the selected aircraft and mode’s maximum after about two seconds by default. Drag up/down for forward/backward flight and left/right to strafe. Drag a second finger up/down to climb/descend and left/right to turn; both fingers can work together. Releasing a finger clears its axes and flight physics slows the aircraft. Assisted mode brakes faster, and wind can still cause drift. Bombing, wind direction, and the minimap sit in a panel below the flight view. Dragging or zooming the minimap does not steer the aircraft. Inputs, selectors, and modal dialogs isolate flight shortcuts to prevent accidental movement or bombing while using the interface.
 
+On mobile, use “Flight menu” to collapse the map, game mode, and flight mode selectors. Start, pause, resume, and return-to-start controls remain available. Takeoff and resume automatically collapse the panel; reopening it during flight preserves position and elapsed time. Changing the panel or rotating the screen releases held gestures. At 360×640, collapsing increases the flight view height from 182px to 322px.
+
 Touch gestures are enabled only when the primary pointer is coarse; narrowing a desktop window keeps mouse and keyboard controls. Gesture areas accept touch input only and clear active gestures when the input capability changes.
 
 ### Graphics and control preferences
