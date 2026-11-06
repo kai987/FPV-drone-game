@@ -27,6 +27,136 @@ async function ready(page: Page) {
 const number = async (page: Page, id: string) => Number(await page.getByTestId(id).textContent());
 const preferenceKey = 'aeroflow:preferences';
 
+const expandFlightSettings = (page: Page) => page.getByRole('button', { name: 'Expand flight settings', exact: true });
+const collapseFlightSettings = (page: Page) => page.getByRole('button', { name: 'Collapse flight settings', exact: true });
+const flightViewHeight = async (page: Page) => (await page.getByTestId('viewport').boundingBox())!.height;
+const elapsedSeconds = async (page: Page) => {
+  const [minutes, seconds] = (await page.getByTestId('timer').textContent())!.split(':');
+  return Number(minutes) * 60 + Number(seconds);
+};
+
+test('flight settings preserve desktop access and enlarge the small-screen view without interrupting touch flight', async ({ page, context }, info) => {
+  if (info.project.name === 'chromium-touch') await page.setViewportSize({ width: 360, height: 640 });
+  await page.goto('/'); await ready(page);
+
+  const desert = page.getByLabel('Switch to Red Dune Desert', { exact: true });
+  if (info.project.name === 'chromium-desktop') {
+    await expect(expandFlightSettings(page)).toBeHidden();
+    await expect(collapseFlightSettings(page)).toBeHidden();
+    await expect(desert).toBeVisible();
+
+    await page.setViewportSize({ width: 360, height: 640 });
+    await expect(collapseFlightSettings(page)).toHaveAttribute('aria-expanded', 'true');
+    await collapseFlightSettings(page).click();
+    await expect(expandFlightSettings(page)).toHaveAttribute('aria-expanded', 'false');
+    await expect(desert).toBeHidden();
+    await expect(page.locator('.launch-button')).toBeVisible();
+
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await expect(expandFlightSettings(page)).toBeHidden();
+    await expect(collapseFlightSettings(page)).toBeHidden();
+    await expect(desert).toBeVisible();
+    await desert.click();
+    await expect(canvas(page)).toHaveAttribute('data-map-id', 'desert');
+    await expect(canvas(page)).toHaveAttribute('data-graphics-state', 'ready');
+    return;
+  }
+
+  await expect(collapseFlightSettings(page)).toHaveAttribute('aria-expanded', 'true');
+  const controlledId = await collapseFlightSettings(page).getAttribute('aria-controls');
+  expect(controlledId, 'disclosure identifies the controlled settings panel').toBeTruthy();
+  const panel = page.locator(`[id=${JSON.stringify(controlledId)}]`);
+  await expect(panel).not.toHaveCSS('display', 'none');
+  await expect(desert).toBeVisible();
+  await desert.click();
+  await page.getByRole('button', { name: 'Free flight', exact: true }).click();
+  await expect(canvas(page)).toHaveAttribute('data-map-id', 'desert');
+  const expandedHeight = await flightViewHeight(page);
+
+  await collapseFlightSettings(page).click();
+  await expect(expandFlightSettings(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect(panel).toHaveCSS('display', 'none');
+  await expect(desert).toBeHidden();
+  await expect(page.locator('#flight-settings-summary')).toBeVisible();
+  await expect(page.locator('#flight-settings-summary')).toContainText('Desert');
+  await expect(page.locator('.launch-button')).toBeVisible();
+  await expect.poll(() => flightViewHeight(page)).toBeGreaterThanOrEqual(expandedHeight + 100);
+  await expect(canvas(page)).toHaveAttribute('data-map-id', 'desert');
+
+  // Traverse the surrounding controls; a visually collapsed panel must also be
+  // absent from the keyboard sequence rather than retaining hidden map buttons.
+  await expandFlightSettings(page).focus();
+  for (let index = 0; index < 12; index++) {
+    await page.keyboard.press('Tab');
+    expect(await panel.evaluate(element => element.contains(document.activeElement))).toBe(false);
+  }
+
+  await expandFlightSettings(page).click();
+  await expect(panel).not.toHaveCSS('display', 'none');
+  await expect(desert).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('.launch-button').click();
+  await expect(expandFlightSettings(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect(panel).toHaveCSS('display', 'none');
+  await expect.poll(() => elapsedSeconds(page)).toBeGreaterThan(1);
+  const beforeReopening = await elapsedSeconds(page);
+
+  const beforeMenuBounds = (await page.locator('.touch-gesture-controls').boundingBox())!;
+  const menuTouch = await context.newCDPSession(page);
+  try {
+    await menuTouch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{
+      x: beforeMenuBounds.x + beforeMenuBounds.width * 0.35,
+      y: beforeMenuBounds.y + beforeMenuBounds.height * 0.65, id: 1,
+    }] });
+    await expect(page.locator('.touch-gesture-flight')).toHaveCount(1);
+    await expandFlightSettings(page).click();
+    await expect(page.locator('.touch-gesture-flight')).toHaveCount(0);
+  } finally {
+    await menuTouch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await menuTouch.detach();
+  }
+  await expect(panel).not.toHaveCSS('display', 'none');
+  await expect(page.locator('.pause-panel')).toHaveCount(0);
+  await expect(canvas(page)).toHaveAttribute('data-map-id', 'desert');
+  await expect(canvas(page)).toHaveAttribute('data-graphics-state', 'ready');
+  const afterReopening = await elapsedSeconds(page);
+  expect(afterReopening).toBeGreaterThanOrEqual(beforeReopening);
+  await expect.poll(() => elapsedSeconds(page)).toBeGreaterThan(afterReopening);
+  await collapseFlightSettings(page).click();
+
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(expandFlightSettings(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect(panel).toHaveCSS('display', 'none');
+  const controls = page.locator('.touch-gesture-controls');
+  await expect(controls).toBeVisible();
+  const bounds = (await controls.boundingBox())!;
+  const point = { x: bounds.x + bounds.width * 0.4, y: bounds.y + bounds.height * 0.65, id: 1 };
+  const cdp = await context.newCDPSession(page);
+  try {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+    await expect(page.locator('.touch-gesture-flight')).toHaveCount(1);
+    await expect.poll(() => number(page, 'speed'), { timeout: 20_000 }).toBeGreaterThan(20);
+    // Rotation while a finger is down must release its input, even before the
+    // browser sends touchEnd at the old viewport coordinates.
+    await page.setViewportSize({ width: 360, height: 640 });
+    await expect(page.locator('.touch-gesture-flight')).toHaveCount(0);
+  } finally {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await cdp.detach();
+  }
+  await expect.poll(() => number(page, 'speed'), { timeout: 20_000 }).toBeLessThan(15);
+  await expect(expandFlightSettings(page)).toHaveAttribute('aria-expanded', 'false');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+
+  await page.locator('.mobile-pause').click();
+  await expect(page.locator('.pause-panel')).toBeVisible();
+  await info.attach('mobile-flight-settings-collapsed', { body: await page.screenshot(), contentType: 'image/png' });
+  await page.locator('.pause-panel').getByRole('button', { name: 'Return to start', exact: true }).click();
+  if (await expandFlightSettings(page).isVisible()) await expandFlightSettings(page).click();
+  await page.getByLabel('Switch to Sea Port', { exact: true }).click();
+  await expect(canvas(page)).toHaveAttribute('data-map-id', 'harbor');
+  await expect(page.getByTestId('timer')).toHaveText('00:00.00');
+});
+
 test('all six maps render, day/night switches, hangar opens, and keyboard flight pauses and resumes', async ({ page }, info) => {
   await page.goto('/'); await ready(page);
   await expect(page).toHaveTitle('AEROFLOW — FPV drone playground');
